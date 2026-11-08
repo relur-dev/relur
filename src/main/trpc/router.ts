@@ -858,6 +858,8 @@ export function createAppRouter({
             runSetup: z.boolean().optional(),
             /** Other projects of the profile it also spans (spec §21.2). */
             linkedProjectIds: z.array(IdSchema).max(50).optional(),
+            /** Let Claude add others when needed (spec §21.9). */
+            claudeMayLink: z.boolean().optional(),
             /** The branch came from the task: a taken one gets the next free name (spec §7.1). */
             uniqueBranch: z.boolean().optional(),
           }),
@@ -878,6 +880,10 @@ export function createAppRouter({
       setKeepRunning: publicProcedure
         .input(workspaceId.extend({ on: z.boolean() }))
         .mutation(({ input }) => workspaceRecords.setKeepRunning(input.workspaceId, input.on)),
+      /** Let Claude add repositories (spec §21.9): from its next SessionStart. */
+      setClaudeMayLink: publicProcedure
+        .input(workspaceId.extend({ on: z.boolean() }))
+        .mutation(({ input }) => workspaceRecords.setClaudeMayLink(input.workspaceId, input.on)),
       /** A shell in one of its worktrees (New shell in…). */
       shell: publicProcedure
         .input(workspaceId.extend(repo))

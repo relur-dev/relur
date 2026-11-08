@@ -13,6 +13,7 @@ import {
   linkedRepos,
   type OtherWorktree,
   type ProjectRemovalCheck,
+  type RepoAddedBy,
   type RepoDeleteCheck,
   SETUP_FAILED_PREFIX,
   type SetupPlan,
@@ -52,6 +53,8 @@ export interface CreateWorkspaceInput {
   runSetup?: boolean;
   /** Other projects of the profile the workspace also spans (spec §21.2). */
   linkedProjectIds?: string[];
+  /** Let Claude add others when needed (spec §21.9); on unless unticked. */
+  claudeMayLink?: boolean;
   /**
    * The branch came from the task, not typed: when it is taken, here or on a
    * remote, the next free name (`-2`, `-3` …) is used instead (spec §7.1).
@@ -395,6 +398,7 @@ export class WorkspaceService {
       unfinished: null,
       lastPrompt: null,
       keepRunning: false,
+      claudeMayLink: input.claudeMayLink !== false,
       stateSince: now,
       claudeSessionId: null,
       ports: null,
@@ -543,6 +547,7 @@ export class WorkspaceService {
       unfinished: null,
       lastPrompt: null,
       keepRunning: false,
+      claudeMayLink: true,
       stateSince: now,
       claudeSessionId: null,
       ports: await allocatePorts(
@@ -1140,7 +1145,7 @@ export class WorkspaceService {
   async link(
     workspaceId: string,
     projectId: string,
-    { restart }: { restart: boolean },
+    { restart, addedBy = null }: { restart: boolean; addedBy?: RepoAddedBy | null },
   ): Promise<LinkResult> {
     const workspace = this.workspace(workspaceId);
     const { project: main, profile, git } = await this.context(workspace.projectId);
@@ -1179,7 +1184,7 @@ export class WorkspaceService {
         },
       );
       if (note) notes.push(note);
-      this.records.addRepo(workspaceId, { projectId, worktreePath, baseBranch: base });
+      this.records.addRepo(workspaceId, { projectId, worktreePath, baseBranch: base, addedBy });
     } catch (error) {
       if (created) await this.removeCreated(git, [{ repo, worktreePath }], branch);
       throw error;

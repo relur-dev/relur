@@ -60,6 +60,16 @@ function rememberAlsoIn(projectId: string, ids: string[]): void {
   remember(alsoInKey(projectId), JSON.stringify(ids));
 }
 
+/** Let Claude add others when needed, per project (spec §21.9): on unless last unticked. */
+const mayLinkKey = (projectId: string) => `claudeMayLink:${projectId}`;
+function rememberedMayLink(projectId: string): boolean {
+  try {
+    return localStorage.getItem(mayLinkKey(projectId)) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 /**
  * New workspace (spec §7.1): one Task field (a leading `ABC-123` or `#42` is
  * the id, the rest the title), a branch derived from the profile's branch
@@ -99,6 +109,7 @@ export function NewWorkspaceDialog({
     rememberedAlsoIn(projectId).filter((id) => others.some((p) => p.id === id)),
   );
   const [alsoRemembered, setAlsoRemembered] = useState(alsoIn.length > 0);
+  const [mayLink, setMayLink] = useState(() => rememberedMayLink(projectId));
   const linkedProjectIds = others.filter((p) => alsoIn.includes(p.id)).map((p) => p.id);
   const derived = branchFromTemplate(profile.defaults.branchTemplate, {
     id: taskId ?? '',
@@ -244,6 +255,7 @@ export function NewWorkspaceDialog({
         baseBranch: base.trim(),
         runSetup: hasSetup ? runSetup : undefined,
         linkedProjectIds,
+        claudeMayLink: others.length > 0 ? mayLink : undefined,
         // A branch from the task, not typed: a taken one gets the next free name.
         uniqueBranch: branchEdit === null,
       },
@@ -253,6 +265,7 @@ export function NewWorkspaceDialog({
       },
     );
     rememberAlsoIn(project.id, linkedProjectIds);
+    if (others.length > 0) remember(mayLinkKey(project.id), mayLink ? null : 'false');
   };
 
   /** Create now (spec §13.7): stops the lookup and creates without a title. */
@@ -360,6 +373,7 @@ export function NewWorkspaceDialog({
                 const remembered = rememberedAlsoIn(id).filter((o) => o !== id);
                 setAlsoIn(remembered);
                 setAlsoRemembered(remembered.length > 0);
+                setMayLink(rememberedMayLink(id));
               }}
             >
               {projects.map((p) => (
@@ -410,6 +424,21 @@ export function NewWorkspaceDialog({
                 </label>
               ))}
             </div>
+            <label data-claude-may-link className="flex items-start gap-2 pt-1 text-md">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={mayLink}
+                onChange={(e) => setMayLink(e.target.checked)}
+              />
+              <span>
+                Let Claude add others when needed
+                <span className="block text-sm text-fg-subtle">
+                  Claude is told about this profile’s other projects and links one when the task
+                  needs changes there.
+                </span>
+              </span>
+            </label>
             {linkedProjectIds.length > 0 ? (
               <p className="text-sm text-fg-muted">
                 One Claude works in all of them, starting in {project.name}.

@@ -1,7 +1,13 @@
 import { EventEmitter } from 'node:events';
 import type { WorkspaceState } from '@shared/status';
 import { type UnfinishedKind, unfinishedKind } from '@shared/unfinished';
-import type { MergedInto, PrStatus, Workspace, WorkspaceRepo } from '@shared/workspaces';
+import type {
+  MergedInto,
+  PrStatus,
+  RepoAddedBy,
+  Workspace,
+  WorkspaceRepo,
+} from '@shared/workspaces';
 import { prepareOrSkip, type StateDb } from './state-db';
 
 interface Row {
@@ -39,6 +45,7 @@ interface Row {
   unfinished_stopped: number;
   last_prompt: string | null;
   keep_running: number;
+  claude_may_link: number;
 }
 
 interface RepoRow {
@@ -53,6 +60,7 @@ interface RepoRow {
   pr_state: string | null;
   pr_url: string | null;
   pr_source: string | null;
+  added_by: string | null;
 }
 
 const toPr = (row: {
@@ -80,10 +88,13 @@ const toRepo = (row: RepoRow): WorkspaceRepo => ({
   hasCommits: row.has_commits === 1,
   merged: toMerged(row.merged_into),
   setupError: row.setup_error,
+  addedBy: row.added_by === 'claude' || row.added_by === 'terminal' ? row.added_by : null,
 });
 
-/** A linked repository to record (spec §21.1). */
-export type NewLinkedRepo = Pick<WorkspaceRepo, 'projectId' | 'worktreePath' | 'baseBranch'>;
+/** A linked repository to record (spec §21.1), and who linked it (§21.9). */
+export type NewLinkedRepo = Pick<WorkspaceRepo, 'projectId' | 'worktreePath' | 'baseBranch'> & {
+  addedBy?: RepoAddedBy | null;
+};
 
 const STATES: readonly string[] = [
   'starting',
@@ -128,6 +139,7 @@ const toWorkspace = (row: Row, linked: WorkspaceRepo[] = []): Workspace => ({
       : null,
   lastPrompt: row.last_prompt,
   keepRunning: row.keep_running === 1,
+  claudeMayLink: row.claude_may_link !== 0,
   claudeSessionId: row.claude_session_id,
   ports:
     row.port_base !== null && row.port_count !== null
@@ -172,13 +184,14 @@ export class WorkspaceRecords {
   insert(
     workspace: Omit<
       Workspace,
-      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning'
+      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning' | 'claudeMayLink'
     > & {
       repos?: NewLinkedRepo[] | WorkspaceRepo[];
       background?: number;
       unfinished?: Workspace['unfinished'];
       lastPrompt?: string | null;
       keepRunning?: boolean;
+      claudeMayLink?: boolean;
     },
   ): void {
     const linked = (workspace.repos ?? []).filter((r) => !('primary' in r) || !r.primary);
@@ -222,25 +235,33 @@ export class WorkspaceRecords {
 
   private insertRepo(workspaceId: string, repo: NewLinkedRepo, position: number): void {
     this.prepare(
-      `INSERT INTO workspace_repos (workspace_id, project_id, position, worktree_path, base_branch)
-         VALUES (?, ?, ?, ?, ?)`,
-    ).run(workspaceId, repo.projectId, position, repo.worktreePath, repo.baseBranch);
+      `INSERT INTO workspace_repos
+           (workspace_id, project_id, position, worktree_path, base_branch, added_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      workspaceId,
+      repo.projectId,
+      position,
+      repo.worktreePath,
+      repo.baseBranch,
+      repo.addedBy ?? null,
+    );
   }
 
   private insertRow(
     workspace: Omit<
       Workspace,
-      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning'
-    >,
+      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning' | 'claudeMayLink'
+    > & { claudeMayLink?: boolean },
   ): void {
     this.prepare(
       `INSERT INTO workspaces
            (id, profile_id, project_id, name, task_id, task_title, task_url, branch, base_branch,
             worktree_path, status, unread, created_at, last_activity_at, state_message, state_since,
-            claude_session_id, port_base, port_count)
+            claude_session_id, port_base, port_count, claude_may_link)
          VALUES (@id, @profileId, @projectId, @name, @taskId, @taskTitle, @taskUrl, @branch,
             @baseBranch, @worktreePath, @state, @unread, @createdAt, @lastActivityAt, @stateMessage,
-            @stateSince, @claudeSessionId, @portBase, @portCount)`,
+            @stateSince, @claudeSessionId, @portBase, @portCount, @claudeMayLink)`,
     ).run({
       ...workspace,
       ports: undefined,
@@ -251,6 +272,7 @@ export class WorkspaceRecords {
       taskTitle: workspace.task.title,
       taskUrl: workspace.task.url,
       unread: workspace.unread ? 1 : 0,
+      claudeMayLink: workspace.claudeMayLink === false ? 0 : 1,
     });
   }
 
@@ -409,6 +431,15 @@ export class WorkspaceRecords {
   /** Keep running (spec §9.8): its Claude is never suspended when idle. */
   setKeepRunning(id: string, on: boolean): void {
     const result = this.prepare('UPDATE workspaces SET keep_running = ? WHERE id = ?').run(
+      on ? 1 : 0,
+      id,
+    );
+    if (result.changes > 0) this.events.emit('change');
+  }
+
+  /** Let Claude add repositories (spec §21.9); the next SessionStart follows it. */
+  setClaudeMayLink(id: string, on: boolean): void {
+    const result = this.prepare('UPDATE workspaces SET claude_may_link = ? WHERE id = ?').run(
       on ? 1 : 0,
       id,
     );

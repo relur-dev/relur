@@ -58,6 +58,7 @@ function ws(state: WorkspaceState, more: Partial<Workspace> = {}): Workspace {
     unfinished: null,
     lastPrompt: null,
     keepRunning: false,
+    claudeMayLink: true,
     claudeSessionId: null,
     ports: null,
     pr: null,

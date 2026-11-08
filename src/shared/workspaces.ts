@@ -40,6 +40,11 @@ export interface Workspace {
   lastPrompt: string | null;
   /** Keep running: its Claude is never suspended when idle (spec §9.8). */
   keepRunning: boolean;
+  /**
+   * Let Claude add others when needed (spec §21.9): Claude is told about the
+   * profile's other projects and may link one with the command line tool.
+   */
+  claudeMayLink: boolean;
   /** Claude Code's session id, from hook payloads; used for `--resume` (spec §9.4). */
   claudeSessionId: string | null;
   /** Its block of ports (spec §8.4); null until allocated. */
@@ -76,7 +81,14 @@ export interface WorkspaceRepo {
   merged: MergedInto | null;
   /** Why its setup failed; null when it passed or hasn't run. */
   setupError: string | null;
+  /**
+   * Who linked it from the command line (spec §21.9): Claude, or a workspace's
+   * terminal; null for the main one and ones linked in the app.
+   */
+  addedBy?: RepoAddedBy | null;
 }
+
+export type RepoAddedBy = 'claude' | 'terminal';
 
 /** The linked repositories, without the main one. */
 export const linkedRepos = (w: Pick<Workspace, 'repos'>) => w.repos.filter((r) => !r.primary);

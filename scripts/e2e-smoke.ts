@@ -2762,9 +2762,10 @@ exec sleep 600
       `document.querySelectorAll('[data-repo-chip]').length === 3`,
       'three chips again',
     );
+    // The workspace is shown: its header's line says so, not the window's notice.
     await page.waitFor(
-      `document.querySelector('[data-app-notice]')?.innerText.includes('Claude linked cartweb to PROJ-8 Linked cart')`,
-      'the notice',
+      `document.querySelector('[data-link-notice]')?.innerText.includes('Claude added cartweb')`,
+      "the header's line",
     );
     await screenshot(page, screenshotDir, '14b-claude-linked.png');
     assert.equal(
@@ -3787,7 +3788,7 @@ exec sleep 600
     })()`);
     // Also in remembers the last choice for shop (cartapi), so count what's ticked.
     const linkedCount = await page.eval<number>(
-      `document.querySelectorAll('[data-also-in] input:checked').length`,
+      `document.querySelectorAll('[data-also-in] label:not([data-claude-may-link]) input:checked').length`,
     );
     await typeInField(page, '#ws-task', 'PROJ-9 Many repos', false);
     await sleep(600);

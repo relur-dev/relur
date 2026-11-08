@@ -59,12 +59,16 @@ The workspace's **⋯** menu has:
 
 ## When Claude links one itself
 
-Mid-task, Claude may find that another repository needs a change too. It can link it itself: at start, Claude is told which other projects of the profile it could link, and to run `{{cli}} link <name>` rather than create worktrees or edit their main checkouts. The result is the same as **Link another repository…**: the worktree on the workspace's branch, its `.worktreeinclude` files, the task file and its setup. A notice at the top of the window says **Claude linked <repo> to <task>**, and the repository shows up like any other linked one.
+Mid-task, Claude may find that another repository needs a change too. With **Let Claude add others when needed**, ticked in [New workspace](new-workspace#also-in) (it is unless you untick it), Claude can link it itself. At start, Claude is told which other projects of the profile it could link, with their folders and base branches, and to run `{{cli}} link <name>` only when the task requires changes there, rather than create worktrees or edit their main checkouts. The workspace's own repository stays Claude's main one and its working folder. The result is the same as **Link another repository…**: the worktree on the workspace's branch, its `.worktreeinclude` files, the task file and its setup.
+
+The repository shows up like any other linked one: a chip in the header, **+n** in the sidebar and on the Board, a section in the Changes panel and a card in Delete workspace. Its chip's tooltip says **Added by Claude**. If you're looking at the workspace, a line in its header says **Claude added <repo>** with its folder, until you close it with **×**; anywhere else, a notice at the top of the window says **Claude linked <repo> to <task>**. You can unlink it as any other.
+
+To change your mind for one workspace, use **Let Claude Add Repositories** in its **⋯** menu; Claude follows it from its next start or `/clear`. With it off, Claude isn't told about the other projects, and if it runs `{{cli}} link` anyway, it's refused and told to ask you.
 
 - Claude asks you first: **Do you want to proceed?** before it runs `{{cli}} link` (or calls the app's helper to link directly), in every permission mode, auto mode included. Choose **Yes** to link, **No** to keep the workspace as it is. To let Claude link without asking, turn off **Ask before Claude links a repository** in [Edit profile](edit-profile); it applies the next time Claude starts in a workspace.
 - `{{cli}} link` answers once the repository's setup has finished, so Claude starts working there only when it's ready. If the setup fails, the repository stays linked, Claude is told the setup failed, its **Setup · <repo>** tab shows why, and the workspace offers **Retry** once you have fixed the cause.
 - Claude keeps running and can edit the new worktree right away. If Claude asks before every edit, the first edit there asks once; choose **Yes, and always allow access to …** to allow the folder for the rest of the session. The next time Claude starts, the folder is added as for any linked repository.
-- `<name>` can also be a path to a repository. If it isn't a project yet, it's added to this profile first. A repository of another profile is refused.
+- Claude can link only projects of this profile, nothing outside them. When you run `{{cli}} link` yourself, `<name>` can also be a path to a repository: if it isn't a project yet, it's added to this profile first. A repository of another profile is refused.
 - You can run the same command in any of the workspace's terminals; `{{cli}} projects` lists the profile's projects and which are already in the workspace. Outside a workspace, `{{cli}} link` is refused.
 
 ## Finishing

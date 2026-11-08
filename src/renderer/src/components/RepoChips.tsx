@@ -54,6 +54,9 @@ const prTone = (state: string) =>
       ? 'text-fg-subtle'
       : 'text-diff-add';
 
+/** Who linked it from the command line (spec §21.9), for its tooltip and the +n more menu. */
+export const ADDED_BY_LABEL = { claude: 'Added by Claude', terminal: 'Added from a terminal' };
+
 /** A linked repository's setup, as its chip and tooltip say it. */
 function setupState(repo: WorkspaceRepo, running: boolean): string {
   if (running) return 'Setup running';
@@ -157,6 +160,11 @@ function LinkedChip({
               ? `${PR_LABEL[repo.pr.state]}${repo.pr.url ? ` · ${repo.pr.url}` : ''}`
               : 'No PR known'}
           </span>
+          {repo.addedBy ? (
+            <span data-added-by={repo.addedBy} className="block text-fg-muted">
+              {ADDED_BY_LABEL[repo.addedBy]}
+            </span>
+          ) : null}
         </span>
       ) : null}
     </span>
@@ -253,6 +261,7 @@ export function RepoChips({
           projectName(r.projectId),
           r.setupError ? '✕ setup failed' : running(r) ? 'setup running' : null,
           r.pr ? PR_LABEL[r.pr.state] : null,
+          r.addedBy ? ADDED_BY_LABEL[r.addedBy] : null,
         ]
           .filter(Boolean)
           .join(' · '),

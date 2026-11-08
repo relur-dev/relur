@@ -34,6 +34,8 @@ The lookup asks this profile's Claude in the background, allowed only the tools 
 
 When the profile has other projects, **Also in** lists them. Tick the ones the task changes too: each gets its own worktree on the same branch, and one Claude works in all of them. Only tick repositories you trust: Claude loads their `CLAUDE.md` and skills without asking. See [Tasks across repositories](tasks-across-repositories).
 
+Below the list, **Let Claude add others when needed** (on unless you untick it) lets Claude link more of the profile's projects later, when the task turns out to need changes there. {{app}} remembers the choice for each project. See [When Claude links one itself](tasks-across-repositories#when-claude-links-one-itself).
+
 ## What Create does
 
 Clicking **Create workspace** (<kbd>{{key:confirm}}</kbd>):

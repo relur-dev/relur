@@ -150,6 +150,7 @@ describe('WorkspaceRecords with linked repositories', () => {
       unfinished: null,
       lastPrompt: null,
       keepRunning: false,
+      claudeMayLink: true,
       stateSince: null,
       claudeSessionId: null,
       ports: null,
@@ -183,6 +184,55 @@ describe('WorkspaceRecords with linked repositories', () => {
     expect(records.get('ws')?.repos.map((r) => r.projectId)).toEqual(['api', 'lib']);
     records.archive('ws');
     expect(records.linkedInto('lib')).toEqual([]);
+  });
+
+  it('keeps who linked a repository, and whether Claude may (spec §21.9)', () => {
+    const records = new WorkspaceRecords(openStateDb(':memory:'));
+    const base = {
+      id: 'ws',
+      profileId: 'work',
+      projectId: 'api',
+      name: 'X',
+      task: { id: null, title: 'X', url: null },
+      branch: 'x',
+      baseBranch: 'main',
+      worktreePath: '/w/api',
+      state: 'starting' as const,
+      unread: false,
+      stateMessage: null,
+      stateSince: null,
+      claudeSessionId: null,
+      ports: null,
+      pr: null,
+      createdAt: '2026-10-29T10:00:00Z',
+      lastActivityAt: null,
+    };
+    // On unless told otherwise, as for workspaces made before the setting.
+    records.insert(base);
+    expect(records.get('ws')?.claudeMayLink).toBe(true);
+    records.setClaudeMayLink('ws', false);
+    expect(records.get('ws')?.claudeMayLink).toBe(false);
+    records.insert({ ...base, id: 'off', claudeMayLink: false });
+    expect(records.get('off')?.claudeMayLink).toBe(false);
+    records.addRepo('ws', { projectId: 'web', worktreePath: '/w/web', baseBranch: 'main' });
+    records.addRepo('ws', {
+      projectId: 'lib',
+      worktreePath: '/w/lib',
+      baseBranch: 'main',
+      addedBy: 'claude',
+    });
+    records.addRepo('ws', {
+      projectId: 'ui',
+      worktreePath: '/w/ui',
+      baseBranch: 'main',
+      addedBy: 'terminal',
+    });
+    expect(records.get('ws')?.repos.map((r) => [r.projectId, r.addedBy ?? null])).toEqual([
+      ['api', null],
+      ['web', null],
+      ['lib', 'claude'],
+      ['ui', 'terminal'],
+    ]);
   });
 });
 
@@ -519,12 +569,14 @@ exec sleep 30
       });
       expect(fx.git(worktree, 'rev-parse', '--abbrev-ref', 'HEAD').trim()).toBe('cli-name');
       expect(records.get(workspace.id)?.repos.map((r) => r.projectId)).toEqual(['api', 'web']);
+      expect(records.get(workspace.id)?.repos[1]?.addedBy).toBe('claude');
       expect(events).toEqual([
         {
           workspaceId: workspace.id,
           profileId: 'work',
           workspaceName: 'cli-name',
           repoName: 'web',
+          worktreePath: worktree,
           byClaude: true,
         },
       ]);
@@ -553,11 +605,13 @@ exec sleep 30
     it('adds a repository given by path to the profile first; refuses other profiles', async () => {
       const { workspace } = await create('cli-path', []);
       const fresh = fx.localRepo('fresh');
-      const result = await cli.link(request(workspace.id, './fresh', fx.root));
+      const fromTerminal = { ...request(workspace.id, './fresh', fx.root), byClaude: false };
+      const result = await cli.link(fromTerminal);
       expect(result).toMatchObject({ ok: true, name: 'fresh', added: true });
       const added = config.require().projects.find((p) => p.name === 'fresh');
       expect(added).toMatchObject({ profileId: 'work', repoPath: fresh });
       expect(records.get(workspace.id)?.repos.map((r) => r.projectId)).toEqual(['api', added?.id]);
+      expect(records.get(workspace.id)?.repos[1]?.addedBy).toBe('terminal');
       // Rule R1: a repository of another profile isn't added, nor linked.
       const elsewhere = projects.find((p) => p.id === 'elsewhere')?.repoPath as string;
       expect(await cli.link(request(workspace.id, elsewhere))).toEqual({
@@ -568,6 +622,47 @@ exec sleep 30
         ok: false,
         error: expect.stringContaining('There is no project "nothing"'),
       });
+    });
+
+    it("refuses Claude a path that isn't a project yet, not one that is (spec §21.9)", async () => {
+      const { workspace } = await create('cli-claude-path', []);
+      fx.localRepo('stranger');
+      expect(await cli.link(request(workspace.id, './stranger', fx.root))).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("./stranger isn't a project of this profile"),
+      });
+      expect(config.require().projects.some((p) => p.name === 'stranger')).toBe(false);
+      const web = projects.find((p) => p.id === 'web')?.repoPath as string;
+      expect(await cli.link(request(workspace.id, web))).toMatchObject({
+        ok: true,
+        name: 'web',
+        added: false,
+      });
+    });
+
+    it('refuses Claude when the workspace says it may not link; a terminal still can', async () => {
+      const { workspace } = await workspaces.create({
+        projectId: 'api',
+        taskId: null,
+        title: 'cli-off',
+        branch: 'cli-off',
+        baseBranch: 'main',
+        claudeMayLink: false,
+      });
+      expect(records.get(workspace.id)?.claudeMayLink).toBe(false);
+      expect(await cli.link(request(workspace.id, 'web'))).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('Claude may not add repositories to this workspace'),
+      });
+      expect(records.get(workspace.id)?.repos).toHaveLength(1);
+      expect(events).toEqual([]);
+      expect(await cli.link({ ...request(workspace.id, 'web'), byClaude: false })).toMatchObject({
+        ok: true,
+        name: 'web',
+      });
+      // Turned on later, from the workspace's menu.
+      records.setClaudeMayLink(workspace.id, true);
+      expect(await cli.link(request(workspace.id, 'lib'))).toMatchObject({ ok: true });
     });
 
     it('refuses outside a workspace, or for another profile', async () => {
@@ -593,9 +688,16 @@ exec sleep 30
       const outside = cli.projectList({ workspaceId: null, profileId: 'work' });
       expect(outside.ok && outside.projects.map((p) => p.inWorkspace)).toEqual([null, null, null]);
       const note = cli.sessionNote(workspace.id) as string;
-      expect(note).toContain(`- lib: ${projects.find((p) => p.id === 'lib')?.repoPath}`);
+      expect(note).toContain(
+        `- lib: ${projects.find((p) => p.id === 'lib')?.repoPath} (base main)`,
+      );
       expect(note).not.toContain('- web:');
+      expect(note).not.toContain('- elsewhere:');
       expect(note).toContain(`${BRAND.cliCommand} link <name>`);
+      expect(note).toContain(
+        "This folder's repository stays your main one and your working folder",
+      );
+      expect(note).toContain('Only those projects can be linked, nothing outside them');
       expect(cli.sessionNote(null)).toBeNull();
       // Spec §13.5: the worktree and branch always; nothing to link once all are in.
       expect(note).toContain(`this folder, ${workspace.worktreePath}, is the git worktree`);
@@ -603,6 +705,24 @@ exec sleep 30
       const all = cli.sessionNote(workspace.id) as string;
       expect(all).toContain(`on branch ${workspace.branch}. Work here`);
       expect(all).not.toContain('link <name>');
+    });
+
+    it("gives each project's own base, and nothing to link when Claude may not", async () => {
+      const lib = projects.find((p) => p.id === 'lib') as Record<string, unknown>;
+      lib.baseBranch = 'develop';
+      writeConfig();
+      config.reload();
+      const { workspace } = await create('cli-note', []);
+      const note = cli.sessionNote(workspace.id) as string;
+      expect(note).toContain(`- lib: ${lib.repoPath} (base develop)`);
+      expect(note).toContain(
+        `- web: ${projects.find((p) => p.id === 'web')?.repoPath} (base main)`,
+      );
+      records.setClaudeMayLink(workspace.id, false);
+      const off = cli.sessionNote(workspace.id) as string;
+      expect(off).toContain(`this folder, ${workspace.worktreePath}, is the git worktree`);
+      expect(off).not.toContain('- lib:');
+      expect(off).not.toContain('link <name>');
     });
 
     it("tells Claude the workspace's ports, when it has them (spec §8.4)", async () => {

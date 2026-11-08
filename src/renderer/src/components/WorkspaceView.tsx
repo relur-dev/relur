@@ -146,6 +146,13 @@ const repoInput = (workspaceId: string, repo: WorkspaceRepo) =>
  * ports, then its terminals: Claude, Setup, then Shell tabs. A failed setup
  * offers Retry, Start Claude anyway and Delete (§7.3).
  */
+/** A repository just linked with the command line tool (spec §21.9), for the header's line. */
+export interface LinkNotice {
+  byClaude: boolean;
+  repoName: string;
+  worktreePath: string;
+}
+
 export function WorkspaceView({
   profile,
   projects,
@@ -153,6 +160,8 @@ export function WorkspaceView({
   sessions,
   activeId,
   notice,
+  linkNotice,
+  onDismissLinkNotice,
   onSelect: selectSession,
   onDelete,
   changesOpen,
@@ -168,6 +177,9 @@ export function WorkspaceView({
   activeId: string | null;
   /** Why Claude didn't start, from creating the workspace. */
   notice: string | null;
+  /** A repository linked from the command line while this workspace was shown (spec §21.9). */
+  linkNotice: LinkNotice | null;
+  onDismissLinkNotice: () => void;
   onSelect: (session: SessionInfo) => void;
   onDelete: () => void;
   /** The Changes panel (spec §6.4), toggled with ⌘⇧D. */
@@ -416,11 +428,17 @@ export function WorkspaceView({
           id: `unlink:${r.projectId}`,
           label: `Unlink ${projectName(r.projectId)}…`,
         })),
+        { id: 'mayLink', label: 'Let Claude Add Repositories', checked: workspace.claudeMayLink },
         { id: 'delete', label: 'Delete workspace…' },
       ],
     });
     if (choice === 'delete') onDelete();
-    else if (choice === 'link') setLinking(true);
+    else if (choice === 'mayLink') {
+      void trpcClient.workspaces.setClaudeMayLink.mutate({
+        workspaceId: workspace.id,
+        on: !workspace.claudeMayLink,
+      });
+    } else if (choice === 'link') setLinking(true);
     else if (choice?.startsWith('unlink:')) {
       const project = projects.find((p) => p.id === choice.slice('unlink:'.length));
       if (project) setUnlinking(project);
@@ -499,6 +517,30 @@ export function WorkspaceView({
               },
             }}
           />
+        ) : null}
+        {linkNotice ? (
+          <div
+            role="status"
+            data-link-notice
+            className="mt-2 flex items-center gap-2 rounded-md border border-line bg-raised px-2.5 py-1 text-sm"
+          >
+            <span className="text-fg-subtle">↗</span>
+            <span className="min-w-0 flex-1 truncate select-text">
+              {linkNotice.byClaude
+                ? `Claude added ${linkNotice.repoName}`
+                : `${linkNotice.repoName} was linked from a terminal`}
+              <span className="font-mono text-fg-muted"> · {linkNotice.worktreePath}</span>
+            </span>
+            <button
+              type="button"
+              className={iconButton}
+              title="Dismiss"
+              aria-label="Dismiss"
+              onClick={onDismissLinkNotice}
+            >
+              ×
+            </button>
+          </div>
         ) : null}
         <div className="mt-1.5 font-mono text-sm text-fg-muted select-text">
           {linked ? null : (

@@ -7,10 +7,13 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 ### Added
 
 - **A + on each band of the grouped Board.** With the Board grouped by project, each band's header has the same **+**, for a new workspace in that project.
+- **Let Claude add others when needed**, under **Also in** in New workspace and on unless you untick it (remembered for each project). Claude is told at start which other projects of the profile it could link, with their folders and base branches, and links one with `relur link` only when the task needs changes there; the workspace's own repository stays its main one. Change it for a workspace with **Let Claude Add Repositories** in its **⋯** menu. With it off, Claude isn't told and its `relur link` is refused.
+- A repository Claude linked says **Added by Claude** in its chip's tooltip, and a line in the workspace's header says **Claude added <repo>** while you're looking at the workspace; elsewhere the window's notice says so, as before.
 
 ### Changed
 
 - **New workspace is always one click away.** The **+** on each project's row in the sidebar no longer waits for the pointer: it's always shown, at the row's right end, so every project's **+** lines up. Hover it for "New workspace in <project>" and its shortcut.
+- Claude can link only the profile's projects: `relur link <path>` run by Claude no longer adds a repository that isn't a project yet. From a terminal it still does.
 
 ### Fixed
 

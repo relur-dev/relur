@@ -85,6 +85,9 @@ const MIGRATIONS: string[] = [
   // Where a repository's branch is merged, as last checked (spec §14.2).
   `ALTER TABLE workspaces ADD COLUMN merged_into TEXT;
    ALTER TABLE workspace_repos ADD COLUMN merged_into TEXT;`,
+  // Whether Claude may link repositories itself, and who linked each one (spec §21.9).
+  `ALTER TABLE workspaces ADD COLUMN claude_may_link INTEGER NOT NULL DEFAULT 1;
+   ALTER TABLE workspace_repos ADD COLUMN added_by TEXT;`,
 ];
 
 export type StateDb = Database.Database;

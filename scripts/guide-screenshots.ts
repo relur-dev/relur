@@ -459,7 +459,7 @@ async function main() {
       // Exactly these: the dialog remembers a project's last choice.
       await page.eval(`(() => {
         const wanted = ${JSON.stringify(alsoIn)};
-        for (const label of document.querySelectorAll('[data-also-in] label')) {
+        for (const label of document.querySelectorAll('[data-also-in] label:not([data-claude-may-link])')) {
           const input = label.querySelector('input');
           const want = wanted.some((other) => label.textContent.includes(other));
           if (input && input.checked !== want) input.click();

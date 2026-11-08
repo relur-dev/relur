@@ -33,7 +33,7 @@ import { StatusBar } from './components/StatusBar';
 import { SuspendDefaultNotice } from './components/SuspendDefaultNotice';
 import { ContinueNotice, UnfinishedDialog } from './components/UnfinishedDialog';
 import { UpdateNotice } from './components/UpdateNotice';
-import { FOCUS_CLAUDE_EVENT, WorkspaceView } from './components/WorkspaceView';
+import { FOCUS_CLAUDE_EVENT, type LinkNotice, WorkspaceView } from './components/WorkspaceView';
 import { type GuideTarget, GuideView, target } from './guide/GuideView';
 import { GuideContext } from './guide/link';
 import { LAST_SHOWN_KEY, type LastShown, parseLastShown, resolveLastShown } from './last-shown';
@@ -276,16 +276,24 @@ export function App() {
         }),
     }),
   );
-  // A repository linked with `<slug> link` (spec §21.9).
+  // A repository linked with `<slug> link` (spec §21.9): a line in that
+  // workspace's header while it's shown, the window's notice otherwise.
+  const [linkNotices, setLinkNotices] = useState<Record<string, LinkNotice>>({});
+  const shownWorkspace = useRef<string | null>(null);
   useSubscription(
     trpc.workspaces.linkedFromCli.subscriptionOptions(undefined, {
-      onData: ({ byClaude, repoName, workspaceName }) =>
+      onData: ({ byClaude, repoName, workspaceName, workspaceId, worktreePath }) => {
+        if (shownWorkspace.current === workspaceId) {
+          setLinkNotices((n) => ({ ...n, [workspaceId]: { byClaude, repoName, worktreePath } }));
+          return;
+        }
         setAppNotice({
           text: byClaude
             ? `Claude linked ${repoName} to ${workspaceName}`
             : `${repoName} was linked to ${workspaceName} from a terminal`,
           info: true,
-        }),
+        });
+      },
     }),
   );
 
@@ -329,6 +337,7 @@ export function App() {
         : chosen.kind === 'workspace' && !workspace
           ? { kind: 'project', projectId: project.id }
           : chosen;
+  shownWorkspace.current = view.kind === 'workspace' ? (workspace?.id ?? null) : null;
 
   const homeTab: HomeTab = (profileId && homeTabs[profileId]) || 'overview';
 
@@ -992,6 +1001,10 @@ export function App() {
                       sessions={viewSessions}
                       activeId={selectedTab[tabKey] ?? null}
                       notice={claudeNotices[workspace.id] ?? workspaceShell.error?.message ?? null}
+                      linkNotice={linkNotices[workspace.id] ?? null}
+                      onDismissLinkNotice={() =>
+                        setLinkNotices(({ [workspace.id]: _gone, ...rest }) => rest)
+                      }
                       onSelect={showSession}
                       onDelete={() => setDeleting(workspace)}
                       changesOpen={changesOpen.has(workspace.id)}

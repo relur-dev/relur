@@ -22,12 +22,16 @@ export interface CliLinkEvent {
   profileId: string;
   workspaceName: string;
   repoName: string;
+  /** Its new worktree. */
+  worktreePath: string;
   /** Run by Claude (its Bash tool), not typed in a shell. */
   byClaude: boolean;
 }
 
 const OUTSIDE =
   'This only works inside a workspace: in its Claude, or in one of its shells or Setup tabs';
+const NOT_ALLOWED =
+  'Claude may not add repositories to this workspace (Let Claude add others when needed is off). Ask the user to link it: Link another repository… in the workspace’s ⋯ menu';
 
 /**
  * `<slug> link` and `<slug> projects` (spec §21.9): Claude, or a workspace's
@@ -76,14 +80,18 @@ export class CliLinkService {
     if (request.profileId && request.profileId !== workspace.profileId) {
       return { ok: false, error: OUTSIDE };
     }
+    // Spec §21.9: only with Let Claude add others, and only the profile's projects.
+    if (request.byClaude && !workspace.claudeMayLink) return { ok: false, error: NOT_ALLOWED };
     try {
       const { project, added } = await this.resolve(
         request.project,
         request.cwd,
         workspace.profileId,
+        !request.byClaude,
       );
       const { workspace: linked, setup } = await this.workspaces.link(workspace.id, project.id, {
         restart: false,
+        addedBy: request.byClaude ? 'claude' : 'terminal',
       });
       const repo = workspaceRepo(linked, project.id);
       if (!repo) throw new Error(`${project.name} wasn't linked`);
@@ -96,6 +104,7 @@ export class CliLinkService {
         profileId: workspace.profileId,
         workspaceName: workspace.name,
         repoName: project.name,
+        worktreePath: repo.worktreePath,
         byClaude: request.byClaude,
       } satisfies CliLinkEvent);
       return {
@@ -116,8 +125,9 @@ export class CliLinkService {
 
   /**
    * What Claude is told at session start in a workspace: that its folder is
-   * the task's worktree, on its branch (spec §13.5), its ports (§8.4), and the profile's other
-   * projects with how to link them (§21.9). Null outside a workspace.
+   * the task's worktree, on its branch (spec §13.5), its ports (§8.4), and, with Let Claude
+   * add others, the profile's other projects with how to link them (§21.9). Null outside a
+   * workspace.
    */
   sessionNote(workspaceId: string | null): string | null {
     const workspace = workspaceId ? this.records.get(workspaceId) : null;
@@ -129,16 +139,22 @@ export class CliLinkService {
     const here = ports
       ? `${worktree}\nUse ports ${ports.base}–${ports.base + ports.count - 1} for anything you start (dev servers, tests); $${envVar('PORT')} is the first.`
       : worktree;
+    if (!workspace.claudeMayLink) return here;
     const others = this.profileProjects(workspace.profileId).filter(
       (p) => !workspaceRepo(workspace, p.id),
     );
     if (others.length === 0) return here;
     const cli = BRAND.cliCommand;
+    const defaultBase = this.config.get().config?.profiles.find((p) => p.id === workspace.profileId)
+      ?.defaults.baseBranch;
     return [
       here,
-      `Its branch ${workspace.branch} can also be checked out in other repositories of this profile:`,
-      ...others.map((p) => `- ${p.name}: ${expandHome(p.repoPath)}`),
-      `If the task needs changes in one of them, run \`${cli} link <name>\` (or \`${cli} link <path>\` for another repository) and work in the worktree path it prints. It answers once the worktree and its setup are ready, which can take minutes: run it with a long timeout. Don't create worktrees yourself, and don't edit those repositories' main checkouts. \`${cli} projects\` lists them.`,
+      `Its branch ${workspace.branch} can also be checked out in the other projects of this profile:`,
+      ...others.map((p) => {
+        const base = p.baseBranch ?? defaultBase;
+        return `- ${p.name}: ${expandHome(p.repoPath)}${base ? ` (base ${base})` : ''}`;
+      }),
+      `This folder's repository stays your main one and your working folder. Only when the task requires changes in one of those projects, run \`${cli} link <name>\`: it gives that project its own worktree on this branch, from its base. Then make its changes in the worktree path it prints. It answers once the worktree and its setup are ready, which can take minutes: run it with a long timeout. Only those projects can be linked, nothing outside them. Don't create worktrees yourself, and don't edit those repositories' main checkouts. \`${cli} projects\` lists them.`,
     ].join('\n');
   }
 
@@ -148,12 +164,14 @@ export class CliLinkService {
 
   /**
    * A project of the profile by id or name; otherwise a path to a repository,
-   * added to the profile first when it isn't a project yet (rule R1 applies).
+   * added to the profile first when it isn't a project yet (rule R1 applies)
+   * and `mayAdd` (from a terminal, not Claude: spec §21.9).
    */
   private async resolve(
     given: string,
     cwd: string | null,
     profileId: string,
+    mayAdd: boolean,
   ): Promise<{ project: Project; added: boolean }> {
     const own = this.profileProjects(profileId);
     const byId = own.find((p) => p.id === given);
@@ -177,6 +195,11 @@ export class CliLinkService {
       }
       const existing = own.find((p) => p.id === candidate.conflict?.projectId);
       if (existing) return { project: existing, added: false };
+    }
+    if (!mayAdd) {
+      throw new Error(
+        `${given} isn't a project of this profile, and Claude can only link the profile's projects (\`${BRAND.cliCommand} projects\` lists them). Ask the user to add it first`,
+      );
     }
     const project = await this.projects.add({
       profileId,
