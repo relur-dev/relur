@@ -1,4 +1,4 @@
-import type { ProfileColor } from '@shared/profile-colors';
+import { PROFILE_COLORS, type ProfileColor, profileColorLabel } from '@shared/profile-colors';
 import {
   type AccountChoice,
   type AccountFolder,
@@ -9,7 +9,14 @@ import {
 import type { Profile } from '@shared/schemas';
 import { DEFAULT_ACCOUNT_FOLDER, setupPassed } from '@shared/setup';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
 import { PROFILE_DOT, ProfileDot } from '../ui/profile-color';
@@ -32,7 +39,15 @@ const STATE_TEXT: Record<AccountFolder['state'], string> = {
   unknown: 'Not checked',
 };
 
-/** The six swatches, colors other profiles use last behind a divider (components.md). */
+/** Swatches per row of the color grid. */
+const COLOR_COLUMNS = 6;
+
+/**
+ * The twelve swatches as a grid of two rows, in palette order (spec §3.1,
+ * components.md). A radio group: Tab reaches the chosen color, the arrow keys
+ * move and choose, Home and End go to the first and last. Colors other
+ * profiles use are dimmed and say by whom, and can still be chosen.
+ */
 export function ColorPicker({
   value,
   onChange,
@@ -42,31 +57,72 @@ export function ColorPicker({
   onChange: (color: ProfileColor) => void;
   others: Profile[];
 }) {
-  const { free, used } = colorChoices(others.map((p) => p.color));
-  const swatch = (color: ProfileColor, taken: boolean) => {
-    const users = others.filter((p) => p.color === color).map((p) => p.name);
-    return (
-      <button
-        key={color}
-        type="button"
-        aria-pressed={value === color}
-        aria-label={color}
-        title={taken ? `${color} · used by ${users.join(', ')}` : color}
-        onClick={() => onChange(color)}
-        className={`flex size-7 items-center justify-center rounded-full ${value === color ? 'ring-2 ring-fg ring-offset-2 ring-offset-raised' : ''} ${taken ? 'opacity-75' : ''}`}
-      >
-        <span className={`size-5 rounded-full ${PROFILE_DOT[color]}`} />
-      </button>
-    );
+  const buttons = useRef(new Map<ProfileColor, HTMLButtonElement>());
+  const choose = (color: ProfileColor) => {
+    onChange(color);
+    buttons.current.get(color)?.focus();
+  };
+  const onKeyDown = (event: ReactKeyboardEvent) => {
+    const at = PROFILE_COLORS.indexOf(value);
+    const last = PROFILE_COLORS.length - 1;
+    const to =
+      event.key === 'ArrowRight'
+        ? Math.min(last, at + 1)
+        : event.key === 'ArrowLeft'
+          ? Math.max(0, at - 1)
+          : event.key === 'ArrowDown'
+            ? at + COLOR_COLUMNS <= last
+              ? at + COLOR_COLUMNS
+              : at
+            : event.key === 'ArrowUp'
+              ? at - COLOR_COLUMNS >= 0
+                ? at - COLOR_COLUMNS
+                : at
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? last
+                  : null;
+    if (to === null) return;
+    event.preventDefault();
+    choose(PROFILE_COLORS[to] as ProfileColor);
   };
   return (
-    <fieldset aria-label="Color" className="flex items-center gap-1.5">
-      {free.map((c) => swatch(c, false))}
-      {used.length > 0 && free.length > 0 ? (
-        <span aria-hidden className="mx-1 h-5 w-px bg-line-strong" />
-      ) : null}
-      {used.map((c) => swatch(c, true))}
-    </fieldset>
+    <div
+      role="radiogroup"
+      aria-label="Color"
+      data-color-grid
+      onKeyDown={onKeyDown}
+      className="grid w-fit grid-cols-6 gap-1 p-1"
+    >
+      {PROFILE_COLORS.map((color) => {
+        const users = others.filter((p) => p.color === color).map((p) => p.name);
+        const label = profileColorLabel(color);
+        const chosen = value === color;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: a grid of swatches, where Up and Down move by row
+          <button
+            key={color}
+            ref={(el) => {
+              if (el) buttons.current.set(color, el);
+              else buttons.current.delete(color);
+            }}
+            type="button"
+            role="radio"
+            aria-checked={chosen}
+            aria-label={label}
+            title={users.length > 0 ? `${label} · used by ${users.join(', ')}` : label}
+            data-color={color}
+            data-used={users.length > 0 || undefined}
+            tabIndex={chosen ? 0 : -1}
+            onClick={() => choose(color)}
+            className={`flex size-7 items-center justify-center rounded-full ${chosen ? 'ring-2 ring-fg ring-offset-2 ring-offset-raised' : ''} ${users.length > 0 ? 'opacity-75' : ''}`}
+          >
+            <span className={`size-5 rounded-full ${PROFILE_DOT[color]}`} />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

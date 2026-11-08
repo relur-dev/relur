@@ -153,6 +153,12 @@ describe('ProfileService', () => {
 
     profiles.update('work', { name: 'Job', color: 'olive' });
     expect(read().profiles[0]).toMatchObject({ name: 'Job', color: 'olive', extra: 1 });
+    profiles.update('work', { name: 'Job', color: 'plum' });
+    expect(read().profiles[0]).toMatchObject({ color: 'plum' });
+    expect(() => profiles.update('work', { name: 'Job', color: 'mauve' })).toThrow(
+      /Unknown color "mauve"/,
+    );
+    expect(read().profiles[0]).toMatchObject({ color: 'plum' });
     expect(profiles.removalRefusal('work')).toBe('Job still has 1 project');
     expect(() => profiles.remove('work')).toThrow(/still has 1 project/);
 

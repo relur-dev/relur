@@ -111,6 +111,18 @@ describe('ConfigStore', () => {
     expect(read().note).toBe('mine');
   });
 
+  it('keeps the first palette and the new colors as stored', () => {
+    const store = new ConfigStore(file);
+    store.load();
+    const colors = ['blue', 'olive', 'graphite', 'indigo', 'plum', 'charcoal'];
+    write({
+      version: 1,
+      profiles: colors.map((color, i) => ({ id: `p${i}`, name: `P${i}`, color })),
+    });
+    expect(store.reload().config?.profiles.map((p) => p.color)).toEqual(colors);
+    expect(read().profiles.map((p: { color: string }) => p.color)).toEqual(colors);
+  });
+
   it('falls back to graphite for unknown or missing color names', () => {
     const store = new ConfigStore(file);
     store.load();
@@ -119,9 +131,14 @@ describe('ConfigStore', () => {
       profiles: [
         { id: 'a', name: 'A', color: 'pink' },
         { id: 'b', name: 'B' },
+        { id: 'c', name: 'C', color: 'Plum' },
       ],
     });
-    expect(store.reload().config?.profiles.map((p) => p.color)).toEqual(['graphite', 'graphite']);
+    expect(store.reload().config?.profiles.map((p) => p.color)).toEqual([
+      'graphite',
+      'graphite',
+      'graphite',
+    ]);
   });
 
   it('applies defaults to a minimal profile', () => {

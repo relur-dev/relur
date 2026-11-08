@@ -20,11 +20,17 @@ describe('profileIdFor', () => {
 });
 
 describe('colorChoices', () => {
-  it('puts colors used by other profiles last, keeping palette order', () => {
-    expect(colorChoices(['green', 'blue'])).toEqual({
-      free: ['sky', 'teal', 'olive', 'graphite'],
-      used: ['blue', 'green'],
+  it('splits free and used colors, keeping palette order', () => {
+    expect(colorChoices(['green', 'plum', 'blue'])).toEqual({
+      free: ['sky', 'teal', 'olive', 'graphite', 'indigo', 'slate', 'petrol', 'pine', 'charcoal'],
+      used: ['blue', 'green', 'plum'],
     });
     expect(colorChoices([]).used).toEqual([]);
+  });
+
+  it('offers a new color once the first six are taken', () => {
+    expect(colorChoices(['blue', 'sky', 'teal', 'green', 'olive', 'graphite']).free[0]).toBe(
+      'indigo',
+    );
   });
 });

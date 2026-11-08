@@ -23,8 +23,8 @@ export const profileIdFor = (name: string, taken: readonly string[]) =>
 export const newAccountFolder = (profileId: string) => `~/.claude-${profileId}`;
 
 /**
- * The palette for a new or edited profile: colors no other profile uses
- * first, then the used ones (still selectable), each in palette order.
+ * The palette split into colors no other profile uses and the used ones, each
+ * in palette order. A new profile starts with the first free one (spec §6.11).
  */
 export function colorChoices(usedByOthers: readonly string[]): {
   free: ProfileColor[];

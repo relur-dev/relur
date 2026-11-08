@@ -1,8 +1,23 @@
 /**
  * The fixed profile palette (spec §3.1). The config stores a color name; the
- * theme maps it to light and dark values (`--color-profile-<name>`).
+ * theme maps it to light and dark values (`--color-profile-<name>`). The
+ * picker shows it as two rows of six, each of the second row under its
+ * nearest in the first.
  */
-export const PROFILE_COLORS = ['blue', 'sky', 'teal', 'green', 'olive', 'graphite'] as const;
+export const PROFILE_COLORS = [
+  'blue',
+  'sky',
+  'teal',
+  'green',
+  'olive',
+  'graphite',
+  'indigo',
+  'slate',
+  'petrol',
+  'pine',
+  'plum',
+  'charcoal',
+] as const;
 
 export type ProfileColor = (typeof PROFILE_COLORS)[number];
 
@@ -12,7 +27,14 @@ export function isProfileColor(value: unknown): value is ProfileColor {
   return (PROFILE_COLORS as readonly unknown[]).includes(value);
 }
 
-/** Hues (OKLCH degrees) of the colored palette entries in theme.css. */
+/** The name a color is shown with: tooltip and accessible label. */
+export const profileColorLabel = (color: ProfileColor): string =>
+  color.charAt(0).toUpperCase() + color.slice(1);
+
+/**
+ * Hues (OKLCH degrees) of the first palette's colored entries. Only these:
+ * a `#rrggbb` value predates the palette, so it keeps mapping as it always has.
+ */
 const PALETTE_HUES: [ProfileColor, number][] = [
   ['blue', 258],
   ['sky', 228],

@@ -28,6 +28,7 @@ import {
   dialogText,
   launchApp,
   openContextMenu,
+  pressKey,
   type RunningApp,
   screenshot,
   submitDialog,
@@ -38,6 +39,18 @@ import {
 const args = process.argv.slice(2);
 const screenshotDir = args.find((a) => a.startsWith('--screenshots='))?.split('=')[1];
 const devMode = args.includes('--dev');
+
+/** The color grid of the open dialog (New profile, Edit profile). */
+const swatches = `[...document.querySelectorAll('dialog[open] [data-color-grid] [role=radio]')]`;
+const checkedColor = `document.querySelector('dialog[open] [data-color-grid] [aria-checked=true]')?.dataset.color`;
+/** A color as the window computes it, the way `css` (a background) draws. */
+const computedBackground = (css: string) => `(() => {
+  const probe = document.body.appendChild(document.createElement('div'));
+  probe.style.background = ${JSON.stringify(css)};
+  const color = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return color;
+})()`;
 const electronArgs = args.filter((a) => !a.startsWith('--screenshots=') && a !== '--dev');
 
 /** The version the fake prints; the real Claude Code never reports it. */
@@ -146,6 +159,34 @@ async function main() {
     assert.deepEqual(profiles(), []);
     assert.match(await page.eval<string>(mainText), new RegExp(`Welcome to ${BRAND.displayName}`));
     await typeInField(page, '#profile-name', 'Work', false);
+    // Twelve colors in two rows of six, each named in its tooltip and label (spec §3.1).
+    assert.deepEqual(
+      await page.eval<string[][]>(
+        `${swatches}.map((b) => [b.getAttribute('aria-label'), b.title])`,
+      ),
+      [
+        'Blue',
+        'Sky',
+        'Teal',
+        'Green',
+        'Olive',
+        'Graphite',
+        'Indigo',
+        'Slate',
+        'Petrol',
+        'Pine',
+        'Plum',
+        'Charcoal',
+      ].map((name) => [name, name]),
+    );
+    assert.deepEqual(
+      await page.eval<number[]>(
+        `(() => { const b = ${swatches}; return [b[0].offsetTop < b[6].offsetTop, b[0].offsetLeft === b[6].offsetLeft, b[5].offsetTop === b[0].offsetTop].map(Number); })()`,
+      ),
+      [1, 1, 1],
+      'two rows of six',
+    );
+    assert.equal(await page.eval<string>(checkedColor), 'blue', 'the first color');
     await screenshot(page, screenshotDir, 'o1-name.png');
     await submitDialog(page);
     await page.waitFor(`${dialogText}.includes('Use my default Claude login')`, 'the account step');
@@ -183,7 +224,7 @@ async function main() {
     fs.writeFileSync(path.join(bin, 'claude'), FAKE_CLAUDE, { mode: 0o755 });
     app = await launchApp({ env, dev: devMode, electronArgs });
     page = app.page;
-    const mainProcess = app.main;
+    let mainProcess = app.main;
     await page.waitFor(`!document.querySelector('[data-setup-warning]')`, 'Work to pass its check');
     // Chromium's sandbox is on: no warning bar (spec §15.6).
     assert.equal(
@@ -203,6 +244,14 @@ async function main() {
     await page.waitFor(dialogOpen, 'the wizard');
     assert.match(await page.eval<string>(dialogText), /New profile/);
     await typeInField(page, '#profile-name', 'Personal', false);
+    // The first color no other profile uses; Work's stays in its place, dimmed.
+    assert.equal(await page.eval<string>(checkedColor), 'sky');
+    assert.deepEqual(
+      await page.eval(
+        `(({ title, dataset }) => [title, dataset.used])(document.querySelector('dialog[open] [data-color=blue]'))`,
+      ),
+      ['Blue · used by Work', 'true'],
+    );
     await submitDialog(page);
     await page.waitFor(`${dialogText}.includes('Use an existing login')`, 'the account step');
     await clickRadioLabel(page, 'Use an existing login');
@@ -378,7 +427,7 @@ async function main() {
     );
     await typeInField(page, '#edit-profile-name', 'Side', false);
     await typeInField(page, '#edit-profile-pr-create', ' gh pr create --fill ', false);
-    await clickLabel(page, 'olive');
+    await clickLabel(page, 'Olive');
     await screenshot(page, screenshotDir, 'o6-edit.png');
     await submitDialog(page);
     await page.waitFor(`!${dialogOpen}`, 'the dialog to close');
@@ -421,6 +470,66 @@ async function main() {
       ['work', 'personal'],
     );
     assert.ok(fs.existsSync(path.join(home, '.claude-third', 'fake-login')), 'the login stays');
+
+    // 7b. A color of the second row, chosen with the keyboard, is the tab's
+    // color after a restart (spec §3.1).
+    await chooseFromNextContextMenu(mainProcess, 'Edit profile…');
+    await openContextMenu(page, '[aria-label="Select Personal"]');
+    await page.waitFor(`${dialogText}.includes('Edit profile')`, 'Edit profile');
+    assert.equal(await page.eval<string>(checkedColor), 'sky');
+    assert.deepEqual(
+      await page.eval<number[]>(`${swatches}.map((b) => b.tabIndex)`),
+      [-1, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
+      'Tab reaches only the chosen color',
+    );
+    await page.eval(`document.querySelector('dialog[open] [aria-checked=true]').focus()`);
+    const pressAndCheck = async (code: string, color: string) => {
+      await pressKey(page, code);
+      await page.waitFor(
+        `${checkedColor} === '${color}' && document.activeElement.dataset.color === '${color}'`,
+        `${code} to choose ${color}`,
+      );
+    };
+    await pressAndCheck('End', 'charcoal');
+    await pressAndCheck('Home', 'blue');
+    await pressAndCheck('ArrowLeft', 'blue');
+    await pressAndCheck('ArrowRight', 'sky');
+    await pressAndCheck('ArrowDown', 'slate');
+    await pressAndCheck('ArrowDown', 'slate');
+    for (const color of ['petrol', 'pine', 'plum']) await pressAndCheck('ArrowRight', color);
+    await pressAndCheck('ArrowUp', 'olive');
+    await pressAndCheck('ArrowDown', 'plum');
+    assert.ok(
+      await page.eval<boolean>(`!!document.querySelector('dialog[open] .bg-profile-plum.size-2')`),
+      "the dialog's dot follows",
+    );
+    await screenshot(page, screenshotDir, 'o6b-plum.png');
+    await submitDialog(page);
+    await page.waitFor(`!${dialogOpen}`, 'the dialog to close');
+    assert.equal(profiles()[1].color, 'plum');
+    await app.stop();
+    app = undefined;
+    app = await launchApp({ env, dev: devMode, electronArgs });
+    page = app.page;
+    mainProcess = app.main;
+    const personalTab = `document.querySelector('[aria-label="Select Personal"]')`;
+    await page.waitFor(`!!${personalTab}`, 'the Personal tab');
+    await page.eval(`${personalTab}.click()`);
+    await page.waitFor(`${personalTab}.getAttribute('aria-selected') === 'true'`, 'Personal');
+    const plum = await page.eval<string>(computedBackground('var(--color-profile-plum)'));
+    assert.notEqual(plum, 'rgba(0, 0, 0, 0)', 'the theme has plum');
+    assert.equal(
+      await page.eval<string>(
+        `getComputedStyle(${personalTab}.querySelector('.rounded-full')).backgroundColor`,
+      ),
+      plum,
+      "the tab's dot",
+    );
+    assert.ok(
+      (await page.eval<string>(`getComputedStyle(${personalTab}).boxShadow`)).includes(plum),
+      "the tab's top edge",
+    );
+    assert.equal(await page.eval<string>('document.documentElement.dataset.profileColor'), 'plum');
 
     // 8. The tab menu's Remove profile… asks directly, not through Edit profile.
     // Removing every profile returns to the first-launch screen.

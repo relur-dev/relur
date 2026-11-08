@@ -115,13 +115,21 @@
 
   --color-scrim: oklch(0.2 0.01 95 / 0.38);
 
-  /* Profile palette: config value -> token. bg-profile-blue … text-profile-graphite */
+  /* Profile palette: config value -> token. bg-profile-blue … text-profile-charcoal */
   --color-profile-blue: oklch(0.415 0.13 258);
   --color-profile-sky: oklch(0.4 0.1 228);
   --color-profile-teal: oklch(0.395 0.08 190);
   --color-profile-green: oklch(0.4 0.11 148);
   --color-profile-olive: oklch(0.405 0.09 115);
   --color-profile-graphite: oklch(0.41 0.012 80);
+  /* The second six, deeper than the first: apart from them and from the amber and
+     pink of needs-you (theme.test.ts) */
+  --color-profile-indigo: oklch(0.34 0.1 275);
+  --color-profile-slate: oklch(0.38 0.05 260);
+  --color-profile-petrol: oklch(0.33 0.06 210);
+  --color-profile-pine: oklch(0.33 0.08 154);
+  --color-profile-plum: oklch(0.29 0.13 326);
+  --color-profile-charcoal: oklch(0.29 0.01 265);
   /* Active profile in this element's subtree: bg-profile text-profile */
   --color-profile: var(--color-profile-blue);
 
@@ -223,6 +231,13 @@
   --color-profile-green: oklch(0.78 0.14 145);
   --color-profile-olive: oklch(0.81 0.12 112);
   --color-profile-graphite: oklch(0.8 0.005 265);
+  /* The second six, paler than the first */
+  --color-profile-indigo: oklch(0.84 0.07 275);
+  --color-profile-slate: oklch(0.74 0.04 260);
+  --color-profile-petrol: oklch(0.73 0.1 210);
+  --color-profile-pine: oklch(0.86 0.08 154);
+  --color-profile-plum: oklch(0.89 0.09 326);
+  --color-profile-charcoal: oklch(0.9 0.01 265);
 
   --shadow-overlay: 0 8px 28px oklch(0 0 0 / 0.4);
   --shadow-dialog: 0 24px 64px oklch(0 0 0 / 0.55);
@@ -268,6 +283,24 @@
 }
 [data-profile-color="graphite"] {
   --color-profile: var(--color-profile-graphite);
+}
+[data-profile-color="indigo"] {
+  --color-profile: var(--color-profile-indigo);
+}
+[data-profile-color="slate"] {
+  --color-profile: var(--color-profile-slate);
+}
+[data-profile-color="petrol"] {
+  --color-profile: var(--color-profile-petrol);
+}
+[data-profile-color="pine"] {
+  --color-profile: var(--color-profile-pine);
+}
+[data-profile-color="plum"] {
+  --color-profile: var(--color-profile-plum);
+}
+[data-profile-color="charcoal"] {
+  --color-profile: var(--color-profile-charcoal);
 }
 
 /* ---------- Base ---------- */
