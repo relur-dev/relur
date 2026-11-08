@@ -140,7 +140,7 @@ export function ProfileTabs({
               <ProfileDot color={profile.color} />
               <span className="truncate">{profile.name}</span>
               {count > 0 ? (
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-st-permission px-1 font-mono text-2xs font-semibold text-on-fg">
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-st-permission px-1 font-mono text-2xs font-semibold text-on-permission">
                   {count}
                 </span>
               ) : null}

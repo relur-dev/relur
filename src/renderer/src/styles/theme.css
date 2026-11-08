@@ -1,6 +1,7 @@
 /* App theme for Tailwind CSS v4, from the design (docs/components.md).
    This file is the renderer's Tailwind entry.
-   Theme: <html data-theme="light|dark">, set from nativeTheme (follows the OS).
+   Theme: <html data-theme="light|dark">, set from nativeTheme: the OS appearance, or
+   View › Appearance (spec §6, `appearance` in config.json).
    Active profile color: <html data-profile-color="blue">, from the profile config,
    which stores the color name (src/shared/profile-colors.ts).
    Fonts are bundled in ./fonts with their OFL license texts; nothing loads from the network. */
@@ -60,52 +61,67 @@
   --font-sans: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Surfaces: bg-chrome bg-canvas bg-surface bg-raised bg-selected bg-term */
-  --color-chrome: oklch(0.925 0.005 265); /* title bar, status bar */
-  --color-canvas: oklch(0.965 0.004 265); /* sidebar, project view, active profile tab */
-  --color-surface: oklch(0.975 0.003 265); /* headers, tab strips, panels */
-  --color-raised: oklch(1 0 0); /* hover, overlay, dialogs, dropdowns */
-  --color-selected: oklch(0.915 0.008 265); /* selected row / file / pressed toggle */
-  --color-term: oklch(0.993 0.002 265); /* terminal and input backgrounds */
+  /* Surfaces: bg-chrome bg-canvas bg-surface bg-raised bg-selected bg-term
+     Light is a dim, putty theme (light theme v3): frame → sidebar → content → cards. */
+  --color-chrome: oklch(0.815 0.007 95); /* title bar, status bar */
+  --color-canvas: oklch(0.835 0.007 95); /* sidebar, project view, active profile tab */
+  --color-surface: oklch(0.85 0.006 95); /* headers, tab strips, panels */
+  --color-raised: oklch(0.885 0.005 95); /* hover, overlay, dialogs, dropdowns */
+  --color-selected: oklch(0.795 0.009 95); /* selected row / file / pressed toggle */
+  --color-term: oklch(0.862 0.006 95); /* terminal and input backgrounds */
 
   /* Lines: border-line border-line-strong */
-  --color-line: oklch(0.885 0.006 265);
-  --color-line-strong: oklch(0.8 0.008 265);
+  --color-line: oklch(0.785 0.008 95);
+  --color-line-strong: oklch(0.71 0.01 95);
 
-  /* Text: text-fg text-fg-muted text-fg-subtle text-on-fg */
-  --color-fg: oklch(0.23 0.01 265);
-  --color-fg-muted: oklch(0.42 0.01 265);
-  --color-fg-subtle: oklch(0.52 0.01 265);
-  --color-on-fg: oklch(0.985 0.003 265); /* text on bg-fg (primary button) */
+  /* Text: text-fg text-fg-muted text-fg-subtle text-on-fg (each 4.5:1 on every surface) */
+  --color-fg: oklch(0.24 0.012 75);
+  --color-fg-muted: oklch(0.36 0.012 80);
+  --color-fg-subtle: oklch(0.41 0.011 85);
+  --color-on-fg: oklch(0.905 0.005 95); /* text on bg-fg (primary button) */
 
   /* Focus ring: outline-focus ring-focus (neutral, so it never reads as a profile color) */
-  --color-focus: oklch(0.36 0.03 250);
+  --color-focus: oklch(0.45 0.13 250);
 
   /* Terminal decorations: bg-band bg-band-strong */
-  --color-band: oklch(0.5 0.08 250 / 0.05);
-  --color-band-strong: oklch(0.5 0.08 250 / 0.11);
+  --color-band: oklch(0.35 0.03 95 / 0.06);
+  --color-band-strong: oklch(0.35 0.03 95 / 0.11);
 
   /* Workspace status (always paired with a shape, see components.md) */
-  --color-st-permission: oklch(0.55 0.13 65);
-  --color-st-input: oklch(0.54 0.18 350);
-  --color-st-approval: oklch(0.52 0.18 295);
-  --color-st-error: oklch(0.54 0.19 25);
+  --color-st-permission: oklch(0.415 0.12 62);
+  --color-on-permission: oklch(0.97 0.004 95); /* text on bg-st-permission (count badge) */
+  --color-st-input: oklch(0.43 0.16 350);
+  --color-st-approval: oklch(0.425 0.16 295);
+  --color-st-error: oklch(0.43 0.17 28);
+
+  /* Board's Needs you column while it has cards (spec §6.7): fill and top edge,
+     in the most urgent card's color. Light only; dark tints the column instead. */
+  --color-needs-bg: oklch(0.845 0.03 80);
+  --color-needs-line: var(--color-line);
+  --color-needs-accent: var(--color-st-permission);
+  --color-needs-input-bg: oklch(0.845 0.03 350);
+  --color-needs-input-line: var(--color-line);
+  --color-needs-input-accent: var(--color-st-input);
 
   /* Diff */
-  --color-diff-add: oklch(0.48 0.13 150);
-  --color-diff-add-bg: oklch(0.62 0.14 150 / 0.14);
-  --color-diff-del: oklch(0.52 0.18 25);
-  --color-diff-del-bg: oklch(0.62 0.18 25 / 0.11);
+  --color-diff-add: oklch(0.4 0.11 150);
+  --color-diff-add-bg: oklch(0.55 0.12 150 / 0.18);
+  --color-diff-del: oklch(0.43 0.16 25);
+  --color-diff-del-bg: oklch(0.55 0.16 25 / 0.15);
 
-  --color-scrim: oklch(0.2 0.01 265 / 0.35);
+  /* Terminal cursor and selection (ui/theme.ts) */
+  --color-term-cursor: oklch(0.3 0.03 60);
+  --color-term-sel: oklch(0.5 0.09 250 / 0.25);
+
+  --color-scrim: oklch(0.2 0.01 95 / 0.38);
 
   /* Profile palette: config value -> token. bg-profile-blue … text-profile-graphite */
-  --color-profile-blue: oklch(0.52 0.15 258);
-  --color-profile-sky: oklch(0.52 0.11 228);
-  --color-profile-teal: oklch(0.51 0.09 190);
-  --color-profile-green: oklch(0.5 0.13 148);
-  --color-profile-olive: oklch(0.5 0.1 115);
-  --color-profile-graphite: oklch(0.45 0.01 265);
+  --color-profile-blue: oklch(0.415 0.13 258);
+  --color-profile-sky: oklch(0.4 0.1 228);
+  --color-profile-teal: oklch(0.395 0.08 190);
+  --color-profile-green: oklch(0.4 0.11 148);
+  --color-profile-olive: oklch(0.405 0.09 115);
+  --color-profile-graphite: oklch(0.41 0.012 80);
   /* Active profile in this element's subtree: bg-profile text-profile */
   --color-profile: var(--color-profile-blue);
 
@@ -177,6 +193,7 @@
   --color-band-strong: oklch(1 0 0 / 0.08);
 
   --color-st-permission: oklch(0.82 0.14 75);
+  --color-on-permission: var(--color-on-fg);
   --color-st-input: oklch(0.76 0.14 350);
   --color-st-approval: oklch(0.76 0.13 295);
   --color-st-error: oklch(0.72 0.17 25);
@@ -185,6 +202,18 @@
   --color-diff-add-bg: oklch(0.72 0.14 150 / 0.13);
   --color-diff-del: oklch(0.74 0.15 25);
   --color-diff-del-bg: oklch(0.72 0.17 25 / 0.13);
+
+  /* Needs you: a tint of the urgent color and a tinted border, no top edge. */
+  --color-needs-bg: color-mix(in oklab, var(--color-st-permission) 6%, var(--color-canvas));
+  --color-needs-line: color-mix(in oklab, var(--color-st-permission) 35%, var(--color-line));
+  --color-needs-accent: transparent;
+  --color-needs-input-bg: color-mix(in oklab, var(--color-st-input) 6%, var(--color-canvas));
+  --color-needs-input-line: color-mix(in oklab, var(--color-st-input) 35%, var(--color-line));
+  --color-needs-input-accent: transparent;
+
+  /* The cursor in the text color and the selection as a selected row. */
+  --color-term-cursor: var(--color-fg);
+  --color-term-sel: var(--color-selected);
 
   --color-scrim: oklch(0.08 0 0 / 0.55);
 
@@ -197,6 +226,28 @@
 
   --shadow-overlay: 0 8px 28px oklch(0 0 0 / 0.4);
   --shadow-dialog: 0 24px 64px oklch(0 0 0 / 0.55);
+}
+
+/* ---------- Terminal ANSI palette (light only; dark keeps xterm's own) ---------- */
+/* Read by ui/theme.ts. Every color is a mid-dark ink on --color-term; white (7)
+   is a readable gray and bright white (15) the strongest ink. */
+:root:not([data-theme="dark"]) {
+  --term-ansi-0: oklch(0.26 0.012 75);
+  --term-ansi-1: oklch(0.47 0.16 28);
+  --term-ansi-2: oklch(0.45 0.11 150);
+  --term-ansi-3: oklch(0.465 0.1 80);
+  --term-ansi-4: oklch(0.45 0.13 258);
+  --term-ansi-5: oklch(0.47 0.15 330);
+  --term-ansi-6: oklch(0.45 0.085 205);
+  --term-ansi-7: oklch(0.46 0.01 85);
+  --term-ansi-8: oklch(0.44 0.01 85);
+  --term-ansi-9: oklch(0.485 0.18 30);
+  --term-ansi-10: oklch(0.45 0.13 145);
+  --term-ansi-11: oklch(0.465 0.11 84);
+  --term-ansi-12: oklch(0.465 0.14 255);
+  --term-ansi-13: oklch(0.485 0.17 335);
+  --term-ansi-14: oklch(0.445 0.095 200);
+  --term-ansi-15: oklch(0.22 0.01 75);
 }
 
 /* ---------- Active profile color (config stores the name) ---------- */

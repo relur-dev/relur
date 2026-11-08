@@ -12,8 +12,8 @@ export function currentTheme(): Theme {
 }
 
 /**
- * Keeps <html data-theme> on the OS appearance (nativeTheme in the main
- * process). main.tsx sets a first value from the media query before the first
+ * Keeps <html data-theme> on nativeTheme in the main process: the OS
+ * appearance, or the one chosen in View › Appearance (spec §6). main.tsx sets a first value from the media query before the first
  * paint; Electron's media query follows nativeTheme too.
  */
 export function useNativeTheme(): Theme {
@@ -45,4 +45,33 @@ export function tokenColor(name: string): string {
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data as unknown as number[];
   return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a ?? 0) / 255})`;
+}
+
+const ANSI_NAMES = [
+  'black',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'white',
+  'brightBlack',
+  'brightRed',
+  'brightGreen',
+  'brightYellow',
+  'brightBlue',
+  'brightMagenta',
+  'brightCyan',
+  'brightWhite',
+] as const;
+
+/**
+ * The terminal's 16 ANSI colors from `--term-ansi-0…15` (theme.css), set in the
+ * light theme only. In dark nothing is set and xterm keeps its own palette.
+ */
+export function ansiPalette(): Partial<Record<(typeof ANSI_NAMES)[number], string>> {
+  const style = getComputedStyle(root);
+  if (!style.getPropertyValue('--term-ansi-0').trim()) return {};
+  return Object.fromEntries(ANSI_NAMES.map((name, i) => [name, tokenColor(`--term-ansi-${i}`)]));
 }

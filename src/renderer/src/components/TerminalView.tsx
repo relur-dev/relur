@@ -15,7 +15,7 @@ import { openTerminalPort } from '../terminal/ports';
 import { mouseWheelHandler } from '../terminal/wheel';
 import { trpcClient } from '../trpc';
 import { keyHint } from '../ui/controls';
-import { tokenColor } from '../ui/theme';
+import { ansiPalette, tokenColor } from '../ui/theme';
 
 const isMac = navigator.userAgent.includes('Mac');
 
@@ -33,15 +33,15 @@ const fontsReady = Promise.all([
     fontsLoaded = true;
   });
 
-/** Terminal colors from the theme tokens; the ANSI palette stays xterm's own. */
+/** Terminal colors from the theme tokens; in dark the ANSI palette stays xterm's own. */
 function xtermTheme(): ITheme {
-  const fg = tokenColor('--color-fg');
   return {
     background: tokenColor('--color-term'),
-    foreground: fg,
-    cursor: fg,
+    foreground: tokenColor('--color-fg'),
+    cursor: tokenColor('--color-term-cursor'),
     cursorAccent: tokenColor('--color-term'),
-    selectionBackground: tokenColor('--color-selected'),
+    selectionBackground: tokenColor('--color-term-sel'),
+    ...ansiPalette(),
   };
 }
 
@@ -106,6 +106,7 @@ export function TerminalView({
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !fontReady) return;
+    const initialTheme = xtermTheme();
     const term = new Terminal({
       fontFamily: FONT,
       fontSize: FONT_SIZE,
@@ -115,7 +116,7 @@ export function TerminalView({
       lineHeight: 1.15,
       scrollback: 10_000,
       cursorBlink: true,
-      theme: xtermTheme(),
+      theme: initialTheme,
       // Animates mouse-wheel notches over 125 ms, as VS Code does; trackpad
       // scrolling is detected and never delayed.
       smoothScrollDuration: 125,
@@ -189,9 +190,16 @@ export function TerminalView({
       event.stopImmediatePropagation();
       void paste();
     };
-    // Follow theme changes (<html data-theme>, set from nativeTheme).
+    // For the e2e tests: the colors applied (background, cursor, ANSI red).
+    const showColors = (theme: ITheme) => {
+      container.dataset.colors = [theme.background, theme.cursor, theme.red ?? 'xterm'].join('|');
+    };
+    showColors(initialTheme);
+    // Follow theme changes (<html data-theme>, set from nativeTheme and View › Appearance).
     const themeObserver = new MutationObserver(() => {
-      term.options.theme = xtermTheme();
+      const theme = xtermTheme();
+      term.options.theme = theme;
+      showColors(theme);
       repaint();
     });
     themeObserver.observe(document.documentElement, { attributeFilter: ['data-theme'] });

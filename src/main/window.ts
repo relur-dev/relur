@@ -36,8 +36,9 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 480,
     show: false,
     title: BRAND.displayName,
-    // The theme's --color-chrome, so the window doesn't flash before the page paints.
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0e11' : '#e4e6ea',
+    // The theme's --color-chrome, so the window doesn't flash before the page paints;
+    // nativeTheme already follows View › Appearance (appearance.ts).
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d0e11' : '#c4c2bd',
     // macOS: the profile tab strip is the title bar, with the traffic lights in it.
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 13 } }

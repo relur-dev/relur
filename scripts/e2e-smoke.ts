@@ -449,17 +449,23 @@ exec sleep 600
       await page.eval<string>(`document.querySelector('[data-guide-article]').innerText`),
       /\.worktrees/,
     );
-    // A screenshot (spec §6.12): the variant of the app's theme is the one shown, and loaded.
+    // A screenshot (spec §6.12): the variant of the app's theme is the one shown, and loaded;
+    // View › Appearance switches it at once (spec §6).
     await page.eval(`document.querySelector('[data-guide-search]').select()`);
     await page.send('Input.insertText', { text: 'Overview' });
     await page.waitFor(`!!document.querySelector('[data-guide-result="home"]')`, 'Home found');
     await page.eval(`document.querySelector('[data-guide-result="home"]').click()`);
     await page.waitFor(`(${article}) === 'home'`, 'the Home page');
     const shownImage = `[...document.querySelectorAll('[data-guide-image]')].filter((i) => i.offsetParent).map((i) => i.complete && i.naturalWidth > 0 ? i.dataset.guideImage : 'not loaded').join()`;
+    const chooseAppearance = (label: string) =>
+      mainProcess.eval(`(() => {
+        const { Menu } = process.mainModule.require('electron');
+        const view = Menu.getApplicationMenu().items.find((i) => i.label === 'View');
+        const items = view.submenu.items.find((i) => i.label === 'Appearance').submenu.items;
+        items.find((i) => i.label === '${label}').click();
+      })()`);
     for (const theme of ['dark', 'light']) {
-      await mainProcess.eval(
-        `process.mainModule.require('electron').nativeTheme.themeSource = '${theme}'`,
-      );
+      await chooseAppearance(theme === 'dark' ? 'Dark' : 'Light');
       await page.waitFor(`document.documentElement.dataset.theme === '${theme}'`, theme);
       // The Overview's, loaded, then the Board's (lazily loaded further down), in the same theme.
       await page.waitFor(
@@ -473,9 +479,7 @@ exec sleep 600
         `home-overview-${theme},home-board-${theme}`,
       );
     }
-    await mainProcess.eval(
-      `process.mainModule.require('electron').nativeTheme.themeSource = 'system'`,
-    );
+    await chooseAppearance('System');
     // Back to the profile, then a deep link from the status bar's usage meter.
     await clickLabel(page, 'Select Work');
     await page.waitFor(`!document.querySelector('[data-guide]')`, 'the Guide to close');

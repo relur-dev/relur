@@ -11,6 +11,7 @@ import { LATEST_RELEASE_URL } from '@shared/updates';
 import { parseRateLimits } from '@shared/usage';
 import { app, BrowserWindow, dialog, powerMonitor, shell } from 'electron';
 import { APP_LOG_FILE, AppLog } from './app-log';
+import { followAppearance } from './appearance';
 import { HookBridge } from './bridge/server';
 import { FinishService, PR_POLL_MS } from './changes/finish';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
@@ -352,6 +353,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     const config = new ConfigStore(path.join(dataDir, 'config.json'));
     config.load();
     appConfig = config;
+    // Before the window opens, so it paints in the chosen appearance (spec §6).
+    followAppearance(config);
     appDataDir = dataDir;
     // Suspension became on by default: a notice, once, for profiles that got it (spec §9.8).
     const suspendNotice = new SuspendDefaultNotice(dataDir, {

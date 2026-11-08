@@ -1,3 +1,10 @@
+import {
+  APPEARANCE_LABEL,
+  APPEARANCES,
+  type Appearance,
+  appearanceOf,
+  writeAppearance,
+} from '@shared/appearance';
 import { BRAND } from '@shared/brand';
 import { acceleratorOf } from '@shared/shortcuts';
 import { QUIT_ON_CLOSE_LABEL } from '@shared/window-close';
@@ -44,6 +51,18 @@ function setQuitOnClose(config: ConfigStore, quit: boolean): void {
   }
 }
 
+/** View › Appearance (spec §6): config.json, then nativeTheme follows (appearance.ts). */
+function setAppearance(config: ConfigStore, appearance: Appearance): void {
+  try {
+    config.update((raw) => writeAppearance(raw, appearance));
+  } catch (error) {
+    dialog.showErrorBox(
+      'Couldn’t save the setting',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
 function build(
   config: ConfigStore,
   request: (what: MenuRequest) => void,
@@ -58,6 +77,8 @@ function build(
     reloadConfig: () => config.reload(),
     quitOnClose: config.get().config?.quitOnWindowClose === true,
     setQuitOnClose: (quit) => setQuitOnClose(config, quit),
+    appearance: appearanceOf(config.get().config),
+    setAppearance: (appearance) => setAppearance(config, appearance),
     request,
     updates: { ...updates, automatic: config.get().config?.checkForUpdates === true },
     feedback,
@@ -73,6 +94,9 @@ interface MenuOptions {
   /** macOS: Quit When the Window Closes (spec §5). */
   quitOnClose: boolean;
   setQuitOnClose: (quit: boolean) => void;
+  /** View › Appearance (spec §6). */
+  appearance?: Appearance;
+  setAppearance?: (appearance: Appearance) => void;
   request: (what: MenuRequest) => void;
   /** Check for Updates… and Check for Updates Automatically (spec §15.7). */
   updates?: MenuUpdates & { automatic: boolean };
@@ -92,6 +116,8 @@ export function menuTemplate({
   reloadConfig,
   quitOnClose,
   setQuitOnClose,
+  appearance = 'system',
+  setAppearance = () => {},
   request,
   updates,
   feedback,
@@ -197,6 +223,16 @@ export function menuTemplate({
         { role: 'resetZoom', registerAccelerator: isMac },
         { role: 'zoomIn' },
         { role: 'zoomOut', registerAccelerator: isMac },
+        { type: 'separator' },
+        {
+          label: 'Appearance',
+          submenu: APPEARANCES.map((choice) => ({
+            label: APPEARANCE_LABEL[choice],
+            type: 'radio' as const,
+            checked: appearance === choice,
+            click: () => setAppearance(choice),
+          })),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],

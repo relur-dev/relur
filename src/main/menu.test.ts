@@ -91,5 +91,35 @@ describe('menuTemplate', () => {
       }
       expect(chosen).toEqual(['bug', 'feature']);
     });
+
+    it(`has Appearance in View with System, Light and Dark (${isMac ? 'macOS' : 'Linux'})`, () => {
+      const chosen: string[] = [];
+      const view = (appearance?: 'system' | 'light' | 'dark') => {
+        const template = menuTemplate({
+          isMac,
+          isDev: false,
+          openConfig: noop,
+          reloadConfig: noop,
+          quitOnClose: false,
+          setQuitOnClose: noop,
+          appearance,
+          setAppearance: (choice) => chosen.push(choice),
+          request: noop,
+        });
+        const items = template.find((m) => m.label === 'View')
+          ?.submenu as MenuItemConstructorOptions[];
+        return items.find((i) => i.label === 'Appearance')?.submenu as MenuItemConstructorOptions[];
+      };
+      const choices = view('dark');
+      expect(choices.map((i) => [i.label, i.type, i.checked])).toEqual([
+        ['System', 'radio', false],
+        ['Light', 'radio', false],
+        ['Dark', 'radio', true],
+      ]);
+      // Unset: System is checked.
+      expect(view().map((i) => i.checked)).toEqual([true, false, false]);
+      for (const item of choices) item.click?.({} as never, undefined, {} as never);
+      expect(chosen).toEqual(['system', 'light', 'dark']);
+    });
   }
 });

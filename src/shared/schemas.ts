@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { APPEARANCES } from './appearance';
 import { toProfileColor } from './profile-colors';
 
 /** Which events play a sound (spec §10.3); the keys of SOUND_EVENTS. */
@@ -271,6 +272,8 @@ export const ConfigSchema = z
     quitOnWindowClose: z.boolean().optional(),
     /** Check for Updates Automatically (spec §15.7); unset until the first-start question is answered. */
     checkForUpdates: z.boolean().optional(),
+    /** View › Appearance (spec §6); unset follows the OS. */
+    appearance: z.enum(APPEARANCES).optional(),
   })
   .superRefine((config, ctx) => {
     const duplicates = (values: string[]) =>

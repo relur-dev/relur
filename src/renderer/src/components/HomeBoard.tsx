@@ -78,16 +78,16 @@ interface ColumnDrag {
 
 /**
  * Needs you stands out while it has cards (spec §6.7): its count in the most
- * urgent card's color, as the sidebar's (permission, then input), on a tint.
+ * urgent card's color, as the sidebar's (permission, then input), on a tint of
+ * it; in light also a top edge in that color (theme.css --color-needs-*).
  */
 export type NeedsTone = 'permission' | 'input';
 export const needsTone = (list: Pick<Workspace, 'state'>[]): NeedsTone =>
   list.some((w) => w.state === 'needs-permission') ? 'permission' : 'input';
 const NEEDS_TONE: Record<NeedsTone, string> = {
-  permission:
-    'border-[color-mix(in_oklab,var(--color-st-permission)_35%,var(--color-line))] bg-[color-mix(in_oklab,var(--color-st-permission)_6%,var(--color-canvas))]',
+  permission: 'border-needs-line bg-needs-bg shadow-[inset_0_2px_0_var(--color-needs-accent)]',
   input:
-    'border-[color-mix(in_oklab,var(--color-st-input)_35%,var(--color-line))] bg-[color-mix(in_oklab,var(--color-st-input)_6%,var(--color-canvas))]',
+    'border-needs-input-line bg-needs-input-bg shadow-[inset_0_2px_0_var(--color-needs-input-accent)]',
 };
 const TONE_TEXT: Record<NeedsTone, string> = {
   permission: 'text-st-permission',
