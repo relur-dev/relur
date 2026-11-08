@@ -25,8 +25,6 @@ A new, softer **light theme**, and **View › Appearance** to choose **System**,
 ### Fixed
 
 - A branch that only caught up with main no longer counts as merged. A new workspace whose branch was fast-forwarded or rebased onto a newer main before it had commits of its own, for example by Claude at the start of a task, showed as **Merged** on Home and in Delete workspace. Only the branch's own commits count now, so it stays where it belongs until its own work is merged.
-- A workspace whose Claude waits for a long command in the background, such as a 20-minute test run, stays **Working** for as long as the command runs, instead of turning **Done** after 10 minutes and moving to **Ready to ship** while Claude still waits. Relur watches the command's process: once it has ended and Claude hasn't carried on within 2 minutes, the workspace is Done with "1 still running in the background", as before; a command whose process it can't find still gets 10 minutes, and nothing is held longer than 2 hours.
-- On Home, a done workspace whose dev server still runs keeps its place and shows a quiet **1 running**, on the Board and in the List.
 
 ## [0.5.0] - 2026-11-06
 
@@ -48,6 +46,8 @@ Home has a new **Board**, now the view Home opens with: your workspaces in five 
 
 ### Fixed
 
+- A workspace whose Claude waits for a long command in the background, such as a 20-minute test run, stays **Working** for as long as the command runs, instead of turning **Done** after 10 minutes and moving to **Ready to ship** while Claude still waits. Relur watches the command's process: once it has ended and Claude hasn't carried on within 2 minutes, the workspace is Done with "1 still running in the background", as before; a command whose process it can't find still gets 10 minutes, and nothing is held longer than 2 hours.
+- On Home, a done workspace whose dev server still runs keeps its place and shows a quiet **1 running**, on the Board and in the List.
 - The Guide's Linux page no longer says Relur never updates itself: **Update** replaces the AppImage.
 
 ## [0.4.3] - 2026-11-06
