@@ -11,7 +11,7 @@ With warnings the button reads **Delete anyway**, otherwise **Delete**. While th
 
 ## Merged branches
 
-If you merge the branch yourself, for example with `git merge --ff-only` in your main checkout, its commits are safe in the base branch, so the dialog doesn't warn that they aren't pushed. It says **✓ Merged into main** instead, or **✓ Merged into your local main (not pushed yet)** when only your local main has them. A branch counts as merged when it has commits of its own and they're all in the base branch, on your machine or on the remote: merged, fast-forwarded, or rebased onto it. Squash merges aren't recognised this way; a merged pull request covers them. A new workspace without commits is never merged. The other warnings, such as uncommitted changes, still show.
+If you merge the branch yourself, for example with `git merge --ff-only` in your main checkout, its commits are safe in the base branch, so the dialog doesn't warn that they aren't pushed. It says **✓ Merged into main** instead, or **✓ Merged into your local main (not pushed yet)** when only your local main has them. A branch counts as merged when it has commits of its own and they're all in the base branch, on your machine or on the remote: merged, fast-forwarded, or rebased onto it. Squash merges aren't recognised this way; a merged pull request covers them. A new workspace without commits is never merged, and neither is one whose branch only caught up with the base, for example when Claude rebased it onto a newer main before starting: those commits came from main, they aren't the branch's own. The other warnings, such as uncommitted changes, still show.
 
 ## The branch
 

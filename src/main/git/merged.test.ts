@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -29,6 +30,19 @@ function commit(dir: string, file: string, text = `${file}\n`) {
   fs.writeFileSync(path.join(dir, file), text);
   fx.git(dir, 'add', file);
   fx.git(dir, 'commit', '-q', '-m', `add ${file}`);
+}
+
+/**
+ * A commit on the base made earlier, by someone else: its committer time is
+ * before the moment the branch catches up with it.
+ */
+function baseCommit(dir: string, file: string) {
+  fs.writeFileSync(path.join(dir, file), `${file}\n`);
+  fx.git(dir, 'add', file);
+  execFileSync('git', ['commit', '-q', '-m', `add ${file}`], {
+    cwd: dir,
+    env: { ...fx.env, GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' },
+  });
 }
 
 const check = (repo: string, start: string | null, remote: string | null = 'origin') =>
@@ -99,6 +113,92 @@ describe('Git.mergedInto (spec §14.2)', () => {
     expect(await check(repo, start, null)).toBeNull();
     fx.git(repo, 'merge', '-q', '--ff-only', 'feature');
     expect(await check(repo, start, null)).toBe('base');
+  });
+
+  it('a branch fast-forwarded to a newer base has no commits of its own', async () => {
+    const { repo, worktree, start } = workspace('caught-up');
+    baseCommit(repo, 'other');
+    baseCommit(repo, 'more');
+    fx.git(worktree, 'merge', '-q', '--ff-only', 'main');
+    expect(await check(repo, start)).toBeNull();
+    // Nor once the base with those commits is pushed.
+    fx.git(repo, 'push', '-q', 'origin', 'main');
+    expect(await check(repo, start)).toBeNull();
+    expect(
+      await git.ownStart(repo, { branch: 'feature', start, base: 'main', remote: 'origin' }),
+    ).toBe(fx.git(repo, 'rev-parse', 'main').trim());
+    // Rebased onto it, or reset to it, the same.
+    baseCommit(repo, 'third');
+    fx.git(worktree, 'rebase', '-q', 'main');
+    expect(await check(repo, start)).toBeNull();
+    baseCommit(repo, 'fourth');
+    fx.git(worktree, 'reset', '-q', '--hard', 'main');
+    expect(await check(repo, start)).toBeNull();
+    // Without a remote too.
+    const local = workspace('caught-up-local', { remote: false });
+    baseCommit(local.repo, 'other');
+    fx.git(local.worktree, 'rebase', '-q', 'main');
+    expect(await check(local.repo, local.start, null)).toBeNull();
+  });
+
+  it('caught up, then a commit of its own, then fast-forwarded into the base: merged', async () => {
+    const { repo, worktree, start } = workspace('caught-up-then-own');
+    baseCommit(repo, 'other');
+    fx.git(worktree, 'merge', '-q', '--ff-only', 'main');
+    commit(worktree, 'a');
+    expect(await check(repo, start)).toBeNull();
+    fx.git(repo, 'merge', '-q', '--ff-only', 'feature');
+    expect(await check(repo, start)).toBe('local');
+    fx.git(repo, 'push', '-q', 'origin', 'main');
+    expect(await check(repo, start)).toBe('base');
+  });
+
+  it('own commits rebased onto a newer base, then merged', async () => {
+    const { repo, worktree, start } = workspace('own-rebased');
+    commit(worktree, 'a');
+    commit(worktree, 'b');
+    baseCommit(repo, 'other');
+    fx.git(worktree, 'rebase', '-q', 'main');
+    expect(await check(repo, start)).toBeNull();
+    fx.git(repo, 'merge', '-q', '--ff-only', 'feature');
+    expect(await check(repo, start)).toBe('local');
+  });
+
+  it('own commits on a caught-up branch, not merged', async () => {
+    const { repo, worktree, start } = workspace('caught-up-unmerged');
+    baseCommit(repo, 'other');
+    fx.git(worktree, 'rebase', '-q', 'main');
+    commit(worktree, 'a');
+    expect(await check(repo, start)).toBeNull();
+    // The base moves on and it catches up again: still its own commit, not merged.
+    baseCommit(repo, 'more');
+    fx.git(worktree, 'rebase', '-q', 'main');
+    expect(await check(repo, start)).toBeNull();
+  });
+
+  it('own commits merged, then caught up with the base: still merged', async () => {
+    const { repo, worktree, start } = workspace('merged-then-caught-up');
+    commit(worktree, 'a');
+    fx.git(repo, 'merge', '-q', '--ff-only', 'feature');
+    baseCommit(repo, 'other');
+    fx.git(worktree, 'merge', '-q', '--ff-only', 'main');
+    expect(await check(repo, start)).toBe('local');
+  });
+
+  it('own commits dropped by a reset to the base: none of its own left', async () => {
+    const { repo, worktree, start } = workspace('reset-to-base');
+    commit(worktree, 'a');
+    baseCommit(repo, 'other');
+    fx.git(worktree, 'reset', '-q', '--hard', 'main');
+    expect(await check(repo, start)).toBeNull();
+  });
+
+  it('without a reflog, the recorded start counts', async () => {
+    const { repo, worktree, start } = workspace('no-reflog');
+    fx.git(repo, 'reflog', 'expire', '--expire=all', '--all');
+    commit(worktree, 'a');
+    fx.git(repo, 'merge', '-q', '--ff-only', 'feature');
+    expect(await check(repo, start)).toBe('local');
   });
 
   it('a deleted branch is not merged', async () => {

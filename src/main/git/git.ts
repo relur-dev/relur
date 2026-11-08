@@ -37,6 +37,14 @@ export interface DiffFile {
   binary: boolean;
 }
 
+/** A workspace's branch and the base it merges into (spec §14.2). */
+export interface MergedRefs {
+  branch: string;
+  base: string;
+  /** Null without a remote: the local base is the base. */
+  remote: string | null;
+}
+
 /** One entry of `git worktree list --porcelain`. */
 export interface GitWorktree {
   path: string;
@@ -300,24 +308,74 @@ export class Git {
   }
 
   /**
-   * Where `branch` is merged (spec §14.2): it has commits of its own since
-   * `start`, and its tip is contained in `<remote>/<base>` (`base`) or only
-   * in the local base (`local`), or every one of its commits' changes is
-   * already there (`git cherry`, for rebased branches). Without a remote the
-   * local base is the base. Null when not merged, without commits of its
-   * own, or when its start isn't known.
+   * Where `branch`'s own commits start (spec §14.2): `start`, the commit it
+   * was created from, moved forward each time the branch caught up with the
+   * base while it had no own commits (a fast-forward to the base, a rebase
+   * onto it, a reset to it). Read from the branch's reflog: an entry caught
+   * up when its new tip is in the base and was committed before the entry
+   * (a commit, amend, cherry-pick or rebased commit made on the branch has the
+   * entry's own time). Without a reflog, `start` as recorded.
+   */
+  async ownStart(
+    repo: string,
+    { branch, start, base, remote }: MergedRefs & { start: string | null },
+  ): Promise<string | null> {
+    if (!start) return null;
+    // Newest first: the new tip, its committer time and the entry's time.
+    const out = await this.tryRun(repo, [
+      'log',
+      '--walk-reflogs',
+      '--date=unix',
+      '--format=%H %ct %gd',
+      `refs/heads/${branch}`,
+      '--',
+    ]);
+    const entries = (out ?? '')
+      .split('\n')
+      .map((line) => line.match(/^([0-9a-f]+) (\d+) .*@\{(\d+)\}$/))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => ({ tip: m[1] as string, committed: Number(m[2]), at: Number(m[3]) }))
+      .reverse();
+    const bases: string[] = [];
+    for (const ref of [remote ? `refs/remotes/${remote}/${base}` : null, `refs/heads/${base}`]) {
+      if (ref && (await this.revParse(repo, ref))) bases.push(ref);
+    }
+    const isAncestor = async (a: string, b: string) =>
+      a === b || (await this.tryRun(repo, ['merge-base', '--is-ancestor', a, b])) !== null;
+    const inBase = async (commit: string) => {
+      for (const ref of bases) if (await isAncestor(commit, ref)) return true;
+      return false;
+    };
+    let own = start;
+    // The first entry is the branch's creation (or the oldest one kept).
+    for (const [i, { tip, committed, at }] of entries.entries()) {
+      const before = entries[i - 1]?.tip;
+      if (!before || committed >= at || tip === own) continue;
+      if (!(await isAncestor(own, tip)) || !(await inBase(tip))) continue;
+      // Own commits merged, then caught up: they stay its own.
+      if (!(await isAncestor(before, own)) && (await isAncestor(before, tip))) continue;
+      own = tip;
+    }
+    return own;
+  }
+
+  /**
+   * Where `branch` is merged (spec §14.2): it has commits of its own (since
+   * its own start, `ownStart`), and its tip is contained in `<remote>/<base>`
+   * (`base`) or only in the local base (`local`), or every one of its commits'
+   * changes is already there (`git cherry`, for rebased branches). Without a
+   * remote the local base is the base. Null when not merged, without commits
+   * of its own, or when its start isn't known.
    */
   async mergedInto(
     repo: string,
-    {
-      branch,
-      start,
-      base,
-      remote,
-    }: { branch: string; start: string | null; base: string; remote: string | null },
+    refs: MergedRefs & { start: string | null },
   ): Promise<MergedInto | null> {
+    const { branch, base, remote } = refs;
     const head = await this.revParse(repo, `refs/heads/${branch}`);
-    if (!head || !start || head === start) return null;
+    if (!head || !refs.start || head === refs.start) return null;
+    const start = await this.ownStart(repo, refs);
+    if (!start || head === start) return null;
     const contains = async (ref: string) => {
       if (!(await this.revParse(repo, ref))) return false;
       if ((await this.tryRun(repo, ['merge-base', '--is-ancestor', head, ref])) !== null)

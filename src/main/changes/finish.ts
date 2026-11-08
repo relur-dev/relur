@@ -349,7 +349,12 @@ export class FinishService {
       pr = await this.gitPrStatus(git, project.remote, workspace, repo);
     }
     const head = await git.revParse(dir, 'HEAD');
-    const start = this.records.startCommit(workspace.id, projectId);
+    const start = await git.ownStart(dir, {
+      branch: workspace.branch,
+      start: this.records.startCommit(workspace.id, projectId),
+      base: repo.baseBranch,
+      remote: project.remote,
+    });
     const hasCommits = head !== null && start !== null && head !== start;
     // After the PR check's fetch, so `<remote>/<base>` is fresh (§14.2); before
     // the PR is stored, so a check joined once the badge changes is a new one.
@@ -379,7 +384,13 @@ export class FinishService {
     const pushed = Boolean(await git.tryRun(dir, ['config', `branch.${workspace.branch}.remote`]));
     const remoteBranch = await git.revParse(dir, `refs/remotes/${remote}/${workspace.branch}`);
     if (pushed && !remoteBranch) return { state: 'likely-merged', url: null, source: 'git' };
-    const start = this.records.startCommit(workspace.id, repo.projectId);
+    // Its own commits only: not those it caught up with from the base (§14.2).
+    const start = await git.ownStart(dir, {
+      branch: workspace.branch,
+      start: this.records.startCommit(workspace.id, repo.projectId),
+      base: repo.baseBranch,
+      remote,
+    });
     const hasOwnCommits = head !== null && (start ? head !== start : pushed);
     const base = `refs/remotes/${remote}/${repo.baseBranch}`;
     if (head && hasOwnCommits && (await git.revParse(dir, base))) {
@@ -487,14 +498,12 @@ export async function refreshMerged(
   project: Project,
 ): Promise<MergedInto | null> {
   const repoPath = expandHome(project.repoPath);
-  const start = records.startCommit(workspace.id, repo.projectId);
+  const refs = { branch: workspace.branch, base: repo.baseBranch, remote: project.remote };
+  const recorded = records.startCommit(workspace.id, repo.projectId);
   const head = await git.revParse(repoPath, `refs/heads/${workspace.branch}`);
-  const merged = await git.mergedInto(repoPath, {
-    branch: workspace.branch,
-    start,
-    base: repo.baseBranch,
-    remote: project.remote,
-  });
+  const merged = await git.mergedInto(repoPath, { ...refs, start: recorded });
+  // Its own commits only, not those it caught up with from the base (§14.2).
+  const start = await git.ownStart(repoPath, { ...refs, start: recorded });
   // Without a remote, nothing else records whether it has commits (§21.5).
   const hasCommits = head === null || start === null ? repo.hasCommits : head !== start;
   records.setMerged(workspace.id, repo.projectId, merged, hasCommits);

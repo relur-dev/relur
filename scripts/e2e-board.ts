@@ -4,7 +4,8 @@
  * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
  * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
  * merged, a branch merged only locally (Merged, and Delete workspace's
- * "Merged into …" in place of the unpushed warning, spec §14.2), the
+ * "Merged into …" in place of the unpushed warning, spec §14.2), a branch
+ * that only caught up with a newer main (never Merged, spec §14.2), the
  * columns (dragged by a header, Move Left, Move Right and Hide Column from
  * the column menu, the Columns panel, Needs you hidden with its mark, Reset,
  * each profile's layout across a restart), a card
@@ -19,6 +20,7 @@
  */
 import './lib/clean-env';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
@@ -739,8 +741,39 @@ exec sleep 600
     await pressKey(page, 'Digit0', CMD);
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
     await page.waitFor(`${columnOf(id('local'))} === 'ship'`, 'its commit to ship', 30_000);
+    // And one that only catches up with main (spec §14.2), Done without commits.
+    await create('caught', 'web', 'ABC-9 Caught up');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('caught', 'Done');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    await page.waitFor(`${columnOf(id('caught'))} === 'idle'`, 'nothing to ship yet', 30_000);
     fx.git(web, 'merge', '-q', '--ff-only', ws.local?.branch as string);
     await page.waitFor(`${columnOf(id('local'))} === 'merged'`, 'merged locally', 40_000);
+    // 8c. Caught up (spec §14.2): main moves on (a commit made earlier, by
+    // someone else) and the fresh branch is rebased onto it, as Claude does
+    // before starting. main contains its tip, but it has no commits of its
+    // own: not merged, not in Delete n merged; main's two commits are to ship.
+    fs.writeFileSync(path.join(web, 'theirs.txt'), 'x\n');
+    fx.git(web, 'add', 'theirs.txt');
+    execFileSync('git', ['commit', '-q', '-m', 'Add theirs'], {
+      cwd: web,
+      env: { ...fx.env, GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' },
+    });
+    fx.git(ws.caught?.tree as string, 'rebase', '-q', 'main');
+    await page.waitFor(
+      `${columnOf(id('caught'))} === 'ship' && /2 commits not pushed/.test(${card(id('caught'))}.innerText)`,
+      "caught up: main's commits to ship",
+      40_000,
+    );
+    await page.eval(
+      `document.querySelector('[data-board-column=merged] [data-home-action=delete-merged]').click()`,
+    );
+    await page.waitFor(`${dialogText}.includes('Delete 3 merged workspaces')`, 'Delete n merged');
+    assert.doesNotMatch(await page.eval<string>(dialogText), /ABC-9/);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
     assert.match(
       await page.eval<string>(`${card(id('local'))}.innerText`),
       /Merged into your local main \(not pushed yet\)/,
@@ -768,8 +801,18 @@ exec sleep 600
     await submitDialog(page);
     await page.waitFor(`!${card(id('local'))}`, 'the card gone', 30_000);
     assert.equal(fx.git(web, 'branch', '--list', ws.local?.branch as string), '', 'branch deleted');
+    // Pushed, origin's main contains the caught-up branch too: still not merged, nothing to ship.
+    await page.waitFor(`${columnOf(id('caught'))} === 'idle'`, 'caught up: idle', 40_000);
+    assert.doesNotMatch(await page.eval<string>(`${card(id('caught'))}.innerText`), /Merged/);
+    await page.eval(
+      `document.querySelector('[data-board-column=merged] [data-home-action=delete-merged]').click()`,
+    );
+    await page.waitFor(`${dialogText}.includes('Delete 2 merged workspaces')`, 'Delete n merged');
+    assert.doesNotMatch(await page.eval<string>(dialogText), /ABC-9/);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
 
-    // 8c. Columns (spec §6.7): reorder by dragging a header and from its menu,
+    // 8d. Columns (spec §6.7): reorder by dragging a header and from its menu,
     // hide and show, the mark for a hidden Needs you, Reset.
     const main = app.main;
     await pressKey(page, 'Digit0', CMD);
