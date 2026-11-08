@@ -1,8 +1,7 @@
 /**
  * The fixed profile palette (spec §3.1). The config stores a color name; the
  * theme maps it to light and dark values (`--color-profile-<name>`). The
- * picker shows it as two rows of six, each of the second row under its
- * nearest in the first.
+ * picker shows it as one row, in this order.
  */
 export const PROFILE_COLORS = [
   'blue',

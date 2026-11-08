@@ -39,13 +39,11 @@ const STATE_TEXT: Record<AccountFolder['state'], string> = {
   unknown: 'Not checked',
 };
 
-/** Swatches per row of the color grid. */
-const COLOR_COLUMNS = 6;
-
 /**
- * The twelve swatches as a grid of two rows, in palette order (spec §3.1,
- * components.md). A radio group: Tab reaches the chosen color, the arrow keys
- * move and choose, Home and End go to the first and last. Colors other
+ * The twelve swatches in one row, in palette order, scrolling sideways when
+ * they don't fit (spec §3.1, components.md). A radio group: Tab reaches the
+ * chosen color, the arrow keys move and choose, Home and End go to the first
+ * and last. Colors other
  * profiles use are dimmed and say by whom, and can still be chosen.
  */
 export function ColorPicker({
@@ -66,23 +64,15 @@ export function ColorPicker({
     const at = PROFILE_COLORS.indexOf(value);
     const last = PROFILE_COLORS.length - 1;
     const to =
-      event.key === 'ArrowRight'
+      event.key === 'ArrowRight' || event.key === 'ArrowDown'
         ? Math.min(last, at + 1)
-        : event.key === 'ArrowLeft'
+        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
           ? Math.max(0, at - 1)
-          : event.key === 'ArrowDown'
-            ? at + COLOR_COLUMNS <= last
-              ? at + COLOR_COLUMNS
-              : at
-            : event.key === 'ArrowUp'
-              ? at - COLOR_COLUMNS >= 0
-                ? at - COLOR_COLUMNS
-                : at
-              : event.key === 'Home'
-                ? 0
-                : event.key === 'End'
-                  ? last
-                  : null;
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null;
     if (to === null) return;
     event.preventDefault();
     choose(PROFILE_COLORS[to] as ProfileColor);
@@ -93,14 +83,14 @@ export function ColorPicker({
       aria-label="Color"
       data-color-grid
       onKeyDown={onKeyDown}
-      className="grid w-fit grid-cols-6 gap-1 p-1"
+      className="-m-1 flex min-w-0 gap-1 overflow-x-auto p-1"
     >
       {PROFILE_COLORS.map((color) => {
         const users = others.filter((p) => p.color === color).map((p) => p.name);
         const label = profileColorLabel(color);
         const chosen = value === color;
         return (
-          // biome-ignore lint/a11y/useSemanticElements: a grid of swatches, where Up and Down move by row
+          // biome-ignore lint/a11y/useSemanticElements: a row of swatches that moves focus with the choice
           <button
             key={color}
             ref={(el) => {
@@ -116,7 +106,7 @@ export function ColorPicker({
             data-used={users.length > 0 || undefined}
             tabIndex={chosen ? 0 : -1}
             onClick={() => choose(color)}
-            className={`flex size-7 items-center justify-center rounded-full ${chosen ? 'ring-2 ring-fg ring-offset-2 ring-offset-raised' : ''} ${users.length > 0 ? 'opacity-75' : ''}`}
+            className={`flex size-7 shrink-0 items-center justify-center rounded-full ${chosen ? 'ring-2 ring-fg ring-offset-2 ring-offset-raised' : ''} ${users.length > 0 ? 'opacity-75' : ''}`}
           >
             <span className={`size-5 rounded-full ${PROFILE_DOT[color]}`} />
           </button>
@@ -336,18 +326,18 @@ export function NewProfileWizard({
               </div>
               <div
                 aria-hidden
-                className="flex items-end gap-0.5 rounded-md border border-line bg-chrome px-2 pt-2"
+                className="flex items-end gap-0.5 overflow-x-auto rounded-md border border-line bg-chrome px-2 pt-2"
               >
                 {profiles.map((p) => (
                   <span
                     key={p.id}
-                    className="flex h-7 items-center gap-2 px-3 text-sm text-fg-muted"
+                    className="flex h-7 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-sm text-fg-muted"
                   >
                     <ProfileDot color={p.color} />
                     {p.name}
                   </span>
                 ))}
-                <span className="flex h-7.5 items-center gap-2 rounded-t-lg border border-b-0 border-line bg-canvas px-3 text-sm font-medium">
+                <span className="flex h-7.5 shrink-0 items-center gap-2 whitespace-nowrap rounded-t-lg border border-b-0 border-line bg-canvas px-3 text-sm font-medium">
                   <ProfileDot color={color} />
                   {name.trim() || 'New profile'}
                 </span>

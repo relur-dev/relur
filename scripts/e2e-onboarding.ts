@@ -159,7 +159,7 @@ async function main() {
     assert.deepEqual(profiles(), []);
     assert.match(await page.eval<string>(mainText), new RegExp(`Welcome to ${BRAND.displayName}`));
     await typeInField(page, '#profile-name', 'Work', false);
-    // Twelve colors in two rows of six, each named in its tooltip and label (spec §3.1).
+    // Twelve colors in one row, each named in its tooltip and label (spec §3.1).
     assert.deepEqual(
       await page.eval<string[][]>(
         `${swatches}.map((b) => [b.getAttribute('aria-label'), b.title])`,
@@ -181,10 +181,10 @@ async function main() {
     );
     assert.deepEqual(
       await page.eval<number[]>(
-        `(() => { const b = ${swatches}; return [b[0].offsetTop < b[6].offsetTop, b[0].offsetLeft === b[6].offsetLeft, b[5].offsetTop === b[0].offsetTop].map(Number); })()`,
+        `(() => { const b = ${swatches}; return [b[11].offsetTop === b[0].offsetTop, b[11].offsetLeft > b[6].offsetLeft].map(Number); })()`,
       ),
-      [1, 1, 1],
-      'two rows of six',
+      [1, 1],
+      'one row',
     );
     assert.equal(await page.eval<string>(checkedColor), 'blue', 'the first color');
     await screenshot(page, screenshotDir, 'o1-name.png');
@@ -471,7 +471,7 @@ async function main() {
     );
     assert.ok(fs.existsSync(path.join(home, '.claude-third', 'fake-login')), 'the login stays');
 
-    // 7b. A color of the second row, chosen with the keyboard, is the tab's
+    // 7b. A color of the added six, chosen with the keyboard, is the tab's
     // color after a restart (spec §3.1).
     await chooseFromNextContextMenu(mainProcess, 'Edit profile…');
     await openContextMenu(page, '[aria-label="Select Personal"]');
@@ -494,11 +494,11 @@ async function main() {
     await pressAndCheck('Home', 'blue');
     await pressAndCheck('ArrowLeft', 'blue');
     await pressAndCheck('ArrowRight', 'sky');
-    await pressAndCheck('ArrowDown', 'slate');
-    await pressAndCheck('ArrowDown', 'slate');
-    for (const color of ['petrol', 'pine', 'plum']) await pressAndCheck('ArrowRight', color);
-    await pressAndCheck('ArrowUp', 'olive');
-    await pressAndCheck('ArrowDown', 'plum');
+    await pressAndCheck('ArrowDown', 'teal');
+    await pressAndCheck('ArrowUp', 'sky');
+    await pressAndCheck('End', 'charcoal');
+    await pressAndCheck('ArrowRight', 'charcoal');
+    await pressAndCheck('ArrowLeft', 'plum');
     assert.ok(
       await page.eval<boolean>(`!!document.querySelector('dialog[open] .bg-profile-plum.size-2')`),
       "the dialog's dot follows",
