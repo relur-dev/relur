@@ -2483,6 +2483,8 @@ exec sleep 600
       until: commitAsk,
     });
     assert.match(asked, commitAsk);
+    // The panel counts the files again after the asking; the button follows.
+    await page.waitFor(hasButton('Commit 2 files'), 'Commit 2 files');
     await clickButtonText(page, 'Commit 2 files');
     await page.waitFor(`${panelText}.includes('Committed · 2')`, 'the commit');
     assert.equal(fx.git(shopTree, 'log', '-1', '--format=%s').trim(), 'PROJ-7: Add cart');

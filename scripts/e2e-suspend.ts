@@ -25,6 +25,7 @@ import {
   type Cdp,
   chooseFromNextContextMenu,
   clickButtonText,
+  clickClosingButton,
   clickLabel,
   dialogText,
   launchApp,
@@ -555,7 +556,7 @@ done
       !(await page.eval<string>(dialogText)).includes('Delta'),
       'a suspended session is not listed',
     );
-    await clickButtonText(page, 'Quit', `document.querySelector('dialog[open]')`);
+    await clickClosingButton(page, 'Quit', `document.querySelector('dialog[open]')`);
     page.close();
     running.main.close();
     assert.ok(await running.exited(20_000), 'the app quit');

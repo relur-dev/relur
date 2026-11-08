@@ -23,6 +23,7 @@ import {
   CMD,
   chooseFromNextContextMenu,
   clickButtonText,
+  clickClosingButton,
   clickLabel,
   dialogText,
   launchApp,
@@ -149,7 +150,7 @@ exec sleep 600
       );
       await running.page.waitFor(`${dialogText}.includes('running session')`, 'the quit dialog');
       assert.match(await running.page.eval<string>(dialogText), expected);
-      await clickButtonText(running.page, 'Quit', `document.querySelector('dialog[open]')`);
+      await clickClosingButton(running.page, 'Quit', `document.querySelector('dialog[open]')`);
       running.page.close();
       running.main.close();
       assert.ok(await running.exited(20_000), 'the app quit');
