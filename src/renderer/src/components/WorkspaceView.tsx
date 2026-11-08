@@ -24,7 +24,7 @@ import type { ConversationAids, NavigatorState } from '../terminal/conversation'
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, isMac, Kbd, keyHint } from '../ui/controls';
 import { ChangesIcon, EditorIcon, ResponsesIcon, TrashIcon } from '../ui/icons';
-import { takeRequest } from '../ui/open-requests';
+import { takeRequest, takeResponseEntry } from '../ui/open-requests';
 import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
@@ -195,6 +195,8 @@ export function WorkspaceView({
   // The Responses panel (spec §6.8) and the Claude terminal it scrolls.
   // At start, open as it was when the app quit (spec §5).
   const [responsesOpen, setResponsesOpen] = useState(() => takeRequest(workspace.id, 'responses'));
+  // From a Board card: the entry to show, expanded (spec §6.7).
+  const [responsesEntry] = useState(() => takeResponseEntry(workspace.id));
   const [responsesFull, setResponsesFull] = useState(false);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
   const [changesFull, setChangesFull] = useState(false);
@@ -798,6 +800,7 @@ export function WorkspaceView({
         {responsesShown && !(changesOpen && changesFull) ? (
           <ResponsesPanel
             workspaceId={workspace.id}
+            entry={responsesEntry}
             aids={aids}
             alternate={alternate}
             narrow={narrow}

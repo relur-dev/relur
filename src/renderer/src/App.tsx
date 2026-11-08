@@ -1042,6 +1042,10 @@ export function App() {
                       startClaude={{ error: homeNotice }}
                       actions={{
                         open: (w) => openRequest.current(w.id),
+                        responses: (w, entry) => {
+                          requestOnOpen(w.id, 'responses', entry ?? undefined);
+                          openRequest.current(w.id);
+                        },
                         openProject,
                         review: (w) => {
                           requestOnOpen(w.id, 'spec');

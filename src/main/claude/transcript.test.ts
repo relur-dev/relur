@@ -6,6 +6,7 @@ import {
   awaitLastResponse,
   endsWithDeniedPermission,
   isBackgroundHandBack,
+  readConversation,
   readPrompts,
   readResponses,
   shownPrompt,
@@ -221,6 +222,98 @@ describe('readResponses', () => {
     expect(readResponses(file)).toEqual([
       { text: '', parts: [], at: null, prompt: 'Hello', interrupted: false },
     ]);
+  });
+});
+
+// Claude's question tool as Claude Code 2.1.319 writes it: the call, then its result.
+const QUESTION = {
+  questions: [
+    {
+      question: 'Which color do you prefer?',
+      header: 'Color',
+      options: [
+        { label: 'Red', description: 'Choose red' },
+        { label: 'Blue', description: 'Choose blue' },
+      ],
+      multiSelect: false,
+    },
+  ],
+};
+const ask = (id: string, timestamp: string) =>
+  line({
+    type: 'assistant',
+    message: {
+      id: `m-${id}`,
+      content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: QUESTION }],
+    },
+    timestamp,
+  });
+const answered = (id: string, answer: string) =>
+  user(
+    [
+      {
+        type: 'tool_result',
+        tool_use_id: id,
+        content: `The user answered: "Which color do you prefer?"="${answer}".`,
+      },
+    ],
+    { toolUseResult: { ...QUESTION, answers: { 'Which color do you prefer?': answer } } },
+  );
+
+describe('readConversation', () => {
+  const asked = '**Color** · Which color do you prefer?\n\n- Red: Choose red\n- Blue: Choose blue';
+
+  it('gives the question Claude waits on, and its part of the entry', () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('Pick a color', { origin: { kind: 'human' } }),
+        assistant([{ type: 'text', text: 'Let me ask.' }], 't1'),
+        ask('toolu_1', 't2'),
+      ].join('\n'),
+    );
+    const { responses, pending } = readConversation(file);
+    expect(pending).toEqual({
+      id: 'toolu_1',
+      questions: [expect.objectContaining({ header: 'Color' })],
+    });
+    expect(responses[0]?.parts).toEqual([
+      { text: 'Let me ask.', afterBackground: false },
+      { text: asked, afterBackground: false, question: true },
+    ]);
+    expect(responses[0]?.text).toBe(`Let me ask.\n\n${asked}`);
+  });
+
+  it('adds the answer once given, and then nothing waits', () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('Pick a color', { origin: { kind: 'human' } }),
+        ask('toolu_1', 't1'),
+        answered('toolu_1', 'Blue'),
+        assistant([{ type: 'text', text: 'Blue' }], 't2'),
+      ].join('\n'),
+    );
+    const { responses, pending } = readConversation(file);
+    expect(pending).toBeNull();
+    expect(responses[0]?.parts).toEqual([
+      { text: `${asked}\n\nAnswered: Blue`, afterBackground: false, question: true },
+      { text: 'Blue', afterBackground: false },
+    ]);
+  });
+
+  it('nothing waits after an interrupted question or a new prompt', () => {
+    const interrupted = user([
+      { type: 'tool_result', tool_use_id: 'toolu_1', content: 'interrupted', is_error: true },
+    ]);
+    fs.writeFileSync(file, [user('Pick'), ask('toolu_1', 't1'), interrupted].join('\n'));
+    expect(readConversation(file).pending).toBeNull();
+    fs.writeFileSync(file, [user('Pick'), ask('toolu_1', 't1'), user('Never mind')].join('\n'));
+    expect(readConversation(file).pending).toBeNull();
+    expect(readConversation(path.join(path.dirname(file), 'missing.jsonl'))).toEqual({
+      responses: [],
+      pending: null,
+    });
   });
 });
 

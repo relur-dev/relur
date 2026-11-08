@@ -313,10 +313,11 @@ describe('boardColumns', () => {
 describe('quickReply', () => {
   const running = { status: 'running' as const, resuming: false };
   const suspended = { status: 'suspended' as const, resuming: false };
-  const facts = (claude: typeof running | typeof suspended | null, draft = false) => ({
-    claude,
-    draft,
-  });
+  const facts = (
+    claude: typeof running | typeof suspended | null,
+    draft = false,
+    question = false,
+  ) => ({ claude, draft, question });
 
   it('offers the field where Claude waits at its prompt or works', () => {
     for (const state of [
@@ -353,6 +354,20 @@ describe('quickReply', () => {
     ).toBe('none');
   });
 
+  it("offers the question's options at Claude's question menu, in place of the field or Open", () => {
+    // Claude Code reads it as Working first, then as a permission request.
+    for (const [state, column] of [
+      ['working', 'working'],
+      ['needs-permission', 'needs'],
+    ] as const) {
+      expect(quickReply(ws(state), column, facts(running, false, true))).toBe('question');
+      expect(quickReply(ws(state), column, facts(running, true, true))).toBe('question');
+    }
+    // Not on Merged, nor once Claude no longer runs.
+    expect(quickReply(ws('done'), 'merged', facts(running, false, true))).toBe('none');
+    expect(quickReply(ws('done'), 'idle', facts(null, false, true))).toBe('none');
+  });
+
   it('never over a draft', () => {
     expect(quickReply(ws('needs-input'), 'needs', facts(running, true))).toBe('draft');
   });
@@ -376,5 +391,7 @@ describe('permissionTool', () => {
     expect(permissionTool('Claude needs your permission to use Bash')).toBe('Bash');
     expect(permissionTool('Something else')).toBe('Something else');
     expect(permissionTool(null)).toBeNull();
+    // Claude Code's notice for its question tool names no tool.
+    expect(permissionTool('Claude needs your permission')).toBeNull();
   });
 });

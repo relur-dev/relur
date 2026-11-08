@@ -49,6 +49,8 @@ interface Part {
   text: string;
   /** It follows Claude's background work handing back, not tool work. */
   afterBackground: boolean;
+  /** Claude's question tool: the questions, options and answers. */
+  question?: true;
 }
 
 /** Copies `text`; true for 1.5 s afterwards, to say so. */
@@ -237,6 +239,11 @@ const ResponseItem = memo(function ResponseItem({
               ) : i > 0 ? (
                 <hr data-response-divider className="my-2.5 border-0 border-t border-line" />
               ) : null}
+              {part.question ? (
+                <div data-response-question className="mb-1 text-xs font-medium text-fg-muted">
+                  Claude asked
+                </div>
+              ) : null}
               <PartView text={part.text} />
             </div>
           ))}
@@ -270,6 +277,7 @@ const ResponseItem = memo(function ResponseItem({
  */
 export function ResponsesPanel({
   workspaceId,
+  entry = null,
   aids,
   alternate,
   narrow,
@@ -279,6 +287,8 @@ export function ResponsesPanel({
   onClose,
 }: {
   workspaceId: string;
+  /** The entry (0-based) to show at first, expanded: from a Board card (spec §6.7). */
+  entry?: number | null;
   /** The Claude terminal's aids, to scroll to a response. */
   aids: ConversationAids | null;
   /** Claude is in full-screen mode: nothing to scroll to. */
@@ -308,7 +318,9 @@ export function ResponsesPanel({
   const list = responses.data ?? [];
   const newest = list.length;
   // Every response is collapsed, the newest too, unless toggled (spec §6.8).
-  const [toggled, setToggled] = useState<Record<number, boolean>>({});
+  const [toggled, setToggled] = useState<Record<number, boolean>>(() =>
+    entry === null ? {} : { [entry + 1]: true },
+  );
   const isExpanded = (number: number) => toggled[number] ?? false;
   const toggle = useCallback(
     (number: number) => setToggled((current) => ({ ...current, [number]: !current[number] })),
@@ -324,10 +336,20 @@ export function ResponsesPanel({
   // In focus when it opens and when it changes size, so Esc reaches it (the terminal may be hidden).
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when full view changes
   useEffect(() => asideRef.current?.focus(), [full]);
+  // The entry asked for, once the list has it: in view from its top (spec §6.7).
+  const toEntry = useRef(entry);
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the responses change
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && atEnd.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const wanted = toEntry.current;
+    const item =
+      wanted === null ? null : el.querySelector<HTMLElement>(`[data-response="${wanted + 1}"]`);
+    if (item) {
+      toEntry.current = null;
+      el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    } else if (atEnd.current && wanted === null) el.scrollTop = el.scrollHeight;
   }, [list]);
   const onScroll = () => {
     const el = scrollRef.current;

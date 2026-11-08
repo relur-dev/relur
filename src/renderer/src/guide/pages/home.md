@@ -27,7 +27,7 @@ Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd
 
 The Board shows the profile's workspaces as five columns: **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**, in that order until you arrange them (see **Columns**, below). While something needs you, the Needs you column is tinted and its count takes the color of its most urgent card, as in the sidebar. **List | Board** at the right of Home's tabs switches between the Board and the List, and the choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship. A workspace whose Claude waits for its background work stays in **Working**, with **1 in background**; a done one with a dev server still running keeps its column and shows a quiet **1 running**.
 
-![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Columns, Group None and List | Board are at the top right.](images/home-board.webp)
+![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with what Claude said there above its quick reply field, and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Columns, Group None and List | Board are at the top right.](images/home-board.webp)
 
 Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own (grouped by project, the whole Board scrolls instead, as below).
 
@@ -56,9 +56,14 @@ Drag a card and **Drop to delete** appears along the bottom. Drop it there to op
 
 A card has a field to send Claude a message without opening the workspace: under Needs you it is always there, elsewhere the card unfolds to show it, with its buttons, when the pointer rests on it or you give it the focus, and folds back when you leave unless you've typed into it. <kbd>↵</kbd> sends it, as if you had typed it in the Claude tab; a [suspended](suspend) Claude resumes first. While Claude works, it reads the message after its current step.
 
+Above the field, a line shows what you're replying to: the question Claude asked (**Claude asked:**), what it said at a workflow gate (**At Spec review, Claude:**, or the gate's hint when Claude wrote nothing), or the end of its last message (**Claude:**). Click the line to open the workspace with its [Responses](copy-response) panel at that answer, for the full text. A session that hasn't written anything yet shows no line.
+
+When Claude asks you to choose (its question menu, with options to pick from), the card shows the question with each option as a button: click one to answer, as if you had picked it in the Claude tab. **Other…** opens the workspace to type your own answer. If Claude asked several questions at once, or lets you tick several options, the card offers **Open** instead.
+
 There is no field where a message could answer something by accident:
 
 - **Needs permission:** Claude shows its permission menu, which typed text would answer. The card offers **Open** instead, so you answer it in the Claude tab.
+- **A question from Claude:** typed text would become your answer, so the card shows the options instead, as above.
 - **An unsent prompt:** if you typed into the Claude tab and didn't send it, the card says **Has an unsent prompt; open it**.
 - **Merged** workspaces, and workspaces whose Claude has exited.
 

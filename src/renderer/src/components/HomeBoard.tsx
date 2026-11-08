@@ -16,7 +16,9 @@ import {
   QUICK_REPLY_REFUSAL,
   quickReply,
 } from '@shared/home';
+import type { LastWords } from '@shared/last-words';
 import type { MemorySnapshot } from '@shared/memory';
+import { answerable } from '@shared/question';
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, STATE_LABEL } from '@shared/status';
 import { SUSPENDED_TOOLTIP } from '@shared/suspend';
@@ -32,6 +34,7 @@ import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
 import {
   Action,
+  actionClass,
   type HomeActions,
   type HomeItem,
   type Part,
@@ -148,14 +151,57 @@ export function HomeBoard({
   );
   const refreshDrafts = () =>
     void queryClient.invalidateQueries({ queryKey: trpc.sessions.drafts.queryKey() });
+  // What each card's Claude last said, for the line above its quick reply (spec §6.7).
+  const lastWords = useQuery(
+    trpc.workspaces.lastWords.queryOptions(
+      { profileId: profile.id },
+      { refetchInterval: 3_000, staleTime: 0 },
+    ),
+  );
+  const refreshLastWords = () =>
+    void queryClient.invalidateQueries({ queryKey: trpc.workspaces.lastWords.queryKey() });
   const claudeOf = (id: string) =>
     sessions.find((s) => s.workspaceId === id && s.kind === 'claude' && s.status !== 'exited') ??
     null;
 
   const [replies, setReplies] = useState<Record<string, string>>({});
-  const [sent, setSent] = useState<Record<string, 'working' | 'idle'>>({});
+  /** What a card says after a reply or an answer went to Claude, by workspace. */
+  const [sent, setSent] = useState<Record<string, string>>({});
   const [replyErrors, setReplyErrors] = useState<Record<string, string | null>>({});
   const send = useMutation(trpc.workspaces.quickReply.mutationOptions());
+  const answer = useMutation(trpc.workspaces.answerQuestion.mutationOptions());
+  const showSent = (id: string, note: string) => {
+    setSent((s) => ({ ...s, [id]: note }));
+    setTimeout(
+      () =>
+        setSent((s) => {
+          const next = { ...s };
+          delete next[id];
+          return next;
+        }),
+      SENT_MS,
+    );
+  };
+  /** Picks option `option` of the question Claude waits on (spec §6.7). */
+  const sendAnswer = (w: Workspace, words: LastWords, option: number) => {
+    const question = words.question;
+    const label = question?.questions[0]?.options[option]?.label;
+    if (!question || !label) return;
+    setReplyErrors((e) => ({ ...e, [w.id]: null }));
+    answer.mutate(
+      { workspaceId: w.id, questionId: question.id, option },
+      {
+        onSuccess: () => {
+          showSent(w.id, `Answered: ${label}`);
+          refreshLastWords();
+        },
+        onError: (e) => {
+          setReplyErrors((r) => ({ ...r, [w.id]: e.message }));
+          refreshLastWords();
+        },
+      },
+    );
+  };
   const sendReply = (w: Workspace, column: BoardColumn) => {
     const text = (replies[w.id] ?? '').trim();
     if (!text) return;
@@ -165,20 +211,15 @@ export function HomeBoard({
       {
         onSuccess: () => {
           setReplies((r) => ({ ...r, [w.id]: '' }));
-          setSent((s) => ({ ...s, [w.id]: column === 'working' ? 'working' : 'idle' }));
-          setTimeout(
-            () =>
-              setSent((s) => {
-                const next = { ...s };
-                delete next[w.id];
-                return next;
-              }),
-            SENT_MS,
+          showSent(
+            w.id,
+            column === 'working' ? 'Sent · Claude reads it after this step' : 'Sent to Claude',
           );
         },
         onError: (e) => {
           setReplyErrors((r) => ({ ...r, [w.id]: e.message }));
           refreshDrafts();
+          refreshLastWords();
         },
       },
     );
@@ -516,10 +557,30 @@ export function HomeBoard({
     const it = cardItem(column, w);
     const lifted = drag?.id === w.id;
     const claude = claudeOf(w.id);
+    const words = lastWords.data?.[w.id] ?? null;
     const offer = quickReply(w, column, {
       claude,
       draft: drafts.data?.includes(w.id) ?? false,
+      question: words?.kind === 'question',
     });
+    /** The line above the field: what Claude last said; it opens the Responses panel there. */
+    const context =
+      words && (offer === 'field' || offer === 'question') ? (
+        <button
+          type="button"
+          data-quick-reply-context={words.kind}
+          title={`${words.lead} ${words.text}\n\n${words.entry === null ? 'Open the workspace' : 'Click to read it in Responses'}`}
+          className="mt-[3px] line-clamp-2 rounded-[3px] text-left text-sm break-words text-fg-muted outline-none hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)]"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (words.entry === null) actions.open(w);
+            else actions.responses(w, words.entry);
+          }}
+        >
+          <span className="font-medium text-fg-subtle">{words.lead}</span> {words.text}
+        </button>
+      ) : null;
     const text = replies[w.id] ?? '';
     const wasSent = sent[w.id];
     const permission = offer === 'open';
@@ -569,44 +630,99 @@ export function HomeBoard({
             linkedIn={group === 'project' ? projectName : null}
             suspended={suspended.has(w.id) && column !== 'idle'}
           />
+          {offer === 'question' && words?.question && !lifted && !wasSent ? (
+            <div data-quick-reply-question className="flex flex-col gap-[5px]">
+              {context}
+              {answerable(words.question) ? (
+                <div className="mt-[3px] flex flex-wrap items-center gap-1.5">
+                  {words.question.questions[0]?.options.map((o, i) => (
+                    <button
+                      key={o.label}
+                      type="button"
+                      data-question-option={i}
+                      title={`${o.description ? `${o.description} · ` : ''}Answer "${o.label}" (${i + 1} in the Claude tab)`}
+                      disabled={answer.isPending && answer.variables?.workspaceId === w.id}
+                      className={`${actionClass('secondary', 'card')} max-w-full truncate`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sendAnswer(w, words, i);
+                      }}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                  <Action
+                    kind="ghost"
+                    size="card"
+                    data="other"
+                    title="Open the Claude tab to type your own answer"
+                    onClick={() => actions.open(w)}
+                  >
+                    Other…
+                  </Action>
+                </div>
+              ) : (
+                <div className="mt-[3px] flex h-7 items-center gap-2 text-sm text-fg-subtle">
+                  <Action
+                    kind="secondary"
+                    size="card"
+                    data="open"
+                    title="Open the Claude tab to answer"
+                    onClick={() => actions.open(w)}
+                  >
+                    Open
+                  </Action>
+                  <span className="min-w-0 truncate">
+                    {words.question.questions.length > 1
+                      ? 'Several questions; answer them in the Claude tab'
+                      : 'Pick any of them in the Claude tab'}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : null}
           {offer === 'field' && !lifted && !wasSent
             ? unfold(
-                <div className="relative mt-[3px] flex">
-                  <input
-                    data-quick-reply
-                    value={text}
-                    placeholder={placeholder(column, w, suspended.has(w.id))}
-                    aria-label={`Message Claude in ${cardLabel(w)}`}
-                    disabled={send.isPending && send.variables?.workspaceId === w.id}
-                    className="box-border h-7 w-full rounded-[5px] border border-line bg-term pr-7 pl-2 text-sm text-ellipsis text-fg outline-none placeholder:text-fg-subtle focus:border-focus focus:shadow-[0_0_0_1px_var(--color-focus)]"
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onFocus={refreshDrafts}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setReplies((r) => ({ ...r, [w.id]: value }));
-                    }}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        sendReply(w, column);
-                      } else if (e.key === 'Escape') {
-                        e.preventDefault();
-                        (
-                          e.currentTarget.closest('[data-board-card]') as HTMLElement | null
-                        )?.focus();
-                      }
-                    }}
-                  />
-                  <span
-                    title="Send ↵"
-                    className={`pointer-events-none absolute top-[5px] right-[5px] box-border flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px] border border-line font-mono text-xs ${
-                      text.trim() ? 'bg-raised text-fg' : 'text-fg-subtle'
-                    }`}
-                  >
-                    ↵
-                  </span>
+                <div className="flex flex-col">
+                  {context}
+                  <div className="relative mt-[3px] flex">
+                    <input
+                      data-quick-reply
+                      value={text}
+                      placeholder={placeholder(column, w, suspended.has(w.id))}
+                      aria-label={`Message Claude in ${cardLabel(w)}`}
+                      disabled={send.isPending && send.variables?.workspaceId === w.id}
+                      className="box-border h-7 w-full rounded-[5px] border border-line bg-term pr-7 pl-2 text-sm text-ellipsis text-fg outline-none placeholder:text-fg-subtle focus:border-focus focus:shadow-[0_0_0_1px_var(--color-focus)]"
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onFocus={refreshDrafts}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setReplies((r) => ({ ...r, [w.id]: value }));
+                      }}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          sendReply(w, column);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          (
+                            e.currentTarget.closest('[data-board-card]') as HTMLElement | null
+                          )?.focus();
+                        }
+                      }}
+                    />
+                    <span
+                      title="Send ↵"
+                      className={`pointer-events-none absolute top-[5px] right-[5px] box-border flex h-[18px] min-w-[18px] items-center justify-center rounded-[3px] border border-line font-mono text-xs ${
+                        text.trim() ? 'bg-raised text-fg' : 'text-fg-subtle'
+                      }`}
+                    >
+                      ↵
+                    </span>
+                  </div>
                 </div>,
               )
             : null}
@@ -649,7 +765,7 @@ export function HomeBoard({
               className="mt-[3px] flex h-7 items-center gap-1.5 text-sm text-fg-subtle"
             >
               <span className="text-diff-add">✓</span>
-              {wasSent === 'working' ? 'Sent · Claude reads it after this step' : 'Sent to Claude'}
+              {wasSent}
             </div>
           ) : null}
           {error ? (

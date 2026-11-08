@@ -167,7 +167,9 @@ const TRANSCRIPTS: Record<string, [string, string][]> = {
     ],
   ],
   'ABC-133': [['Upgrade the payment SDK to v5.', 'Drafting the spec now.']],
-  'ABC-139': [['Plan ABC-139.', 'The spec is ready for review.']],
+  'ABC-139': [
+    ['Plan ABC-139.', 'The spec is ready for review. Approve it, or tell me what to change.'],
+  ],
   'ABC-147': [['Move the colors to design tokens.', 'Done, and committed.']],
   'ABC-151': [['Fix the flaky DatePicker test.', 'Freezing the clock in the test.']],
   'ABC-136': [['Keep the focus in the search box.', 'Done: it keeps the focus after a search.']],

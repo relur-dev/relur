@@ -9,6 +9,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - **A + on each band of the grouped Board.** With the Board grouped by project, each band's header has the same **+**, for a new workspace in that project.
 - **Let Claude add others when needed**, under **Also in** in New workspace and on unless you untick it (remembered for each project). Claude is told at start which other projects of the profile it could link, with their folders and base branches, and links one with `relur link` only when the task needs changes there; the workspace's own repository stays its main one. Change it for a workspace with **Let Claude Add Repositories** in its **⋯** menu. With it off, Claude isn't told and its `relur link` is refused.
 - A repository Claude linked says **Added by Claude** in its chip's tooltip, and a line in the workspace's header says **Claude added <repo>** while you're looking at the workspace; elsewhere the window's notice says so, as before.
+- **See what you're replying to** on the Board: above a card's quick reply, a line shows Claude's last words: the question it asked, what it said at a workflow gate (or the gate's hint), or the end of its last message, two lines at most. Click it to open the workspace's **Responses** panel at that answer. It is always shown on **Needs you** cards and unfolds with the field elsewhere.
+- **Answer Claude's questions from the Board:** when Claude asks you to choose (its question menu), the card shows the question with its options as buttons; one click answers it. **Other…** opens the workspace for your own answer, and several questions at once, or several options to tick, offer **Open**. The **Responses** panel shows Claude's questions too, with the answer you gave.
 
 ### Changed
 
@@ -18,6 +20,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - A card dragged on the Board no longer carries on behind a dialog. If a dialog opened during the drag, for example the list of unfinished work at start, dropping the card on **Drop to delete** opened Delete workspace on top of it. A dialog that opens now cancels the drag.
+- The Board offered its quick reply while Claude waited on its question menu, where the text would have been taken as your answer. It shows the question's options there instead.
 
 ## [0.6.0] - 2026-11-08
 

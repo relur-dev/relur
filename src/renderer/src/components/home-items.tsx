@@ -30,6 +30,8 @@ import { GateAnswer } from './WorkflowViews';
 export interface HomeActions {
   /** Opens the workspace, on its Claude tab when it has one. */
   open: (workspace: Workspace) => void;
+  /** The workspace's Claude tab with its Responses panel open at `entry` (spec §6.7). */
+  responses: (workspace: Workspace, entry: number | null) => void;
   openProject: (project: Project) => void;
   /** Review at a gate: the workspace with its spec view (spec §13.8). */
   review: (workspace: Workspace) => void;

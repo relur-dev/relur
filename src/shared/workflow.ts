@@ -16,6 +16,8 @@ export interface WorkflowInfo {
   kind: WorkflowStatus['kind'] | 'unknown' | null;
   /** The status's label, or the raw value when unknown. */
   label: string | null;
+  /** The status's hint (spec §13.5); null without one. */
+  hint?: string | null;
   /** The file used, relative to the worktree. */
   file: string | null;
   /** Why there's no status: no file yet, several files, unreadable front matter. */

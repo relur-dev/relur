@@ -73,6 +73,7 @@ describe('readStatus', () => {
       index: 1,
       kind: 'gate',
       label: 'Spec review',
+      hint: null,
       file: 'docs/specs/one/specification.md',
       problem: null,
     });

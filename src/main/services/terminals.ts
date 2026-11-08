@@ -192,6 +192,21 @@ export class TerminalService {
     }, 200);
   }
 
+  /**
+   * Types keys into the workspace's running Claude as they are, not as a
+   * paste: one digit picks an option of Claude's question menu (spec §6.7).
+   * Never resumes: a suspended Claude has no menu to answer.
+   */
+  pressInClaude(workspaceId: string, keys: string): void {
+    const claude = this.host
+      .list()
+      .find((s) => s.workspaceId === workspaceId && s.kind === 'claude' && s.status !== 'exited');
+    if (claude?.status !== 'running' || claude.resuming) {
+      throw new Error("Claude isn't running in this workspace");
+    }
+    this.host.write(claude.id, keys);
+  }
+
   /** Replaces an exited (or running) home shell with a new one. */
   async restartHomeShell(profileId: string): Promise<SessionInfo> {
     const existing = this.homeShells.get(profileId);

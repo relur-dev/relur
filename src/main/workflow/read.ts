@@ -164,6 +164,7 @@ export function readStatus(
       index,
       kind: known ? known.kind : 'unknown',
       label: known ? known.label : status,
+      hint: known?.hint ?? null,
       file: file.file,
       problem: null,
     },

@@ -214,9 +214,10 @@ export function boardColumns(
 /**
  * What a card offers for a quick reply (spec §6.7): `field` to type into,
  * `open` where Claude shows its permission menu (typed text would answer it),
- * `draft` where its prompt holds unsent text, or `none`.
+ * `question` where Claude waits on its question tool (the card shows the
+ * options instead), `draft` where its prompt holds unsent text, or `none`.
  */
-export type QuickReply = 'field' | 'open' | 'draft' | 'none';
+export type QuickReply = 'field' | 'open' | 'question' | 'draft' | 'none';
 
 /** States in which a running Claude waits at its prompt or works (and queues input). */
 const REPLY_STATES: readonly WorkspaceState[] = [
@@ -232,11 +233,18 @@ export interface QuickReplyFacts {
   claude: { status: 'running' | 'suspended' | 'exited'; resuming: boolean } | null;
   /** Text typed into Claude's prompt and not sent (spec §9.8). */
   draft: boolean;
+  /**
+   * Claude waits on its question tool (from the transcript): its menu takes
+   * typed text as an answer, so the card offers the options instead.
+   */
+  question: boolean;
 }
 
 /**
- * Whether a quick reply may be typed into the workspace's Claude: never on a
- * permission request (also an Unfinished one), nor over a draft; only where
+ * Whether a quick reply may be typed into the workspace's Claude: never at
+ * Claude's question menu (Claude Code reads its state as Working, then as a
+ * permission request) nor on a permission request (also an Unfinished one),
+ * nor over a draft; only where
  * Claude waits at its prompt or works, or is suspended (it resumes first).
  * Never on Merged, nor on an exited Claude.
  */
@@ -246,6 +254,7 @@ export function quickReply(
   facts: QuickReplyFacts,
 ): QuickReply {
   if (column === 'merged') return 'none';
+  if (facts.question && facts.claude?.status === 'running') return 'question';
   if (w.state === 'needs-permission' || w.unfinished?.kind === 'permission') return 'open';
   const { claude } = facts;
   if (!claude || claude.status === 'exited') return 'none';
@@ -258,12 +267,17 @@ export function quickReply(
 /** Why the main process refuses a quick reply, by what `quickReply` says. */
 export const QUICK_REPLY_REFUSAL: Record<Exclude<QuickReply, 'field'>, string> = {
   open: 'Claude is asking for permission; answer it in the Claude tab',
+  question: 'Claude is asking a question; pick an answer on the card or in the Claude tab',
   draft: 'Has an unsent prompt; open it',
   none: "Claude isn't waiting for a message in this workspace",
 };
 
-/** "Bash" from "Claude needs your permission to use Bash", else the message. */
+/**
+ * "Bash" from "Claude needs your permission to use Bash", else the message;
+ * nothing for Claude Code's "Claude needs your permission" without a tool (its
+ * question tool's notice, which the card shows as the question instead).
+ */
 export function permissionTool(message: string | null): string | null {
-  if (!message) return null;
+  if (!message || /^claude needs your permission\.?$/i.test(message.trim())) return null;
   return /permission to use (.+)$/i.exec(message)?.[1]?.trim() ?? message;
 }

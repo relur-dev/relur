@@ -13,7 +13,10 @@
  * over, at once with reduced motion), and the quick reply: sent to a waiting
  * workspace and to a working
  * one, resumed first for a suspended one, refused on a permission request
- * (Open instead) and over a draft. Runs with a throwaway HOME and a fake
+ * (Open instead) and over a draft; above it what Claude last said (its
+ * question, its words at a gate, none for a fresh session), the line opening
+ * the Responses panel at that entry, and Claude's question tool answered from
+ * its card's options. Runs with a throwaway HOME and a fake
  * `claude`.
  *
  *   tsx scripts/e2e-board.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
@@ -183,6 +186,22 @@ while IFS= read -r line; do
       hook UserPromptSubmit '{"prompt":"<task-notification><task-id>b1</task-id></task-notification>"}'
       hook Stop '{"background_tasks":[]}' ;;
     devserver) hook Stop '{"background_tasks":[{"id":"d1","type":"shell","status":"running","command":"npm run dev"}]}' ;;
+    # What Claude says, in the transcript (spec §6.7's line above the quick reply).
+    said)
+      printf '%s\\n' '{"type":"assistant","message":{"id":"said-1","role":"assistant","content":[{"type":"text","text":"I picked a palette.\\n\\nShall I use the **brand blue**?"}]}}' >> "$transcript" ;;
+    # Claude's question tool, as Claude Code 2.1.319 runs it: the call in the
+    # transcript, PreToolUse, then a permission Notification; its menu takes
+    # one key, a digit picking that option at once.
+    ask)
+      printf '%s\\n' '{"type":"assistant","message":{"id":"ask-1","role":"assistant","content":[{"type":"tool_use","id":"toolu_ask1","name":"AskUserQuestion","input":{"questions":[{"question":"Which color do you prefer?","header":"Color","options":[{"label":"Red","description":"Warm"},{"label":"Blue","description":"Calm"},{"label":"Green","description":"Fresh"}],"multiSelect":false}]}}]}}' >> "$transcript"
+      hook PreToolUse '{"tool_name":"AskUserQuestion"}'
+      hook Notification '{"notification_type":"permission_prompt","message":"Claude needs your permission"}'
+      old=$(stty -g); stty -icanon -echo min 1; key=$(dd bs=1 count=1 2>/dev/null); stty "$old"
+      printf '%s' "$key" > "$HOME/answer-$id.txt"
+      case "$key" in 1) pick=Red ;; 2) pick=Blue ;; 3) pick=Green ;; *) pick="$key" ;; esac
+      printf '%s\\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_ask1","content":"answered"}]},"toolUseResult":{"answers":{"Which color do you prefer?":"'"$pick"'"}}}' >> "$transcript"
+      hook PostToolUse '{"tool_name":"AskUserQuestion"}'
+      hook Stop "{\\"last_assistant_message\\":\\"$pick\\"}" ;;
     *) printf '%s\\n' "$line" >> "$HOME/input-$id.txt" ;;
   esac
 done
@@ -205,8 +224,28 @@ exec sleep 600
         profiles: SEED_CONFIG.profiles.map((p) => ({
           ...p,
           claude: { command: fakeClaude, args: [] },
-          // Personal suspends its idle Claude after "5 minutes" (spec §9.8).
-          ...(p.id === 'personal' ? { suspendIdleMin: 5 } : {}),
+          // Personal suspends its idle Claude after "5 minutes" (spec §9.8), and
+          // has a workflow with a gate (spec §13.4, §13.5).
+          ...(p.id === 'personal'
+            ? {
+                suspendIdleMin: 5,
+                workflow: {
+                  file: 'docs/specs/*/spec.md',
+                  match: { field: 'branch', equals: 'branch' },
+                  statusField: 'status',
+                  statuses: [
+                    { value: 'draft', label: 'Draft', kind: 'step' },
+                    {
+                      value: 'review',
+                      label: 'Spec review',
+                      kind: 'gate',
+                      hint: 'Review and approve the spec',
+                    },
+                    { value: 'done', label: 'Done', kind: 'final' },
+                  ],
+                },
+              }
+            : {}),
           ...(p.id === 'work'
             ? {
                 pr: {
@@ -285,6 +324,7 @@ exec sleep 600
 
     await create('waiting', 'web', 'ABC-1 Pick a color');
     await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'said');
     await typeInTerminal(page, 'input');
     await waitState('waiting', 'Waiting for input');
     await create('perm', 'web', 'ABC-2 Fix the flaky test');
@@ -410,6 +450,27 @@ exec sleep 600
       await page.eval(`!!${card(id('merged1'))}.querySelector('[data-quick-reply]')`),
       false,
     );
+
+    // Above the field, what Claude last said (spec §6.7): its question, on Needs you always.
+    const context = (key: string) => `${card(id(key))}.querySelector('[data-quick-reply-context]')`;
+    await page.waitFor(`!!${context('waiting')}`, "the waiting card's line");
+    assert.equal(
+      await page.eval<string>(`${context('waiting')}.textContent`),
+      'Claude asked: Shall I use the brand blue?',
+    );
+    assert.equal(
+      await page.eval(
+        `${context('waiting')}.compareDocumentPosition(${card(id('waiting'))}.querySelector('[data-quick-reply]')) & Node.DOCUMENT_POSITION_FOLLOWING`,
+      ),
+      4,
+      'the line is above the field',
+    );
+    // A fresh session has no text: no line, also once its field shows.
+    await page.eval(`${card(id('working'))}.focus()`);
+    await page.waitFor(`!!${card(id('working'))}.querySelector('[data-quick-reply]')`, 'the field');
+    assert.equal(await page.eval(`!!${context('working')}`), false, 'no line without text');
+    // None where no field is offered: a permission request.
+    assert.equal(await page.eval(`!!${context('perm')}`), false);
 
     // Sent to a waiting workspace: always shown on Needs you; ↵ sends, the field clears.
     const reply = async (key: string, text: string) => {
@@ -1015,6 +1076,87 @@ exec sleep 600
     assert.match(starts.at(-1) ?? '', /--resume/);
     // Needs you, empty, looks like the others.
     assert.equal(await page.eval(tone('needs')), null);
+
+    // 9b. What Claude asked (spec §6.7). At a gate: Claude's words there.
+    await create('gate', 'api', 'ABC-8 Checkout spec');
+    const spec = path.join(ws.gate?.tree as string, 'docs', 'specs', 'checkout', 'spec.md');
+    fs.mkdirSync(path.dirname(spec), { recursive: true });
+    fs.writeFileSync(spec, `---\nbranch: ${ws.gate?.branch}\nstatus: review\n---\n# Checkout\n`);
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'said');
+    await typeInTerminal(page, 'stop');
+    await waitState('gate', 'Awaiting approval');
+    // Claude's question tool: its options in place of the field.
+    await create('asker', 'api', 'ABC-9 Brand color');
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'ask');
+    await waitState('asker', 'Needs permission');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!${context('gate')}`, "the gate card's line");
+    assert.equal(await page.eval(`${context('gate')}.dataset.quickReplyContext`), 'gate');
+    assert.equal(
+      await page.eval<string>(`${context('gate')}.textContent`),
+      'At Spec review, Claude: Shall I use the brand blue?',
+    );
+    assert.equal(
+      await page.eval(`!!${card(id('gate'))}.querySelector('[data-quick-reply]')`),
+      true,
+    );
+    await page.waitFor(
+      `!!${card(id('asker'))}.querySelector('[data-quick-reply-question]')`,
+      'the question on its card',
+    );
+    assert.equal(await page.eval(columnOf(id('asker'))), 'needs');
+    assert.equal(
+      await page.eval<string>(`${context('asker')}.textContent`),
+      'Claude asked: Which color do you prefer?',
+    );
+    assert.deepEqual(
+      await page.eval(
+        `[...${card(id('asker'))}.querySelectorAll('[data-question-option], [data-home-action=other]')].map((b) => b.textContent)`,
+      ),
+      ['Red', 'Blue', 'Green', 'Other…'],
+    );
+    // Its notice names no tool: the status line says only "Needs permission".
+    assert.doesNotMatch(await page.eval<string>(`${card(id('asker'))}.innerText`), /Claude needs/);
+    // Typed text would answer the menu: no field, and not Open's permission note.
+    assert.equal(
+      await page.eval(`!!${card(id('asker'))}.querySelector('[data-quick-reply]')`),
+      false,
+    );
+    assert.equal(
+      await page.eval(`!!${card(id('asker'))}.querySelector('[data-quick-reply-open]')`),
+      false,
+    );
+    await screenshot(page, screenshotDir, 'b3-question.png');
+    // Its line opens the Responses panel at that entry, expanded, the question in it.
+    await page.eval(`${context('asker')}.click()`);
+    await page.waitFor(
+      `document.querySelector('[data-response="1"]')?.dataset.expanded === 'true'`,
+      'Responses at the entry',
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-response="1"]').innerText`),
+      /Claude asked[\s\S]*Which color do you prefer\?[\s\S]*Blue: Calm/,
+    );
+    await pressKey(page, 'Digit0', CMD);
+    // An option answers it: its digit, which Claude Code's menu picks at once.
+    await page.waitFor(
+      `!!${card(id('asker'))}?.querySelector('[data-question-option="1"]')`,
+      'Blue',
+    );
+    await page.eval(`${card(id('asker'))}.querySelector('[data-question-option="1"]').click()`);
+    assert.equal((await waitForFile(file(`answer-${id('asker')}.txt`))).trim(), '2');
+    await page.waitFor(
+      `${card(id('asker'))}?.querySelector('[data-quick-reply-sent]')?.textContent.includes('Answered: Blue')`,
+      'Answered: Blue',
+    );
+    await waitState('asker', 'Done');
+    await page.waitFor(
+      `!${card(id('asker'))}.querySelector('[data-quick-reply-question]')`,
+      'the question gone',
+    );
+    assert.equal(await page.eval(columnOf(id('gate'))), 'needs');
     // Personal chooses the List.
     await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
     await page.waitFor(`${layout} === 'list'`, 'Personal on the List');

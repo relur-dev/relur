@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { editorFor } from '@shared/editor';
 import { boardColumn, QUICK_REPLY_REFUSAL, quickReply } from '@shared/home';
+import type { LastWords } from '@shared/last-words';
+import { answerable, optionKey } from '@shared/question';
 import type { Editor } from '@shared/schemas';
 import {
   EditorSchema,
@@ -19,6 +21,7 @@ import { app, BrowserWindow, clipboard, dialog, nativeTheme, shell, webContents 
 import { z } from 'zod';
 import type { FinishService } from '../changes/finish';
 import { watchWorktrees } from '../changes/watch';
+import { cachedConversation, lastWordsOf, pruneConversations } from '../claude/last-words';
 import { readResponses, watchTranscript } from '../claude/transcript';
 import { cliInstallInfo, installCli } from '../cli-install';
 import type { ConfigStore } from '../config/store';
@@ -792,9 +795,53 @@ export function createAppRouter({
           const offer = quickReply(w, boardColumn(w, null), {
             claude,
             draft: claude ? suspend.hasDraft(claude.id) : false,
+            question: cachedConversation(workspaceRecords.transcriptPath(w.id)).pending !== null,
           });
           if (offer !== 'field') throw new Error(QUICK_REPLY_REFUSAL[offer]);
           await terminals.sendToClaude(w.id, input.text);
+        }),
+      /**
+       * What each of the profile's Board cards shows above its quick reply
+       * (spec §6.7): Claude's question, its words at a gate or its last
+       * message, by workspace id; workspaces with nothing aren't listed.
+       */
+      lastWords: publicProcedure
+        .input(z.object({ profileId: z.string().min(1).max(100) }))
+        .query(({ input }) => {
+          const all = workspaceRecords.list();
+          pruneConversations(all.map((w) => workspaceRecords.transcriptPath(w.id)));
+          const shown: Record<string, LastWords> = {};
+          for (const w of all) {
+            if (w.profileId !== input.profileId) continue;
+            const words = lastWordsOf(workflow.decorate(w), workspaceRecords.transcriptPath(w.id));
+            if (words) shown[w.id] = words;
+          }
+          return shown;
+        }),
+      /**
+       * Answers Claude's question from its card (spec §6.7): types the
+       * option's digit into the running Claude, which picks it at once. Only
+       * while that same question waits and it takes a single key.
+       */
+      answerQuestion: publicProcedure
+        .input(
+          z.object({
+            workspaceId: IdSchema,
+            questionId: z.string().min(1).max(200),
+            option: z.number().int().min(0).max(8),
+          }),
+        )
+        .mutation(({ input }) => {
+          const { pending } = cachedConversation(
+            workspaceRecords.transcriptPath(input.workspaceId),
+          );
+          if (pending?.id !== input.questionId) {
+            throw new Error('Claude is no longer asking this question');
+          }
+          if (!answerable(pending) || input.option >= (pending.questions[0]?.options.length ?? 0)) {
+            throw new Error('Answer this question in the Claude tab');
+          }
+          terminals.pressInClaude(input.workspaceId, optionKey(input.option));
         }),
       /** The project's git worktrees no workspace uses (spec §13.6). */
       otherWorktrees: publicProcedure

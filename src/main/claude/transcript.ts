@@ -1,10 +1,19 @@
 import fs from 'node:fs';
+import {
+  type AskedQuestion,
+  askedQuestions,
+  type PendingQuestion,
+  QUESTION_TOOL,
+  questionMarkdown,
+} from '@shared/question';
 
 /** One of Claude's messages in a turn: its text, without tool calls (spec §6.8). */
 export interface ResponsePart {
   text: string;
   /** It follows background work handing back to Claude, not a prompt (spec §6.8). */
   afterBackground: boolean;
+  /** Claude's question tool: the questions, their options and the answers (spec §6.8). */
+  question?: true;
 }
 
 /**
@@ -172,13 +181,71 @@ export const joinParts = (parts: readonly { text: string }[]): string =>
  * or unreadable file gives none.
  */
 export function readResponses(file: string): TranscriptResponse[] {
+  return readConversation(file).responses;
+}
+
+/** A transcript's entries and the question Claude waits on, if any. */
+export interface Conversation {
+  responses: TranscriptResponse[];
+  /**
+   * Claude's question tool waiting for its answer: its call is the last
+   * thing Claude did and has no result yet (spec §6.7).
+   */
+  pending: PendingQuestion | null;
+}
+
+/** The question tool's calls in an assistant entry. */
+function questionCalls(entry: Record<string, unknown>): PendingQuestion[] {
+  const content = record(entry.message)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    const p = record(part);
+    if (p?.type !== 'tool_use' || p.name !== QUESTION_TOOL || typeof p.id !== 'string') return [];
+    const questions = askedQuestions(p.input);
+    return questions.length > 0 ? [{ id: p.id, questions }] : [];
+  });
+}
+
+/** The ids of the tool calls a user entry gives results for. */
+function toolResultIds(entry: Record<string, unknown>): string[] {
+  const content = record(entry.message)?.content;
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((part) => {
+    const p = record(part);
+    return p?.type === 'tool_result' && typeof p.tool_use_id === 'string' ? [p.tool_use_id] : [];
+  });
+}
+
+/** The answers Claude Code records with the question tool's result, by question. */
+function questionAnswers(entry: Record<string, unknown>): Record<string, string> | null {
+  const answers = record(record(entry.toolUseResult)?.answers);
+  if (!answers) return null;
+  return Object.fromEntries(
+    Object.entries(answers).filter((a): a is [string, string] => typeof a[1] === 'string'),
+  );
+}
+
+/**
+ * The entries of a session transcript and the question Claude waits on, as
+ * `readResponses`, which gives the entries only. Claude's questions are parts
+ * of their own, marked, with the answers once given (spec §6.8).
+ */
+export function readConversation(file: string): Conversation {
   let text: string;
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch {
-    return [];
+    return { responses: [], pending: null };
   }
+  return parseConversation(text);
+}
+
+/** `readConversation` of the transcript's text. */
+export function parseConversation(text: string): Conversation {
   const responses: TranscriptResponse[] = [];
+  /** The questions asked so far, by their tool call's id, to add the answers. */
+  const asked = new Map<string, { part: ResponsePart; questions: AskedQuestion[] }>();
+  let pending: PendingQuestion | null = null;
   let current: {
     parts: ResponsePart[];
     at: string | null;
@@ -222,10 +289,17 @@ export function readResponses(file: string): TranscriptResponse[] {
     if (prompt !== null) {
       close();
       current = open(prompt, entry.timestamp);
+      pending = null;
     } else if (entry.type === 'user') {
       // Tool work, or background work handing back: the next text is a part of its own.
       current ??= open(null, null);
       current.message = null;
+      for (const id of toolResultIds(entry)) {
+        const question = asked.get(id);
+        if (question)
+          question.part.text = questionMarkdown(question.questions, questionAnswers(entry));
+        if (pending?.id === id) pending = null;
+      }
       if (isHandBack(entry)) current.handBack = true;
       if (userTexts(entry).some((t) => INTERRUPTED.test(t.trim()))) current.interrupted = true;
     } else if (entry.type === 'assistant') {
@@ -244,11 +318,24 @@ export function readResponses(file: string): TranscriptResponse[] {
         current.handBack = false;
         current.message = message;
       }
+      for (const call of questionCalls(entry)) {
+        const question: ResponsePart = {
+          text: questionMarkdown(call.questions),
+          afterBackground: current.handBack,
+          question: true,
+        };
+        current.parts.push(question);
+        current.handBack = false;
+        // Text after it is a message of its own.
+        current.message = null;
+        asked.set(call.id, { part: question, questions: call.questions });
+        pending = call;
+      }
       if (typeof entry.timestamp === 'string') current.at = entry.timestamp;
     }
   }
   close();
-  return responses;
+  return { responses, pending };
 }
 
 /**

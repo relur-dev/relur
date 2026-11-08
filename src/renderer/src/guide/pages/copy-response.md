@@ -13,6 +13,7 @@ While it works, Claude often writes a few lines, runs tools, then writes more. T
 - When Claude only ran tools and wrote nothing, the entry says **No text response**.
 - When you interrupt Claude with <kbd>Esc</kbd> (or turn down a permission), the entry keeps what Claude wrote until then and says **Interrupted** next to its time.
 - The panel follows the conversation: while Claude works, the newest entry grows as each part arrives.
+- When Claude asks you to choose (its question menu), the question is a part of its own under a small **Claude asked** label, with its options and, once you've answered, your answer. Clicking what Claude asked on a [Board card](home#board) opens the panel at that entry.
 - When work Claude ran in the background finishes, Claude carries on by itself. You didn't send a prompt, so what it writes then joins the same entry, under a small **After background work** label.
 - A conversation you resumed lists its earlier entries too.
 - <kbd>Esc</kbd> closes the panel while you're in it, and so do **×** and <kbd>{{key:responses}}</kbd>; the terminal gets the focus back.
