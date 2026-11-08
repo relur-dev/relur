@@ -45,7 +45,7 @@ Projects start collapsed, so a long list stays short. The one holding the worksp
 
 - When you open a workspace, from the sidebar, <kbd>{{key:nextNeedingYou}}</kbd>, <kbd>{{keys:workspaceStep}}</kbd>, a notification or Home's **Needs you**, its project expands. The project that was open only for the workspace before collapses again.
 - A project you expand yourself with its **▶** stays expanded until you collapse it.
-- After a restart, the projects you expanded and the project of the last workspace you opened are expanded again, with that workspace in view.
+- After a restart, the projects you expanded and the project of the last workspace you opened are expanded again, with that workspace in view. The window itself opens where you were; see [Starting again](resume#starting-again).
 
 ## The counts on a project
 

@@ -1,6 +1,6 @@
 # Home
 
-Each profile has a Home <kbd>{{key:home}}</kbd>: the first thing you see, and where you go back to between tasks. It has two tabs, like a workspace: **Overview** and **Terminal**. {{mac}}<kbd>⌃1</kbd> and <kbd>⌃2</kbd> switch between them, as do <kbd>{{keys:cycleTabs}}</kbd>.{{/mac}}{{other}}<kbd>{{keys:cycleTabs}}</kbd> switches between them.{{/other}}
+Each profile has a Home <kbd>{{key:home}}</kbd>: where a new profile opens, and where you go back to between tasks. It has two tabs, like a workspace: **Overview** and **Terminal**. {{mac}}<kbd>⌃1</kbd> and <kbd>⌃2</kbd> switch between them, as do <kbd>{{keys:cycleTabs}}</kbd>.{{/mac}}{{other}}<kbd>{{keys:cycleTabs}}</kbd> switches between them.{{/other}}
 
 ## Overview
 
@@ -29,7 +29,7 @@ The Board shows the profile's workspaces as five columns: **Working**, **Idle**,
 
 ![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Columns, Group None and List | Board are at the top right.](images/home-board.webp)
 
-Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
+Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own (grouped by project, the whole Board scrolls instead, as below).
 
 ### Columns
 

@@ -6,7 +6,7 @@ What happens to Claude and your terminals when you quit {{app}} or close its win
 
 Quitting while something runs asks first: **Stop n running sessions?** lists each one with its profile, task and state. Claude counts while it runs; a shell counts only while a command runs in it, not while it waits at its prompt, and so does a setup command. **Quit** has the focus, so <kbd>{{key:quit}}</kbd> again confirms; **Cancel** or <kbd>Esc</kbd> keeps everything running. With nothing running, {{app}} quits without asking.
 
-<kbd>{{key:quit}}</kbd>{{mac}}, **Quit** in the {{app}} menu and **Quit** in the Dock's menu{{/mac}}{{other}} and **File › Quit**{{/other}} quit completely: every session stops and nothing of {{app}} keeps running in the background. Logging out or shutting down quits the same way, without asking. Panel sizes, which projects are expanded and the rest of what the window remembers are saved as you change them, so they last even when logging out ends {{app}} abruptly.
+<kbd>{{key:quit}}</kbd>{{mac}}, **Quit** in the {{app}} menu and **Quit** in the Dock's menu{{/mac}}{{other}} and **File › Quit**{{/other}} quit completely: every session stops and nothing of {{app}} keeps running in the background. Logging out or shutting down quits the same way, without asking. Panel sizes, which projects are expanded, what the window shows and the rest of what it remembers are saved as you change them, so they last even when logging out ends {{app}} abruptly.
 
 ## Closing the window
 

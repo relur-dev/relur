@@ -42,7 +42,7 @@ A workspace across several repositories has a section per repository, each with 
 | Badge | Meaning |
 | --- | --- |
 | PR open, PR draft, PR closed | From the PR status command |
-| Merged | From the PR status command, or: the branch's commits are in the base branch |
+| Merged | From the PR status command, or: the branch's own commits are in the base branch (see [Merged branches](delete-workspace#merged-branches)) |
 | Likely merged | The pushed branch was deleted on the remote, which most hosts do after a merge |
 
 When it's merged, the workspace offers **Delete…**. Across several repositories, that's once every repository with commits is merged.

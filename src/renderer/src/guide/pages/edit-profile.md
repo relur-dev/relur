@@ -7,7 +7,7 @@ Right-click a profile tab and choose **Edit profile…**. It has four tabs: **Ge
 | Setting | What it does |
 | --- | --- |
 | Name | Shown on the tab |
-| Color | One of twelve, in one row that scrolls sideways when it doesn't fit; hover a color for its name. Colors other profiles use are dimmed, and you can still pick them. Use the arrow keys to move through the colors. It marks the tab, the sidebar and the status bar |
+| Color | One of twelve, in one row that scrolls sideways when it doesn't fit; hover a color for its name and which profiles use it. Colors other profiles use are dimmed, and you can still pick them. Use the arrow keys to move through the colors. It marks the tab, the sidebar and the status bar |
 | Claude account folder | Read-only, with whether it's signed in and as whom. **Check setup** runs the [setup check](setup-check) |
 | Terminal shortcut | For a profile with its own account folder: an `alias claude-<id>` line that runs Claude Code with this profile's account in any terminal, with Copy and **Add to <file>…**, the same as at the end of New profile |
 | Commit identity | Optional name and email for commits made in this profile. See [Commit identity](finishing-work#commit-identity) |
@@ -21,6 +21,8 @@ Right-click a profile tab and choose **Edit profile…**. It has four tabs: **Ge
 | Your status line command | Only if you customized Claude Code's status line. See [The status line](status-line) |
 
 The account folder can't be changed. To use a different Claude account, create a new profile.
+
+Light or dark isn't a profile setting: it applies to the whole app, in **View › Appearance**. See [Appearance](first-steps#appearance).
 
 The tab's menu also has **Check setup**, which opens the profile's setup check and runs it.
 

@@ -2,7 +2,7 @@
 
 Click **+** after the profile tabs (on first launch, **Create your first profile**). The wizard has four steps: **Name & color**, **Claude account**, **Setup check** and **Done**.
 
-1. **Name & color:** name the profile and pick one of twelve colors. Colors other profiles use are dimmed; you can still pick them. You can change both later in [Edit profile](edit-profile).
+1. **Name & color:** name the profile and pick one of twelve colors, in one row that scrolls sideways when it doesn't fit. It starts with the first color no other profile uses; colors other profiles use are dimmed, and you can still pick them. Hover a color for its name (and which profiles use it), or move through them with the arrow keys. Below, a preview of the tab bar shows the new profile's tab next to the others. You can change both later in [Edit profile](edit-profile).
 2. **Claude account:** choose which account the profile uses (below), then **Create profile**. From here the profile exists.
 3. **Setup check:** the [setup check](setup-check) runs for the new profile. **Continue** is enabled once every row passes; **Finish later** skips ahead, and the profile's projects and workspaces wait until the check passes.
 4. **Done:** a summary, and for a profile with its own folder the optional [terminal shortcut](terminal-shortcut). **Open <profile>** switches to it.
