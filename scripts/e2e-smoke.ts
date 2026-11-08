@@ -4232,6 +4232,10 @@ exec sleep 600
     await openContextMenu(page, '[aria-label="Select Personal"]');
     await page.waitFor(`(${tabOrder}) === 'work,personal'`, 'Work first again');
     assert.equal(savedOrder(), 'work,personal');
+    // The restart below opens on what is shown at quit (spec §5): Work's Home.
+    await clickLabel(page, 'Select Work');
+    await pressShortcut(page, 'home');
+    await page.waitFor(`!!document.querySelector('[data-home-tab]')`, "Work's Home");
 
     page.close();
     mainProcess.close();

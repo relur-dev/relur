@@ -566,8 +566,8 @@ done
       number
     >;
 
-    // 8. Start: Home shows, so only Bravo, continued with §9.7, resumes; the
-    // rest start suspended until opened.
+    // 8. Start: the window shows Echo, as at quit (spec §5), so Echo and
+    // Bravo, continued with §9.7, resume; the rest start suspended until opened.
     running = await launch();
     ({ page } = running);
     await until(() => starts('bravo').length === before.bravo + 1, 'Bravo resumed', 30_000);
@@ -576,11 +576,14 @@ done
       'the continue prompt',
       30_000,
     );
+    await until(() => starts('echo').length === before.echo + 1, 'Echo, shown, resumed', 30_000);
     await sleep(2000);
-    for (const branch of ['alpha', 'charlie', 'delta', 'echo', 'golf'] as const) {
+    for (const branch of ['alpha', 'charlie', 'delta', 'golf'] as const) {
       assert.equal(starts(branch).length, before[branch], `${branch} starts suspended`);
     }
     // Home's rows show the mark too: Alpha is Ready to ship, suspended.
+    // Home, under the overview that start's work shows (spec §9.7).
+    await page.eval(`document.querySelector('[data-nav-key="home"]').click()`);
     await showHomeList(page);
     await page.waitFor(
       `!!document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]')`,
@@ -604,7 +607,7 @@ done
         ?.includes(`--resume ${sessionIdOf('charlie')}`),
     );
     await sleep(1000);
-    assert.equal(starts('echo').length, before.echo, 'Echo still suspended');
+    assert.equal(starts('echo').length, before.echo + 1, 'Echo resumed only once');
 
     assert.equal(read('uncaught.log'), '', 'no uncaught exception in the main process');
     console.log(`e2e suspend test passed (${devMode ? 'dev server' : 'production build'})`);
