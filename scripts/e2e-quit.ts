@@ -19,7 +19,7 @@ import { QUIT_ON_CLOSE_LABEL } from '../src/shared/window-close';
 import {
   assertExitedCleanly,
   type Cdp,
-  clickButtonText,
+  clickClosingButton,
   dialogText,
   launchApp,
   pressShortcut,
@@ -198,7 +198,7 @@ exec sleep 600
       assert.match(await page.eval<string>(dialogText), /Click .+ in the Dock/);
       assert.match(await page.eval<string>('document.activeElement.textContent'), /^Close Window/);
       assert.equal(await windowCount(running.main), 1, 'the window waits for the answer');
-      await clickButtonText(page, 'Close Window', `document.querySelector('dialog[open]')`);
+      await clickClosingButton(page, 'Close Window', `document.querySelector('dialog[open]')`);
       page.close();
       await waitForWindows(running.main, 0, 'the window to close');
       await sleep(500);
@@ -220,7 +220,7 @@ exec sleep 600
       let processes = descendants(running.pid);
       await pressQuit(running.main);
       await page.waitFor(`${dialogText}.includes('Stop 1 running session?')`, 'the quit dialog');
-      await clickButtonText(page, 'Quit', `document.querySelector('dialog[open]')`);
+      await clickClosingButton(page, 'Quit', `document.querySelector('dialog[open]')`);
       await assertGone(running, processes, fx.root, '⌘Q with Claude running');
       assert.equal(fs.existsSync(nativeDialogs), false, 'no second question');
       app = undefined;

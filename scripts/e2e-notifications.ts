@@ -19,7 +19,7 @@ import { SEED_CONFIG } from '../src/main/test-support/seed-config';
 import { envVar } from '../src/shared/brand';
 import {
   type Cdp,
-  clickButtonText,
+  clickClosingButton,
   clickLabel,
   dialogText,
   launchApp,
@@ -264,7 +264,7 @@ done
       );
       // The first close ever says the app keeps running.
       await page.waitFor(`${dialogText}.includes('keeps running')`, 'the close notice');
-      await clickButtonText(page, 'Close Window', `document.querySelector('dialog[open]')`);
+      await clickClosingButton(page, 'Close Window', `document.querySelector('dialog[open]')`);
       page.close();
       await waitForWindows(running.main, 0, 'the window to close');
       await clickNotification(alpha);

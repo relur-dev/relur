@@ -53,7 +53,7 @@ Retake them when the screens they show change. Look at each one in both themes b
 ## Rules for a change
 
 - **`npm run verify` passes** before you open a pull request. The e2e tests use a fake `claude`, never the real one.
-- **A new e2e suite** is a `scripts/e2e-<name>.ts` file with `<name>` added to `scripts/e2e-suites.json`, the one list that `npm run e2e`, `scripts/linux-check.sh` and CI all run; `npm run check` fails while a suite file isn't listed. `tsx scripts/e2e.ts [--mode prod|dev] [suite…]` runs some of them after `npm run build`.
+- **A new e2e suite** is a `scripts/e2e-<name>.ts` file with `<name>` added to `scripts/e2e-suites.json`, the one list that `npm run e2e`, `scripts/linux-check.sh` and CI all run; `npm run check` fails while a suite file isn't listed. `tsx scripts/e2e.ts [--jobs n] [--mode prod|dev] [suite…]` runs some of them after `npm run build`, up to three at once by default (`--jobs 1` for one at a time with live output).
 - **The spec is the source of truth.** A change in behaviour updates [docs/SPEC.md](../docs/SPEC.md) in the same pull request, with e2e coverage of the new behaviour.
 - **The Guide follows the spec.** The in-app Guide's pages (`src/renderer/src/guide/pages/`, ordered in `guide/content.ts`) are updated with every behaviour change they describe.
 - **No company-specific content.** No company names, internal hosts, accounts or other organisation-specific values in code, tests, docs or examples. Use generic ones (`ABC-142`, `you@example.com`).

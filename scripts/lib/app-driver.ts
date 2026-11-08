@@ -61,7 +61,12 @@ export class Cdp {
   private nextId = 0;
   private readonly pending = new Map<
     number,
-    { resolve: (message: Record<string, unknown>) => void; reject: (error: Error) => void }
+    {
+      resolve: (message: Record<string, unknown>) => void;
+      reject: (error: Error) => void;
+      /** The call, with the caller's stack, for a disconnect. */
+      origin: Error;
+    }
   >();
   private readonly ws: WebSocket;
   private readonly opened: Promise<unknown>;
@@ -99,7 +104,10 @@ export class Cdp {
     });
     // A crashed renderer or exited app must fail the test, not hang it.
     this.ws.onclose = () => {
-      for (const { reject } of this.pending.values()) reject(new Error('debugger disconnected'));
+      for (const { reject, origin } of this.pending.values()) {
+        origin.message = `debugger disconnected during ${origin.message}`;
+        reject(origin);
+      }
       this.pending.clear();
     };
   }
@@ -108,12 +116,13 @@ export class Cdp {
     await this.opened;
     const id = ++this.nextId;
     this.ws.send(JSON.stringify({ id, method, params }));
+    // Which call hung or was cut off, so an intermittent failure says where it was.
+    const what = typeof params.expression === 'string' ? params.expression : params.type;
+    const detail = what ? ` (${String(what).replace(/\s+/g, ' ').slice(0, 120)})` : '';
+    const origin = new Error(`${method}${detail}`);
     const message = await new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        // Which call hung, so an intermittent failure says where it was.
-        const what = typeof params.expression === 'string' ? params.expression : params.type;
-        const detail = what ? ` (${String(what).replace(/\s+/g, ' ').slice(0, 120)})` : '';
         reject(new Error(`${method}: no reply in ${SEND_TIMEOUT_MS / 1000} s${detail}`));
       }, SEND_TIMEOUT_MS);
       const settle = () => {
@@ -129,6 +138,7 @@ export class Cdp {
           settle();
           reject(e);
         },
+        origin,
       });
     });
     if (message.error) throw new Error(`${method}: ${JSON.stringify(message.error)}`);
@@ -192,8 +202,10 @@ export interface RunningApp {
 }
 
 /**
- * Starts the production build in out/ (or `electron-vite dev` with `dev`) and
- * connects to it once the UI is ready. With `visible: false` (the default)
+ * Starts the production build in out/ (or, with `dev`, its main process and
+ * preload with the renderer from `electron-vite dev --rendererOnly`, which
+ * leaves out/ alone, so suites can run at once) and connects to it once the
+ * UI is ready. With `visible: false` (the default)
  * the app keeps its window away from the real mouse and keyboard
  * (`testWindows` in src/main/window.ts): input comes only from here.
  */
@@ -221,7 +233,7 @@ export async function launchApp(options: {
   const extra = options.electronArgs ?? [];
   const bin = (name: string) => path.join(appDir, 'node_modules', '.bin', name);
   const child = options.dev
-    ? spawn(bin('electron-vite'), ['dev', '--', ...debugArgs, ...extra], {
+    ? spawn(bin('electron-vite'), ['dev', '--rendererOnly', '--', ...debugArgs, ...extra], {
         cwd: appDir,
         // The given PATH stays (the onboarding test leaves out every claude); electron-vite needs node on it.
         env: { ...env, PATH: env.PATH || process.env.PATH || '' },
@@ -599,6 +611,16 @@ export const hasButton = (text: string, scope = 'document') =>
 export const clickButtonText = (page: Cdp, text: string, scope = 'document') =>
   page.eval(
     `[...${scope}.querySelectorAll('button')].find((b) => ${buttonLabel} === ${JSON.stringify(text)}).click()`,
+  );
+
+/**
+ * Clicks a button that closes its own window or quits the app (Close Window,
+ * Quit): the click waits a tick, so the reply arrives before the page goes
+ * away; otherwise a busy machine can drop it and the test sees a disconnect.
+ */
+export const clickClosingButton = (page: Cdp, text: string, scope = 'document') =>
+  page.eval(
+    `(() => { const b = [...${scope}.querySelectorAll('button')].find((b) => ${buttonLabel} === ${JSON.stringify(text)}); void setTimeout(() => b.click()); })()`,
   );
 
 /**
