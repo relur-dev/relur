@@ -10,6 +10,7 @@
 import './lib/clean-env';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
@@ -40,6 +41,23 @@ const title = `(document.querySelector('main h1')?.textContent ?? null)`;
 /** The selected terminal tab's title, as an expression. */
 const shownTab = `([...document.querySelectorAll('main [role=tab][aria-selected=true]')].map((t) => t.title).join('|'))`;
 const changesOpen = `!!document.querySelector('[data-changes-panel]')`;
+
+/** The ports Vite's dev server tries first, from its default 5173 up. */
+const VITE_PORTS = Array.from({ length: 20 }, (_, i) => 5173 + i);
+
+/** Listens on each port that is free, on both loopback addresses, as other servers would. */
+async function holdPorts(ports: number[]): Promise<net.Server[]> {
+  const listen = (port: number, host: string) =>
+    new Promise<net.Server | null>((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(null));
+      server.listen(port, host, () => resolve(server));
+    });
+  const held = await Promise.all(
+    ports.flatMap((port) => [listen(port, '127.0.0.1'), listen(port, '::1')]),
+  );
+  return held.filter((server): server is net.Server => server !== null);
+}
 
 async function main() {
   const fx = createFixture();
@@ -114,10 +132,21 @@ exec sleep 600
     // Saved soon after it shows (spec §5); the quit doesn't wait for it.
     await sleep(500);
 
-    // 3. After a restart: the same profile, workspace, tab and panel.
+    // 3. After a restart: the same profile, workspace, tab and panel. On the
+    // dev server the window's origin includes Vite's port, and its local
+    // storage belongs to that origin: the ports Vite would take next (other
+    // suites' servers, spec §15.6) are held while it restarts, and it still
+    // comes back on its own.
+    const origin = await page.eval<string>('location.origin');
     await app.stop();
-    app = await launch();
+    const held = devMode ? await holdPorts(VITE_PORTS) : [];
+    try {
+      app = await launch();
+    } finally {
+      for (const server of held) server.close();
+    }
     page = app.page;
+    assert.equal(await page.eval<string>('location.origin'), origin, 'the same origin');
     await page.waitFor(
       `${shownProfile} === 'personal' && ${title} === 'Alpha'`,
       'Personal with the workspace',

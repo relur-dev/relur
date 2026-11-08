@@ -188,7 +188,7 @@ export interface RunningApp {
   /**
    * Quits as a user does (⌘Q on macOS, the menu's Quit elsewhere, again to
    * confirm the quit dialog), then SIGTERM and SIGKILL if it's still running
-   * after 10 s each; true when it had to signal.
+   * after 10 s each; true when it had to signal. Closes `main` first.
    */
   stop(): Promise<boolean>;
   /** SIGTERM (as at logout or from a test runner), then SIGKILL after 10 s; true when it had to kill. */
@@ -209,6 +209,9 @@ export interface RunningApp {
  * the app keeps its window away from the real mouse and keyboard
  * (`testWindows` in src/main/window.ts): input comes only from here.
  */
+/** The renderer's dev server port for every launch in this process (one suite). */
+let devRendererPort: number | undefined;
+
 export async function launchApp(options: {
   env: Record<string, string>;
   dev?: boolean;
@@ -229,7 +232,14 @@ export async function launchApp(options: {
   ];
   // E2E_VISIBLE=1 shows test windows normally, for debugging the tests themselves.
   const visible = options.visible || process.env.E2E_VISIBLE === '1';
-  const env = visible ? options.env : { ...options.env, [envVar('TEST_WINDOW')]: 'background' };
+  const shown = visible ? options.env : { ...options.env, [envVar('TEST_WINDOW')]: 'background' };
+  // The dev server's port is the window's origin, and so where its local
+  // storage lives: every launch of this suite uses the same one, or a restart
+  // would find nothing it remembered (suites running at once take each other's).
+  if (options.dev) devRendererPort ??= await freePort();
+  const env = options.dev
+    ? { ...shown, [envVar('DEV_RENDERER_PORT')]: String(devRendererPort) }
+    : shown;
   const extra = options.electronArgs ?? [];
   const bin = (name: string) => path.join(appDir, 'node_modules', '.bin', name);
   const child = options.dev
@@ -295,7 +305,13 @@ export async function launchApp(options: {
       // already quitting
     }
   };
+  /** The suite's own connection to the main process (`main`), once there is one. */
+  let attached: Cdp | null = null;
   const stop = async () => {
+    // Node waits at exit for an attached inspector ("Waiting for the debugger
+    // to disconnect"): with it attached the app never ends by itself.
+    attached?.close();
+    attached = null;
     if (alive(electronPid)) {
       await quitOnce();
       // While sessions run, the quit dialog asks; quitting again confirms it
@@ -342,6 +358,7 @@ export async function launchApp(options: {
     const main = new Cdp(await debuggerUrl(inspectPort));
     await main.send('Runtime.enable');
     electronPid = await main.eval<number>('process.pid');
+    attached = main;
     return {
       process: child,
       page,
