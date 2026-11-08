@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- A card dragged on the Board no longer carries on behind a dialog. If a dialog opened during the drag, for example the list of unfinished work at start, dropping the card on **Drop to delete** opened Delete workspace on top of it. A dialog that opens now cancels the drag.
+
 ## [0.6.0] - 2026-11-08
 
 ### Highlights

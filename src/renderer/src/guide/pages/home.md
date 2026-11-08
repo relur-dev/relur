@@ -50,7 +50,7 @@ Grouped, the whole Board scrolls, and the column headers and the projects' names
 
 ### Drag to delete
 
-Drag a card and **Drop to delete** appears along the bottom. Drop it there to open [Delete workspace](delete-workspace) with everything deleting it would lose; nothing is deleted until you confirm. <kbd>Esc</kbd>, or dropping it anywhere else, cancels.
+Drag a card and **Drop to delete** appears along the bottom. Drop it there to open [Delete workspace](delete-workspace) with everything deleting it would lose; nothing is deleted until you confirm. <kbd>Esc</kbd>, or dropping it anywhere else, cancels, and so does a dialog that opens while you drag.
 
 ### Quick reply
 

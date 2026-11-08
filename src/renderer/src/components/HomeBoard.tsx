@@ -290,6 +290,7 @@ export function HomeBoard({
     };
     const end = () => {
       press.current = null;
+      dragRef.current = null;
       setDrag(null);
       columnPress.current = null;
       columnDragRef.current = null;
@@ -326,7 +327,19 @@ export function HomeBoard({
       columnDragRef.current = next;
       setColumnDrag((d) => (d && d.index === next.index && d.at === next.at ? d : next));
     };
+    /**
+     * A dialog opened meanwhile (the overview at start, ⌘N) cancels a drag: the
+     * Board is behind it, and a drop must never open a second dialog over it.
+     */
+    const behindDialog = () => {
+      if (!(press.current || columnPress.current)) return false;
+      if (!document.querySelector('dialog[open]')) return false;
+      cancelled.current = true;
+      end();
+      return true;
+    };
     const onMove = (e: PointerEvent) => {
+      if (behindDialog()) return;
       if (columnPress.current) {
         onColumnMove(e, columnPress.current);
         return;
@@ -361,6 +374,7 @@ export function HomeBoard({
       }, 0);
     };
     const onUp = (e: PointerEvent) => {
+      behindDialog();
       const d = dragRef.current;
       if (cancelled.current) {
         cancelled.current = false;

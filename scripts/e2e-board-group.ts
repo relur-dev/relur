@@ -8,9 +8,9 @@
  * column order and hidden columns applied to the bands (a band whose
  * workspaces are all hidden stays), a header dragged with the bands
  * following, the keyboard (↑↓ across bands, ←→ within one, ↵, Tab), drag to
- * delete and Delete n merged from a band, the quick reply unfolding and sent
- * from a band, a narrow window (the headers and band names stay in view),
- * and turning it off. Runs with a throwaway HOME and a fake `claude`.
+ * delete and Delete n merged from a band (a dialog opening mid-drag cancels
+ * it), the quick reply unfolding and sent from a band, a narrow window (the
+ * headers and band names stay in view), and turning it off. Runs with a throwaway HOME and a fake `claude`.
  *
  *   tsx scripts/e2e-board-group.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
  */
@@ -31,6 +31,7 @@ import {
   launchApp,
   openContextMenu,
   pressKey,
+  pressShortcut,
   type RunningApp,
   screenshot,
   sleep,
@@ -523,6 +524,16 @@ exec sleep 600
       `!!document.querySelector('[data-home-board]')`,
       'the Board after a restart',
     );
+    // ABC-2 was working and ABC-4 asking for permission at the quit: once their
+    // Claude has resumed, the start asks about them (spec §9.7). Not now, so
+    // nothing covers the Board, however long the resume takes.
+    await page.waitFor(
+      `${dialogText}.includes("Claude didn't finish in 2 workspaces")`,
+      'the unfinished overview',
+      30_000,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'Not now');
     await page.waitFor(`${grouped} === 'project'`, 'still grouped');
     await page.waitFor(`${lanes}.join() === 'web,api'`, 'the bands');
     assert.equal(
@@ -641,6 +652,47 @@ exec sleep 600
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'cancelled');
     assert.ok(await page.eval(`!!${card(id('ship'))}`), 'nothing deleted');
+    // A dialog that opens during the drag (here ⌘N) cancels it: the drop
+    // opens nothing over it.
+    await mouse(page, 'mousePressed', lifted.x, lifted.y);
+    for (let i = 1; i <= 4; i++)
+      await mouse(page, 'mouseMoved', lifted.x + i * 5, lifted.y + i * 5);
+    await page.waitFor(`!!document.querySelector('[data-board-float]')`, 'lifted again');
+    await mouse(page, 'mouseMoved', zone.x, zone.y);
+    await page.waitFor(
+      `document.querySelector('[data-drop-zone]')?.dataset.dropZone === 'over'`,
+      'over the zone again',
+    );
+    await pressShortcut(page, 'newWorkspace');
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+    await mouse(page, 'mouseMoved', zone.x + 5, zone.y);
+    await mouse(page, 'mouseReleased', zone.x + 5, zone.y);
+    await sleep(300);
+    assert.equal(await page.eval(`document.querySelectorAll('dialog[open]').length`), 1);
+    assert.ok(await page.eval(`!!document.querySelector('dialog[open] #ws-task')`));
+    assert.equal(await page.eval(`!!document.querySelector('[data-board-float]')`), false);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'New workspace closed');
+    // Released without a move in between: still nothing.
+    await mouse(page, 'mousePressed', lifted.x, lifted.y);
+    for (let i = 1; i <= 4; i++)
+      await mouse(page, 'mouseMoved', lifted.x + i * 5, lifted.y + i * 5);
+    await page.waitFor(`!!document.querySelector('[data-board-float]')`, 'lifted a third time');
+    await mouse(page, 'mouseMoved', zone.x, zone.y);
+    await page.waitFor(
+      `document.querySelector('[data-drop-zone]')?.dataset.dropZone === 'over'`,
+      'over the zone a third time',
+    );
+    await pressShortcut(page, 'newWorkspace');
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+    await mouse(page, 'mouseReleased', zone.x, zone.y);
+    await sleep(300);
+    assert.equal(await page.eval(`document.querySelectorAll('dialog[open]').length`), 1);
+    assert.ok(await page.eval(`!!document.querySelector('dialog[open] #ws-task')`));
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'New workspace closed again');
+    assert.equal(await page.eval(`!!document.querySelector('[data-board-float]')`), false);
+    assert.ok(await page.eval(`!!${card(id('ship'))}`), 'still nothing deleted');
 
     // 10. A narrow window: the headers stay on top, the bands' names at the left.
     const setSize = (width: number, height: number) =>
