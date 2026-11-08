@@ -1,4 +1,12 @@
 import {
+  type BoardLayout,
+  canMove,
+  moveColumn,
+  placeColumn,
+  setHidden,
+  shownColumns,
+} from '@shared/board-layout';
+import {
   BOARD_COLUMN_TITLE,
   BOARD_COLUMNS,
   type BoardColumn,
@@ -16,7 +24,7 @@ import { workspaceGlyph } from '@shared/unfinished';
 import type { Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { useTRPC } from '../trpc';
+import { trpcClient, useTRPC } from '../trpc';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
@@ -44,6 +52,10 @@ const SECTION_OF: Record<Exclude<BoardColumn, 'idle'>, HomeSection> = {
 /** Pointer travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
+/** How near the Board's side a dragged column header scrolls it, and by how much. */
+const EDGE = 40;
+const EDGE_STEP = 14;
+
 /** How long a card says its quick reply was sent. */
 const SENT_MS = 2400;
 
@@ -58,12 +70,18 @@ interface Drag {
   reduced: boolean;
 }
 
+/** A column header lifted to move it (spec §6.7); `index` where it lands among the shown ones. */
+interface ColumnDrag {
+  column: BoardColumn;
+  index: number;
+}
+
 /**
  * Needs you stands out while it has cards (spec §6.7): its count in the most
  * urgent card's color, as the sidebar's (permission, then input), on a tint.
  */
-type NeedsTone = 'permission' | 'input';
-const needsTone = (list: Workspace[]): NeedsTone =>
+export type NeedsTone = 'permission' | 'input';
+export const needsTone = (list: Pick<Workspace, 'state'>[]): NeedsTone =>
   list.some((w) => w.state === 'needs-permission') ? 'permission' : 'input';
 const NEEDS_TONE: Record<NeedsTone, string> = {
   permission:
@@ -80,8 +98,10 @@ const cardLabel = (w: Workspace) => w.task.id ?? (w.task.title || w.name);
 
 /**
  * Home's Board (spec §6.7): the profile's workspaces in five status columns,
- * by the List's rules. Cards move by themselves as states change; the only
- * drag target is Drop to delete, which opens the Delete workspace dialog.
+ * by the List's rules, in the order the profile arranged them and without
+ * the ones it hid. Cards move by themselves as states change; the only card
+ * drag target is Drop to delete, which opens the Delete workspace dialog. A
+ * column moves by dragging its header or from its menu.
  */
 export function HomeBoard({
   profile,
@@ -90,6 +110,8 @@ export function HomeBoard({
   sessions,
   memory,
   actions,
+  layout,
+  onLayout,
 }: {
   profile: Profile;
   projects: Project[];
@@ -97,6 +119,8 @@ export function HomeBoard({
   sessions: SessionInfo[];
   memory: MemorySnapshot | null;
   actions: HomeActions;
+  layout: BoardLayout;
+  onLayout: (layout: BoardLayout) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -229,6 +253,16 @@ export function HomeBoard({
   const deleteRef = useRef(actions.delete);
   deleteRef.current = actions.delete;
 
+  // Drag a column's header to move it (spec §6.7): only from a header, never with a card.
+  const [columnDrag, setColumnDrag] = useState<(ColumnDrag & { at: number | null }) | null>(null);
+  const columnPress = useRef<{ column: BoardColumn; x: number; y: number } | null>(null);
+  const columnDragRef = useRef<ColumnDrag | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  const onLayoutRef = useRef(onLayout);
+  onLayoutRef.current = onLayout;
+
   useEffect(() => {
     const place = (x: number, y: number) => {
       const d = dragRef.current;
@@ -244,8 +278,46 @@ export function HomeBoard({
     const end = () => {
       press.current = null;
       setDrag(null);
+      columnPress.current = null;
+      columnDragRef.current = null;
+      setColumnDrag(null);
+    };
+    /** Where a dragged header lands: among the other shown columns, by their middles. */
+    const columnTarget = (column: BoardColumn, x: number) => {
+      const el = scroller.current;
+      if (!el) return null;
+      const others = [...el.querySelectorAll<HTMLElement>('[data-board-column]')]
+        .filter((c) => c.dataset.boardColumn !== column)
+        .map((c) => c.getBoundingClientRect());
+      const index = others.filter((r) => (r.left + r.right) / 2 < x).length;
+      const box = el.getBoundingClientRect();
+      // The line between the columns it lands between; none where it already is.
+      const edge = others[index] ? others[index].left - 6 : (others.at(-1)?.right ?? 0) + 6;
+      const unchanged = shownColumns(layoutRef.current).indexOf(column) === index;
+      return { column, index, at: unchanged ? null : edge - box.left + el.scrollLeft };
+    };
+    const onColumnMove = (e: PointerEvent, p: { column: BoardColumn; x: number; y: number }) => {
+      if (!columnDragRef.current) {
+        if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_THRESHOLD) return;
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+      // Near a side the Board scrolls, so a column can go past what shows.
+      const el = scroller.current;
+      if (el) {
+        const box = el.getBoundingClientRect();
+        if (e.clientX < box.left + EDGE) el.scrollLeft -= EDGE_STEP;
+        else if (e.clientX > box.right - EDGE) el.scrollLeft += EDGE_STEP;
+      }
+      const next = columnTarget(p.column, e.clientX);
+      if (!next) return;
+      columnDragRef.current = next;
+      setColumnDrag((d) => (d && d.index === next.index && d.at === next.at ? d : next));
     };
     const onMove = (e: PointerEvent) => {
+      if (columnPress.current) {
+        onColumnMove(e, columnPress.current);
+        return;
+      }
       const p = press.current;
       if (!p) return;
       const d = dragRef.current;
@@ -281,6 +353,16 @@ export function HomeBoard({
         cancelled.current = false;
         swallowClick();
       }
+      if (columnPress.current) {
+        const c = columnDragRef.current;
+        end();
+        if (!c) return;
+        swallowClick();
+        const next = placeColumn(layoutRef.current, c.column, c.index);
+        const before = shownColumns(layoutRef.current).join();
+        if (shownColumns(next).join() !== before) onLayoutRef.current(next);
+        return;
+      }
       if (!d) {
         press.current = null;
         return;
@@ -291,7 +373,7 @@ export function HomeBoard({
       if (w && overZone(e.clientX, e.clientY)) deleteRef.current(w);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || !dragRef.current) return;
+      if (e.key !== 'Escape' || !(dragRef.current || columnDragRef.current)) return;
       e.preventDefault();
       e.stopPropagation();
       cancelled.current = true;
@@ -323,6 +405,48 @@ export function HomeBoard({
     }
     float.current = el;
   }, []);
+
+  /**
+   * A column's menu (spec §6.7), from its ⋯ button or a right click on its
+   * header: Move Left, Move Right and Hide Column, each off where it can't.
+   * From the button, focus stays on the moved column's button (after Hide,
+   * the next shown column's).
+   */
+  const focusAfter = useRef<BoardColumn | null>(null);
+  const columnMenu = async (column: BoardColumn, fromButton: boolean) => {
+    const shown = shownColumns(layout);
+    const choice = await trpcClient.ui.contextMenu.mutate({
+      items: [
+        { id: 'left', label: 'Move Left', enabled: canMove(layout, column, -1) },
+        { id: 'right', label: 'Move Right', enabled: canMove(layout, column, 1) },
+        { id: 'hide', label: 'Hide Column', enabled: shown.length > 1 },
+      ],
+    });
+    const now = layoutRef.current;
+    let next = now;
+    let focus = column;
+    if (choice === 'left' || choice === 'right') {
+      next = moveColumn(now, column, choice === 'left' ? -1 : 1);
+    } else if (choice === 'hide') {
+      const visible = shownColumns(now);
+      const at = visible.indexOf(column);
+      focus = visible[at + 1] ?? visible[at - 1] ?? column;
+      next = setHidden(now, column, true);
+    }
+    if (fromButton && choice) focusAfter.current = focus;
+    if (next !== now) onLayout(next);
+    else refocus();
+  };
+  const refocus = () => {
+    const column = focusAfter.current;
+    focusAfter.current = null;
+    if (column)
+      root.current
+        ?.querySelector<HTMLElement>(`[data-board-column="${column}"] [data-board-column-menu]`)
+        ?.focus();
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once the moved column has rendered
+  useEffect(refocus, [layout]);
 
   /** What a card shows: its List section's item, or Idle's own. */
   const cardItem = (column: BoardColumn, w: Workspace): HomeItem => {
@@ -540,26 +664,48 @@ export function HomeBoard({
       ref={root}
       tabIndex={-1}
       data-home-board={drag ? 'dragging' : ''}
-      className="relative flex min-h-0 flex-1 flex-col bg-term outline-none"
+      data-board-column-drag={columnDrag?.column}
+      className={`relative flex min-h-0 flex-1 flex-col bg-term outline-none ${columnDrag ? 'cursor-grabbing' : ''}`}
       onKeyDown={onKeyDown}
     >
       <div
-        className={`flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-6 pt-[18px] ${drag ? 'pb-[112px]' : 'pb-5'}`}
+        ref={scroller}
+        className={`relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-6 pt-[18px] ${drag ? 'pb-[112px]' : 'pb-5'}`}
       >
-        {BOARD_COLUMNS.map((column) => {
+        {shownColumns(layout).map((column) => {
           const list = columns[column];
           const tone = column === 'needs' && list.length > 0 ? needsTone(list) : null;
+          const moving = columnDrag?.column === column;
           return (
             <section
               key={column}
               data-board-column={column}
               data-board-tone={tone ?? undefined}
+              data-board-column-lifted={moving || undefined}
               aria-label={BOARD_COLUMN_TITLE[column]}
               className={`flex min-h-0 min-w-[220px] flex-[1_0_220px] flex-col rounded-lg border ${
-                tone ? NEEDS_TONE[tone] : 'border-line bg-canvas'
+                moving
+                  ? 'border-dashed border-line-strong bg-canvas'
+                  : tone
+                    ? NEEDS_TONE[tone]
+                    : 'border-line bg-canvas'
               }`}
             >
-              <div className="flex h-10 flex-none items-center gap-2 pr-2 pl-3">
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging a header moves its column; its menu button does the same from the keyboard */}
+              <div
+                data-board-column-header
+                title="Drag to move the column"
+                className={`group/header flex h-10 flex-none touch-none items-center gap-2 pr-2 pl-3 select-none ${moving ? 'opacity-60' : ''}`}
+                onPointerDown={(e) => {
+                  if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+                  if (dragRef.current) return;
+                  columnPress.current = { column, x: e.clientX, y: e.clientY };
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  void columnMenu(column, false);
+                }}
+              >
                 <h2 className="text-base font-semibold whitespace-nowrap">
                   {BOARD_COLUMN_TITLE[column]}
                 </h2>
@@ -581,8 +727,21 @@ export function HomeBoard({
                     Delete {list.length} merged
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  data-board-column-menu={column}
+                  aria-label={`${BOARD_COLUMN_TITLE[column]} column`}
+                  aria-haspopup="menu"
+                  title="Move or hide this column"
+                  className="flex size-6 flex-none items-center justify-center rounded-[5px] text-base text-fg-subtle opacity-0 outline-none group-hover/header:opacity-100 hover:bg-band-strong hover:text-fg focus-visible:opacity-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+                  onClick={() => void columnMenu(column, true)}
+                >
+                  ⋯
+                </button>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content">
+              <div
+                className={`flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content ${moving ? 'opacity-60' : ''}`}
+              >
                 {list.map((w) => card(column, w))}
                 {list.length === 0 ? (
                   <div className="rounded-[7px] border border-dashed border-line px-2 py-[22px] text-center text-sm text-fg-subtle">
@@ -593,6 +752,14 @@ export function HomeBoard({
             </section>
           );
         })}
+        {columnDrag && columnDrag.at !== null ? (
+          <div
+            data-board-column-drop={columnDrag.index}
+            aria-hidden
+            style={{ left: columnDrag.at - 1 }}
+            className="pointer-events-none absolute top-[18px] bottom-5 w-0.5 rounded-full bg-focus"
+          />
+        ) : null}
       </div>
 
       {drag ? (

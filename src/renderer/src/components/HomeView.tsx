@@ -1,3 +1,9 @@
+import {
+  type BoardLayout,
+  isDefaultLayout,
+  parseBoardLayout,
+  serializeBoardLayout,
+} from '@shared/board-layout';
 import type { MemorySnapshot } from '@shared/memory';
 import type { Profile, Project } from '@shared/schemas';
 import { formatChord, SHORTCUTS } from '@shared/shortcuts';
@@ -8,6 +14,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTRPC } from '../trpc';
 import { button, isMac, Kbd } from '../ui/controls';
 import { remember } from '../ui/remember';
+import { BoardColumns } from './BoardColumns';
 import { HomeBoard } from './HomeBoard';
 import { type HomeActions, HomeOverview } from './HomeOverview';
 import { TerminalView } from './TerminalView';
@@ -37,6 +44,17 @@ function loadLayout(profileId: string): HomeLayout {
     return localStorage.getItem(layoutKey(profileId)) === 'list' ? 'list' : 'board';
   } catch {
     return 'board';
+  }
+}
+
+/** The Board's columns as the profile arranged them (spec §6.7), kept as the layout is. */
+const boardKey = (profileId: string) => `home-board-columns:${profileId}`;
+
+function loadBoardLayout(profileId: string): BoardLayout {
+  try {
+    return parseBoardLayout(localStorage.getItem(boardKey(profileId)));
+  } catch {
+    return parseBoardLayout(null);
   }
 }
 
@@ -101,6 +119,12 @@ export function HomeView({
     setLayout(next);
     remember(layoutKey(profile.id), next);
   };
+  const [boardLayout, setBoardLayout] = useState<BoardLayout>(() => loadBoardLayout(profile.id));
+  const changeBoardLayout = (next: BoardLayout) => {
+    setBoardLayout(next);
+    // The default is stored as none, so a later default reaches it.
+    remember(boardKey(profile.id), isDefaultLayout(next) ? null : serializeBoardLayout(next));
+  };
   // Without workspaces both show the empty states, so there is nothing to switch.
   const switchable = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
 
@@ -145,6 +169,9 @@ export function HomeView({
           })}
         </div>
         <span className="flex-1" />
+        {switchable && layout === 'board' ? (
+          <BoardColumns layout={boardLayout} onLayout={changeBoardLayout} workspaces={workspaces} />
+        ) : null}
         {switchable ? (
           <fieldset
             aria-label="Show as"
@@ -182,6 +209,8 @@ export function HomeView({
           sessions={sessions}
           memory={memory}
           actions={actions}
+          layout={boardLayout}
+          onLayout={changeBoardLayout}
         />
       ) : tab === 'overview' ? (
         <HomeOverview

@@ -4,7 +4,10 @@
  * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
  * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
  * merged, a branch merged only locally (Merged, and Delete workspace's
- * "Merged into …" in place of the unpushed warning, spec §14.2), a card
+ * "Merged into …" in place of the unpushed warning, spec §14.2), the
+ * columns (dragged by a header, Move Left, Move Right and Hide Column from
+ * the column menu, the Columns panel, Needs you hidden with its mark, Reset,
+ * each profile's layout across a restart), a card
  * unfolding on hover (after a rest, smoothly, none while the pointer passes
  * over, at once with reduced motion), and the quick reply: sent to a waiting
  * workspace and to a working
@@ -25,9 +28,11 @@ import { envVar } from '../src/shared/brand';
 import {
   type Cdp,
   CMD,
+  chooseFromNextContextMenu,
   clickLabel,
   dialogText,
   launchApp,
+  openContextMenu,
   pressKey,
   type RunningApp,
   screenshot,
@@ -59,6 +64,15 @@ const columnOf = (id: string) =>
   `(${card(id)}?.closest('[data-board-column]')?.dataset.boardColumn ?? null)`;
 const activeCard = `(document.activeElement?.dataset?.boardCard ?? null)`;
 const layout = `(document.querySelector('[data-home-layout]')?.dataset.homeLayout ?? null)`;
+/** The Board's shown columns, left to right, as an expression. */
+const shown = `[...document.querySelectorAll('[data-board-column]')].map((c) => c.dataset.boardColumn)`;
+const DEFAULT_ORDER = ['working', 'idle', 'needs', 'ship', 'merged'];
+/** The Columns panel's rows, in order, with their checkbox: `needs:on`, `idle:off`, `merged:last`. */
+const columnOptions = `[...document.querySelectorAll('[data-board-columns-option]')].map((o) => {
+  const box = o.querySelector('input');
+  return o.dataset.boardColumnsOption + ':' + (box.disabled ? 'last' : box.checked ? 'on' : 'off');
+})`;
+const columnsMark = `(document.querySelector('[data-board-columns-mark]')?.dataset.boardColumnsMark ?? null)`;
 
 async function until(check: () => boolean, what: string, timeoutMs = 20_000) {
   for (const end = Date.now() + timeoutMs; Date.now() < end; ) {
@@ -89,6 +103,16 @@ async function mouse(
     buttons: type === 'mouseReleased' ? 0 : type === 'mousePressed' ? 1 : 1,
     clickCount: 1,
   });
+}
+
+/**
+ * ↵ as a keyboard sends it, with its character: a focused button activates
+ * only on that (pressKey sends the key alone).
+ */
+async function pressEnterOn(page: Cdp) {
+  const base = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+  await page.send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', ...base });
+  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
 }
 
 /** Presses on a card and moves the pointer far enough to lift it. */
@@ -745,6 +769,176 @@ exec sleep 600
     await page.waitFor(`!${card(id('local'))}`, 'the card gone', 30_000);
     assert.equal(fx.git(web, 'branch', '--list', ws.local?.branch as string), '', 'branch deleted');
 
+    // 8c. Columns (spec §6.7): reorder by dragging a header and from its menu,
+    // hide and show, the mark for a hidden Needs you, Reset.
+    const main = app.main;
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    assert.deepEqual(await page.eval(shown), DEFAULT_ORDER, 'the default order');
+    assert.deepEqual(await page.eval(columnIds('needs')), [id('perm')]);
+    // Drag Needs you's header in front of Working: a line shows where it lands.
+    const header = (column: string) => `document.querySelector('[data-board-column=${column}] h2')`;
+    const from = await centre(page, header('needs'));
+    const target = await page.eval<number>(
+      `document.querySelector('[data-board-column=working]').getBoundingClientRect().left + 20`,
+    );
+    await mouse(page, 'mousePressed', from.x, from.y);
+    for (let i = 1; i <= 8; i++) {
+      await mouse(page, 'mouseMoved', Math.round(from.x + ((target - from.x) * i) / 8), from.y);
+    }
+    await page.waitFor(
+      `document.querySelector('[data-home-board]').dataset.boardColumnDrag === 'needs'`,
+      'the header lifted',
+    );
+    await page.waitFor(`!!document.querySelector('[data-board-column-drop]')`, 'the drop line');
+    assert.equal(
+      await page.eval(`document.querySelector('[data-board-column-drop]').dataset.boardColumnDrop`),
+      '0',
+    );
+    // Not a card drag: no card lifts and no Drop to delete.
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-board-float], [data-drop-zone]')`),
+      false,
+    );
+    await screenshot(page, screenshotDir, 'b8-column-drag.png');
+    await mouse(page, 'mouseReleased', target, from.y);
+    await page.waitFor(
+      `${shown}.join() === 'needs,working,idle,ship,merged'`,
+      'Needs you moved first',
+    );
+    assert.equal(await page.eval(`!!document.querySelector('dialog[open]')`), false);
+    // A card still drags to delete, wherever its column is; Esc cancels it.
+    await lift(page, id('perm'));
+    await page.waitFor(`!!document.querySelector('[data-drop-zone]')`, 'the zone');
+    assert.equal(
+      await page.eval(`document.querySelector('[data-home-board]').dataset.boardColumnDrag`),
+      undefined,
+      'a card drag moves no column',
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('[data-board-float]')`, 'the drag to end');
+    const there = await centre(page, card(id('perm')));
+    await mouse(page, 'mouseReleased', there.x, there.y);
+    assert.deepEqual(await page.eval(shown), ['needs', 'working', 'idle', 'ship', 'merged']);
+    // The Needs you tint and the quick reply follow the column.
+    assert.equal(await page.eval(tone('needs')), 'input');
+    assert.ok(await page.eval(`!!${card(id('perm'))}.querySelector('[data-quick-reply]')`));
+
+    // The keyboard: Tab from the Board reaches the first column's menu; Move Right.
+    const menuButton = (column: string) => `[data-board-column-menu=${column}]`;
+    const activeMenu = `(document.activeElement?.dataset?.boardColumnMenu ?? null)`;
+    await page.eval(`document.querySelector('[data-home-board]').focus()`);
+    await pressKey(page, 'Tab');
+    assert.equal(await page.eval(activeMenu), 'needs');
+    assert.equal(
+      await page.eval(`getComputedStyle(document.activeElement).opacity`),
+      '1',
+      'the menu button shows on focus',
+    );
+    await chooseFromNextContextMenu(main, 'Move Right');
+    await pressEnterOn(page);
+    await page.waitFor(
+      `${shown}.join() === 'working,needs,idle,ship,merged'`,
+      'Needs you moved right',
+    );
+    assert.deepEqual(await main.eval(`globalThis.__lastMenu`), [
+      'Move Left',
+      'Move Right',
+      'Hide Column',
+    ]);
+    await page.waitFor(`${activeMenu} === 'needs'`, 'focus kept on the moved column');
+    // Hide Column: focus goes to the next shown column's menu.
+    await page.eval(`document.querySelector('${menuButton('idle')}').focus()`);
+    await chooseFromNextContextMenu(main, 'Hide Column');
+    await pressEnterOn(page);
+    await page.waitFor(`${shown}.join() === 'working,needs,ship,merged'`, 'Idle hidden');
+    await page.waitFor(`${activeMenu} === 'ship'`, 'focus on the next column');
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-columns]').textContent`),
+      /Columns\s*· 1 hidden/,
+    );
+    // ← → follow the shown order: Working, Needs you, (empty Ready to ship), Merged.
+    await page.eval(`${card(id('working'))}.focus()`);
+    await pressKey(page, 'ArrowRight');
+    assert.equal(await page.eval(activeCard), id('perm'));
+    await pressKey(page, 'ArrowRight');
+    assert.equal(await page.eval(columnOf(await page.eval<string>(activeCard))), 'merged');
+    await pressKey(page, 'ArrowLeft');
+    await pressKey(page, 'ArrowLeft');
+    assert.equal(await page.eval(activeCard), id('working'));
+
+    // The Columns panel: every column in its order, Idle unticked; tick it to show it again.
+    await page.eval(`document.querySelector('[data-board-columns]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-board-columns-panel]')`, 'the panel');
+    assert.deepEqual(await page.eval(columnOptions), [
+      'working:on',
+      'needs:on',
+      'idle:off',
+      'ship:on',
+      'merged:on',
+    ]);
+    const tick = (column: string) =>
+      page.eval(`document.querySelector('[data-board-columns-option=${column}] input').click()`);
+    await tick('idle');
+    await page.waitFor(`${shown}.join() === 'working,needs,idle,ship,merged'`, 'Idle shown');
+    assert.equal(await page.eval(`!!document.querySelector('[data-board-columns-hidden]')`), false);
+    // Needs you hidden while something needs you: a mark in its color.
+    assert.equal(await page.eval(columnsMark), null);
+    await tick('needs');
+    await page.waitFor(`!${shown}.includes('needs')`, 'Needs you hidden');
+    await page.waitFor(`${columnsMark} === 'input'`, 'the mark');
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-columns]').title`),
+      /Needs you is hidden · 1 workspace needs you/,
+    );
+    // Its workspace is still in the sidebar.
+    assert.ok(await page.eval(`!!document.querySelector('nav [data-nav-key="w:${id('perm')}"]')`));
+    await screenshot(page, screenshotDir, 'b9-columns.png');
+    // At least one column stays: the last one's box can't be unticked.
+    for (const column of ['working', 'idle', 'ship']) await tick(column);
+    await page.waitFor(`${shown}.join() === 'merged'`, 'only Merged');
+    assert.deepEqual(await page.eval(columnOptions), [
+      'working:off',
+      'needs:off',
+      'idle:off',
+      'ship:off',
+      'merged:last',
+    ]);
+    // Esc closes the panel and puts focus back on the button.
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('[data-board-columns-panel]')`, 'closed');
+    assert.equal(await page.eval(`document.activeElement?.dataset.boardColumns`), 'true');
+    // The List still shows the hidden columns' workspaces.
+    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-home-overview]')`, 'the List');
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-home-overview]').innerText`),
+      /ABC-2[\s\S]*ABC-3/,
+    );
+    assert.equal(await page.eval(`!!document.querySelector('[data-board-columns]')`), false);
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(`${shown}.join() === 'merged'`, 'the Board as it was');
+    // Reset to default: today's order, all shown, no mark.
+    await page.eval(`document.querySelector('[data-board-columns]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-board-columns-panel]')`, 'the panel');
+    await page.eval(`document.querySelector('[data-board-columns-reset]').click()`);
+    await page.waitFor(`${shown}.join() === ${JSON.stringify(DEFAULT_ORDER.join())}`, 'Reset');
+    assert.equal(await page.eval(columnsMark), null);
+    assert.equal(
+      await page.eval(`document.querySelector('[data-board-columns-reset]').disabled`),
+      true,
+    );
+    await pressKey(page, 'Escape');
+    // Work's own layout, kept across the restart below: Idle hidden, Merged
+    // moved left from a right click on its header.
+    await page.eval(`document.querySelector('[data-board-columns]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-board-columns-panel]')`, 'the panel');
+    await tick('idle');
+    await pressKey(page, 'Escape');
+    await chooseFromNextContextMenu(main, 'Move Left');
+    await openContextMenu(page, '[data-board-column=merged] [data-board-column-header]');
+    await page.waitFor(`${shown}.join() === 'working,needs,merged,ship'`, "Work's layout");
+
     // 9. Personal: the Board too (it never chose), and a suspended Claude resumed for a reply.
     await clickLabel(page, 'Select Personal');
     await create('sleepy', 'api', 'ABC-7 Pagination');
@@ -753,6 +947,9 @@ exec sleep 600
     await waitState('sleepy', 'Done');
     await pressKey(page, 'Digit0', CMD);
     await page.waitFor(`${layout} === 'board'`, "Personal's Board by default");
+    // Its own columns: the default, whatever Work did.
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, "Personal's Board");
+    assert.deepEqual(await page.eval(shown), DEFAULT_ORDER);
     await page.waitFor(
       `!!${card(id('sleepy'))}?.querySelector('[data-suspended]')`,
       'suspended',
@@ -789,6 +986,12 @@ exec sleep 600
       `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
       "Work's Board",
     );
+    // Work's columns as it left them.
+    assert.deepEqual(await page.eval(shown), ['working', 'needs', 'merged', 'ship']);
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-columns]').textContent`),
+      /1 hidden/,
+    );
     // A stored List stays, though the Board is the default.
     await clickLabel(page, 'Select Personal');
     await page.waitFor(
@@ -803,6 +1006,7 @@ exec sleep 600
       `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
       'Personal on the Board',
     );
+    assert.deepEqual(await page.eval(shown), DEFAULT_ORDER, "Personal's columns, the default");
 
     console.log('e2e-board: ok');
   } catch (error) {

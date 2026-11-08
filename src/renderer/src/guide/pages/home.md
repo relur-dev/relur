@@ -25,11 +25,20 @@ Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd
 
 ## Board
 
-The Board shows the profile's workspaces as five columns: **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**. While something needs you, the Needs you column is tinted and its count takes the color of its most urgent card, as in the sidebar. **List | Board** at the right of Home's tabs switches between the Board and the List, and the choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship. A workspace whose Claude waits for its background work stays in **Working**, with **1 in background**; a done one with a dev server still running keeps its column and shows a quiet **1 running**.
+The Board shows the profile's workspaces as five columns: **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**, in that order until you arrange them (see **Columns**, below). While something needs you, the Needs you column is tinted and its count takes the color of its most urgent card, as in the sidebar. **List | Board** at the right of Home's tabs switches between the Board and the List, and the choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship. A workspace whose Claude waits for its background work stays in **Working**, with **1 in background**; a done one with a dev server still running keeps its column and shows a quiet **1 running**.
 
 ![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged.](images/home-board.webp)
 
 Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
+
+### Columns
+
+Each profile keeps its own columns, also after a restart:
+
+- **Move a column** by dragging its header; a line shows where it will land. Or use the **⋯** at the right of its header (it shows when you point at the header, and <kbd>Tab</kbd> reaches it), or right-click the header: **Move Left**, **Move Right** and **Hide Column**.
+- **Hide or show columns** with **Columns** at the right of Home's tabs, next to **List | Board**: it lists every column in its order with a checkbox, and **Reset to default** brings back the five columns in their first order. One column always stays shown.
+
+Hiding a column only changes the Board: its workspaces are still in the List and the sidebar, and the counts and badges stay the same. If you hide **Needs you** and something needs you, **Columns** shows a small dot in the Needs you color, so nothing waiting goes unseen.
 
 ### Drag to delete
 
@@ -47,7 +56,7 @@ There is no field where a message could answer something by accident:
 
 ### Keyboard on the Board
 
-<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace.
+<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column, in the order the Board shows them. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace. <kbd>Tab</kbd> from the Board reaches a column's **⋯** first; <kbd>↵</kbd> opens its menu.
 
 ## Terminal
 
