@@ -29,7 +29,7 @@ const CLIPBOARD = new Set(['smoke', 'markers']);
  * The longest suites (a few minutes each), started first when several run at
  * once so none is left running alone at the end. The rest keep the list's order.
  */
-const SLOWEST = ['onboarding', 'smoke', 'board', 'suspend'];
+const SLOWEST = ['onboarding', 'smoke', 'restore', 'board', 'suspend'];
 
 /** A suite of a few seconds: on the dev server it fills Vite's dependency cache alone. */
 const WARM_UP = 'appearance';
