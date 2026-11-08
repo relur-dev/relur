@@ -1,6 +1,6 @@
 # The sidebar
 
-The sidebar shows the profile you're in: its name and number of workspaces, **Home** <kbd>{{key:home}}</kbd>, its projects with their workspaces, and **Add project** <kbd>{{key:addProject}}</kbd> at the bottom. Click a project's name for its [project view](add-project#the-project-view), a workspace for the [workspace view](workspace-view). Hovering a project row shows a **+** that starts a [new workspace](new-workspace) in it.
+The sidebar shows the profile you're in: its name and number of workspaces, **Home** <kbd>{{key:home}}</kbd>, its projects with their workspaces, and **Add project** <kbd>{{key:addProject}}</kbd> at the bottom. Click a project's name for its [project view](add-project#the-project-view), a workspace for the [workspace view](workspace-view). The **+** at the right of each project row starts a [new workspace](new-workspace) in it.
 
 ![The sidebar of a Work profile: Home, then web-app, api-service and shared-ui with their workspaces. One waits at the Spec review gate, one is suspended, one is working, one is done and one needs permission; ↗ Linked rows hold workspaces linked in from other projects.](images/sidebar.webp)
 
@@ -25,7 +25,7 @@ Tab into the sidebar and it's one stop, on the row you're in. Then:
 | Home, End | First and last row |
 | ↵ or Space | Opens it |
 
-Tab from a project row reaches its **+**. <kbd>{{keys:workspaceStep}}</kbd> still switch workspaces from anywhere.
+Tab from a project row reaches its status glyph, when it shows one, then its **+**. <kbd>{{keys:workspaceStep}}</kbd> still switch workspaces from anywhere.
 
 ## Workspace rows
 

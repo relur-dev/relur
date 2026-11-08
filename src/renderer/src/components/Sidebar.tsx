@@ -322,19 +322,6 @@ export function Sidebar({
                   >
                     {project.name}
                   </button>
-                  {/* New workspace in this project, shown on hover and keyboard focus (§6.1). */}
-                  <button
-                    type="button"
-                    className={`${iconButton} size-5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100`}
-                    // Tab reaches it from its project's row only (spec §6.1).
-                    tabIndex={tabFor(`p:${project.id}`)}
-                    disabled={!onNewWorkspace}
-                    title={`New workspace in ${project.name} (${keyHint('newWorkspace')})`}
-                    aria-label={`New workspace in ${project.name}`}
-                    onClick={() => onNewWorkspace?.(project)}
-                  >
-                    +
-                  </button>
                   {urgent ? (
                     <button
                       type="button"
@@ -372,6 +359,19 @@ export function Sidebar({
                       {projectWorkspaces.length}
                     </span>
                   ) : null}
+                  {/* New workspace in this project, always shown, last in the row so the +s line up (§6.1). */}
+                  <button
+                    type="button"
+                    className={`${iconButton} size-5 text-md`}
+                    // Tab reaches it from its project's row only (spec §6.1).
+                    tabIndex={tabFor(`p:${project.id}`)}
+                    disabled={!onNewWorkspace}
+                    title={`New workspace in ${project.name} (${keyHint('newWorkspace')})`}
+                    aria-label={`New workspace in ${project.name}`}
+                    onClick={() => onNewWorkspace?.(project)}
+                  >
+                    +
+                  </button>
                 </div>
                 {open
                   ? projectWorkspaces.map((w) => {

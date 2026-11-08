@@ -1,7 +1,8 @@
 /**
  * End-to-end test of the Board grouped by project (spec §6.7): the Group
  * control and its menu, a band per project with workspaces of its own (none
- * for a project without), the bands' headers (count, "↗ n linked in"), a
+ * for a project without), the bands' headers (count, "↗ n linked in", the
+ * + that starts New workspace in the project), a
  * linked workspace shown once with its "+n" chip, the Needs you tint per
  * band, collapse and expand (a band's header, its count row, Expand all and
  * Collapse all), the memory per profile across a restart, the profile's
@@ -10,7 +11,8 @@
  * following, the keyboard (↑↓ across bands, ←→ within one, ↵, Tab), drag to
  * delete and Delete n merged from a band (a dialog opening mid-drag cancels
  * it), the quick reply unfolding and sent from a band, a narrow window (the
- * headers and band names stay in view), and turning it off. Runs with a throwaway HOME and a fake `claude`.
+ * headers, band names and +s stay in view), and turning it off. Runs with a
+ * throwaway HOME and a fake `claude`.
  *
  *   tsx scripts/e2e-board-group.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
  */
@@ -334,6 +336,21 @@ exec sleep 600
       page.eval<string>(`${lane(project)}.querySelector('[data-board-lane-toggle]').textContent`);
     assert.match(await laneHeader('web'), /▾\s*web\s*3 workspaces\s*↗ 1 linked in/);
     assert.match(await laneHeader('api'), /▾\s*api\s*3 workspaces$/);
+    // Each band's + starts New workspace in its project, as the sidebar's (spec §6.7).
+    const laneNew = (project: string) => `${lane(project)}.querySelector('[data-board-lane-new]')`;
+    for (const project of ['web', 'api']) {
+      const [label, title] = await page.eval<[string, string]>(
+        `[${laneNew(project)}.getAttribute('aria-label'), ${laneNew(project)}.title]`,
+      );
+      assert.equal(label, `New workspace in ${project}`);
+      assert.match(title, new RegExp(`^New workspace in ${project} \\((⌘|Ctrl\\+)N\\)$`));
+    }
+    await page.eval(`${laneNew('api')}.click()`);
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+    assert.match(await page.eval<string>(dialogText), /In api · creates a worktree/);
+    assert.ok(await page.eval(`!document.querySelector('dialog[open] #ws-project')`), 'no Project');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'New workspace closed');
     // The shared headers: every column with its total; the bands' cells under them.
     assert.deepEqual(await page.eval(shown), ['working', 'idle', 'needs', 'ship', 'merged']);
     assert.deepEqual(
@@ -715,6 +732,21 @@ exec sleep 600
         return Math.abs(h.top - s.top) <= 1 && name.left >= s.left && name.left <= s.left + 30;
       })()`),
       'the headers and the band name in view',
+    );
+    // The band's + stays beside its name; the sidebar's +s stay shown, in their rows.
+    assert.ok(
+      await page.eval(`(() => {
+        const s = ${scroller}.getBoundingClientRect();
+        const plus = ${laneNew('api')}.getBoundingClientRect();
+        return plus.left >= s.left && plus.right <= s.right;
+      })()`),
+      'the band’s + in view',
+    );
+    assert.ok(
+      await page.eval(
+        `[...document.querySelectorAll('[data-project]')].every((r) => { const b = r.lastElementChild; const box = b.getBoundingClientRect(); const row = r.getBoundingClientRect(); return b.getAttribute('aria-label')?.startsWith('New workspace in ') && getComputedStyle(b).opacity === '1' && box.width > 0 && box.right <= row.right; })`,
+      ),
+      'every sidebar + shown, at the end of its row',
     );
     assert.ok(
       await page.eval(

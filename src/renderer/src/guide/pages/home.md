@@ -42,11 +42,11 @@ Hiding a column only changes the Board: its workspaces are still in the List and
 
 ### Group by project
 
-**Group** at the right of Home's tabs, next to **List | Board**, groups the Board by project: choose **Project** in its menu, and **None** to go back. The columns' headers stay at the top, and under them each project with workspaces of its own gets a band, with its cards in the same columns as before. A band's header names the project, how many workspaces it has and how many of other projects' workspaces are [linked into it](tasks-across-repositories); a linked workspace shows once, in its own project's band, with **+1** for the repository it also uses.
+**Group** at the right of Home's tabs, next to **List | Board**, groups the Board by project: choose **Project** in its menu, and **None** to go back. The columns' headers stay at the top, and under them each project with workspaces of its own gets a band, with its cards in the same columns as before. A band's header names the project, how many workspaces it has and how many of other projects' workspaces are [linked into it](tasks-across-repositories), and its **+** starts a [new workspace](new-workspace) in that project; a linked workspace shows once, in its own project's band, with **+1** for the repository it also uses.
 
 Click a band's header to collapse it to one count per column, and click again, or click the counts, to expand it. **Expand all** and **Collapse all** are in the Group menu. While something in a band needs you, its Needs you cell is tinted, and a collapsed band shows its Needs you count in color. Grouping and the collapsed bands are remembered for each profile, and your columns' order and hidden columns apply to every band.
 
-Grouped, the whole Board scrolls, and the column headers and the projects' names stay in view. <kbd>↑</kbd> and <kbd>↓</kbd> move down a column through the bands, <kbd>←</kbd> and <kbd>→</kbd> stay within a band, and <kbd>Tab</kbd> reaches each band's header, where <kbd>↵</kbd> collapses or expands it.
+Grouped, the whole Board scrolls, and the column headers and the projects' names stay in view. <kbd>↑</kbd> and <kbd>↓</kbd> move down a column through the bands, <kbd>←</kbd> and <kbd>→</kbd> stay within a band, and <kbd>Tab</kbd> reaches each band's header, where <kbd>↵</kbd> collapses or expands it, then its **+**.
 
 ### Drag to delete
 

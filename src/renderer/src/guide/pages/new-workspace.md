@@ -1,6 +1,6 @@
 # New workspace
 
-Click the **+** on a project row in the sidebar (it shows when you hover the row), or **New workspace** in the project view or on Home. <kbd>{{key:newWorkspace}}</kbd> uses the project you're looking at, or the project of the workspace you're in; from Home the dialog has a **Project** field to pick one, when the profile has more than one.
+Click the **+** at the right of a project's row in the sidebar (or of its band's header, when Home's Board is [grouped by project](home#board)), or **New workspace** in the project view or on Home. <kbd>{{key:newWorkspace}}</kbd> uses the project you're looking at, or the project of the workspace you're in; from Home the dialog has a **Project** field to pick one, when the profile has more than one.
 
 ## The Task field
 

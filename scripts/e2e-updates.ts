@@ -29,6 +29,7 @@ import { INSTALL_COMMAND, UPDATE_QUESTION } from '../src/shared/updates';
 import {
   type Cdp,
   clickButtonText,
+  clickClosingButton,
   launchApp,
   type RunningApp,
   sleep,
@@ -447,7 +448,7 @@ exec sleep 600
 
     // Restart now quits the normal way; once the app has exited, the helper
     // replaces the app and starts the new one.
-    await clickButtonText(page, 'Restart now', ready);
+    await clickClosingButton(page, 'Restart now', ready);
     // An attached inspector would hold the exit.
     page.close();
     mainProcess.close();
@@ -477,7 +478,7 @@ exec sleep 600
     await page.waitFor(`${ready}?.dataset.updateReady === '101.0.0'`, 'ready', 30_000);
     fs.chmodSync(path.dirname(target), 0o555);
     try {
-      await clickButtonText(page, 'Restart now', ready);
+      await clickClosingButton(page, 'Restart now', ready);
       page.close();
       mainProcess.close();
       assert.ok(await running.exited(30_000), 'Restart now quits the app');

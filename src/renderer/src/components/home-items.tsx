@@ -43,6 +43,8 @@ export interface HomeActions {
   deleteMerged: (workspaces: Workspace[]) => void;
   /** Null without projects. */
   newWorkspace: (() => void) | null;
+  /** New workspace in that project: a grouped Board band's + (spec §6.7). */
+  newWorkspaceIn: (project: Project) => void;
   addProject: () => void;
   guide: () => void;
 }

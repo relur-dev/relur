@@ -4,6 +4,14 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **A + on each band of the grouped Board.** With the Board grouped by project, each band's header has the same **+**, for a new workspace in that project.
+
+### Changed
+
+- **New workspace is always one click away.** The **+** on each project's row in the sidebar no longer waits for the pointer: it's always shown, at the row's right end, so every project's **+** lines up. Hover it for "New workspace in <project>" and its shortcut.
+
 ### Fixed
 
 - A card dragged on the Board no longer carries on behind a dialog. If a dialog opened during the drag, for example the list of unfinished work at start, dropping the card on **Drop to delete** opened Delete workspace on top of it. A dialog that opens now cancels the drag.

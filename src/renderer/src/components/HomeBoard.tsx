@@ -26,6 +26,7 @@ import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
+import { iconButton, keyHint } from '../ui/controls';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
@@ -809,6 +810,7 @@ export function HomeBoard({
             </div>
             {lanes.map((lane) => {
               const open = !collapsed.includes(lane.projectId);
+              const project = projects.find((p) => p.id === lane.projectId);
               return (
                 <div
                   key={lane.projectId}
@@ -816,31 +818,48 @@ export function HomeBoard({
                   data-board-lane-open={open}
                   className="flex flex-col gap-1.5"
                 >
-                  <button
-                    type="button"
-                    data-board-lane-toggle={lane.projectId}
-                    aria-expanded={open}
-                    title={open ? `Collapse ${lane.name}` : `Expand ${lane.name}`}
-                    className="sticky left-0 z-[2] -ml-1.5 flex h-7 items-center gap-2 self-start rounded-[5px] pr-2.5 pl-1.5 whitespace-nowrap outline-none hover:bg-band-strong focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
-                    onClick={() => onToggleLane(lane.projectId)}
-                  >
-                    <span aria-hidden className="w-3 text-center text-2xs text-fg-subtle">
-                      {open ? '▾' : '▸'}
-                    </span>
-                    <span className="font-mono text-[12.5px] font-medium text-fg">{lane.name}</span>
-                    <span data-board-lane-count className="text-sm text-fg-subtle">
-                      {lane.count} {lane.count === 1 ? 'workspace' : 'workspaces'}
-                    </span>
-                    {lane.linkedIn > 0 ? (
-                      <span
-                        data-board-lane-linked={lane.linkedIn}
-                        title={`${lane.linkedIn} ${lane.linkedIn === 1 ? 'workspace' : 'workspaces'} of other projects linked into ${lane.name}; ${lane.linkedIn === 1 ? 'it shows' : 'they show'} with ${lane.linkedIn === 1 ? 'its' : 'their'} own project`}
-                        className="text-sm text-fg-subtle"
-                      >
-                        ↗ {lane.linkedIn} linked in
+                  <div className="sticky left-0 z-[2] -ml-1.5 flex items-center gap-1 self-start">
+                    <button
+                      type="button"
+                      data-board-lane-toggle={lane.projectId}
+                      aria-expanded={open}
+                      title={open ? `Collapse ${lane.name}` : `Expand ${lane.name}`}
+                      className="flex h-7 items-center gap-2 rounded-[5px] pr-2.5 pl-1.5 whitespace-nowrap outline-none hover:bg-band-strong focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+                      onClick={() => onToggleLane(lane.projectId)}
+                    >
+                      <span aria-hidden className="w-3 text-center text-2xs text-fg-subtle">
+                        {open ? '▾' : '▸'}
                       </span>
+                      <span className="font-mono text-[12.5px] font-medium text-fg">
+                        {lane.name}
+                      </span>
+                      <span data-board-lane-count className="text-sm text-fg-subtle">
+                        {lane.count} {lane.count === 1 ? 'workspace' : 'workspaces'}
+                      </span>
+                      {lane.linkedIn > 0 ? (
+                        <span
+                          data-board-lane-linked={lane.linkedIn}
+                          title={`${lane.linkedIn} ${lane.linkedIn === 1 ? 'workspace' : 'workspaces'} of other projects linked into ${lane.name}; ${lane.linkedIn === 1 ? 'it shows' : 'they show'} with ${lane.linkedIn === 1 ? 'its' : 'their'} own project`}
+                          className="text-sm text-fg-subtle"
+                        >
+                          ↗ {lane.linkedIn} linked in
+                        </span>
+                      ) : null}
+                    </button>
+                    {/* New workspace in this project, as the sidebar's + (spec §6.7). */}
+                    {project ? (
+                      <button
+                        type="button"
+                        data-board-lane-new={lane.projectId}
+                        className={`${iconButton} size-5 text-md`}
+                        title={`New workspace in ${lane.name} (${keyHint('newWorkspace')})`}
+                        aria-label={`New workspace in ${lane.name}`}
+                        onClick={() => actions.newWorkspaceIn(project)}
+                      >
+                        +
+                      </button>
                     ) : null}
-                  </button>
+                  </div>
                   {open ? (
                     <div style={gridColumns} className="grid items-stretch gap-3">
                       {shown.map((column) => {

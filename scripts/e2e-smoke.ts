@@ -87,6 +87,11 @@ function sidebarChecks(page: Cdp) {
       page.eval<([string, string] | null)[]>(
         `['[data-linked-count]', '[data-workspace-count]'].map((s) => { const c = ${project(id)}.querySelector(s); return c ? [c.textContent, c.title] : null; })`,
       ),
+    /** The row's last control as [label, opacity]: its + (spec §6.1). */
+    plus: (id: string) =>
+      page.eval<[string, string]>(
+        `(() => { const b = ${project(id)}.lastElementChild; return [b.getAttribute('aria-label'), getComputedStyle(b).opacity]; })()`,
+      ),
     /** The collapsed project's glyph as [state, tooltip], or null. */
     glyphJs: (id: string) =>
       `(() => { const g = ${project(id)}.querySelector('[data-project-glyph] [role=img]'); return g ? [g.getAttribute('aria-label'), g.title] : null; })()`,
@@ -4068,6 +4073,10 @@ exec sleep 600
     await page.eval(`document.querySelector('nav button[title^="PROJ-9"]').click()`);
     await page.waitFor(`document.querySelector('h1')?.textContent === 'Many repos'`, 'PROJ-9');
     assert.equal(await sidebar.expanded(), 'shop', 'only the open workspace’s project');
+    // Every project row's + is shown without hover, expanded or not, last in its row.
+    for (const id of ['shop', 'cartapi', 'cartweb']) {
+      assert.deepEqual(await sidebar.plus(id), [`New workspace in ${id}`, '1'], id);
+    }
     const [shopLinked, shopOwn] = await sidebar.counts('shop');
     assert.equal(shopLinked, null);
     assert.deepEqual(shopOwn, [shopOwn?.[0], `${shopOwn?.[0]} workspaces`], 'its own workspaces');

@@ -1047,6 +1047,7 @@ export function App() {
                         deleteMerged: setDeletingMerged,
                         newWorkspace:
                           profileProjects.length > 0 ? () => startNewWorkspace(null) : null,
+                        newWorkspaceIn: startNewWorkspace,
                         addProject: () => setAddingProject(true),
                         guide: () => openGuide(null),
                       }}
