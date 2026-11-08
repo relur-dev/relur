@@ -1,4 +1,11 @@
 import {
+  type BoardGroup as Group,
+  parseBoardGroup,
+  parseCollapsedLanes,
+  serializeCollapsedLanes,
+  toggleLane,
+} from '@shared/board-group';
+import {
   type BoardLayout,
   isDefaultLayout,
   parseBoardLayout,
@@ -15,6 +22,7 @@ import { useTRPC } from '../trpc';
 import { button, isMac, Kbd } from '../ui/controls';
 import { remember } from '../ui/remember';
 import { BoardColumns } from './BoardColumns';
+import { BoardGroup } from './BoardGroup';
 import { HomeBoard } from './HomeBoard';
 import { type HomeActions, HomeOverview } from './HomeOverview';
 import { TerminalView } from './TerminalView';
@@ -57,6 +65,18 @@ function loadBoardLayout(profileId: string): BoardLayout {
     return parseBoardLayout(null);
   }
 }
+
+/** The Board's grouping and its collapsed bands (spec §6.7), kept as the layout is. */
+const groupKey = (profileId: string) => `home-board-group:${profileId}`;
+const lanesKey = (profileId: string) => `home-board-lanes:${profileId}`;
+
+const stored = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
 
 /** ⌃1 and ⌃2 on macOS, as a workspace's tabs; elsewhere Ctrl with a digit switches profiles. */
 const tabKey = (index: number): string | null =>
@@ -125,6 +145,23 @@ export function HomeView({
     // The default is stored as none, so a later default reaches it.
     remember(boardKey(profile.id), isDefaultLayout(next) ? null : serializeBoardLayout(next));
   };
+  const [group, setGroup] = useState<Group>(() => parseBoardGroup(stored(groupKey(profile.id))));
+  const chooseGroup = (next: Group) => {
+    setGroup(next);
+    // None, the default, is stored as nothing.
+    remember(groupKey(profile.id), next === 'none' ? null : next);
+  };
+  const [collapsed, setCollapsed] = useState<string[]>(() =>
+    parseCollapsedLanes(stored(lanesKey(profile.id))),
+  );
+  const changeCollapsed = (next: string[]) => {
+    setCollapsed(next);
+    remember(lanesKey(profile.id), serializeCollapsedLanes(next));
+  };
+  // The projects with a band: those with workspaces of their own.
+  const banded = projects
+    .filter((p) => workspaces.some((w) => w.projectId === p.id))
+    .map((p) => p.id);
   // Without workspaces both show the empty states, so there is nothing to switch.
   const switchable = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
 
@@ -172,6 +209,18 @@ export function HomeView({
         {switchable && layout === 'board' ? (
           <BoardColumns layout={boardLayout} onLayout={changeBoardLayout} workspaces={workspaces} />
         ) : null}
+        {switchable && layout === 'board' ? (
+          <BoardGroup
+            group={group}
+            onGroup={chooseGroup}
+            canExpand={banded.some((id) => collapsed.includes(id))}
+            canCollapse={banded.some((id) => !collapsed.includes(id))}
+            onExpandAll={() => changeCollapsed(collapsed.filter((id) => !banded.includes(id)))}
+            onCollapseAll={() =>
+              changeCollapsed([...collapsed, ...banded.filter((id) => !collapsed.includes(id))])
+            }
+          />
+        ) : null}
         {switchable ? (
           <fieldset
             aria-label="Show as"
@@ -211,6 +260,9 @@ export function HomeView({
           actions={actions}
           layout={boardLayout}
           onLayout={changeBoardLayout}
+          group={group}
+          collapsed={collapsed}
+          onToggleLane={(projectId) => changeCollapsed(toggleLane(collapsed, projectId))}
         />
       ) : tab === 'overview' ? (
         <HomeOverview

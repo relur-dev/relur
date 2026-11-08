@@ -27,7 +27,7 @@ Click a row, or press <kbd>↵</kbd> on it, to open its workspace. <kbd>↑</kbd
 
 The Board shows the profile's workspaces as five columns: **Working**, **Idle**, **Needs you**, **Ready to ship** and **Merged**, in that order until you arrange them (see **Columns**, below). While something needs you, the Needs you column is tinted and its count takes the color of its most urgent card, as in the sidebar. **List | Board** at the right of Home's tabs switches between the Board and the List, and the choice is remembered for each profile. A workspace is in the same place as in the List; **Idle** holds the rest: interrupted, suspended or exited, or done with nothing to ship. A workspace whose Claude waits for its background work stays in **Working**, with **1 in background**; a done one with a dev server still running keeps its column and shows a quiet **1 running**.
 
-![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged.](images/home-board.webp)
+![Home's Board: Working holds one workspace with its memory, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with a quick reply field and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Columns, Group None and List | Board are at the top right.](images/home-board.webp)
 
 Cards move between the columns by themselves as Claude works; you can't drag them from one column to another. Click a card to open its workspace. Hover over it, or give it the focus, for its main action (such as **Open**, **Approve spec** or **Push**) and **Delete**. **Delete n merged** at the top of Merged deletes all of them in one dialog. In a narrow window the Board scrolls sideways, and each column scrolls on its own.
 
@@ -39,6 +39,14 @@ Each profile keeps its own columns, also after a restart:
 - **Hide or show columns** with **Columns** at the right of Home's tabs, next to **List | Board**: it lists every column in its order with a checkbox, and **Reset to default** brings back the five columns in their first order. One column always stays shown.
 
 Hiding a column only changes the Board: its workspaces are still in the List and the sidebar, and the counts and badges stay the same. If you hide **Needs you** and something needs you, **Columns** shows a small dot in the Needs you color, so nothing waiting goes unseen.
+
+### Group by project
+
+**Group** at the right of Home's tabs, next to **List | Board**, groups the Board by project: choose **Project** in its menu, and **None** to go back. The columns' headers stay at the top, and under them each project with workspaces of its own gets a band, with its cards in the same columns as before. A band's header names the project, how many workspaces it has and how many of other projects' workspaces are [linked into it](tasks-across-repositories); a linked workspace shows once, in its own project's band, with **+1** for the repository it also uses.
+
+Click a band's header to collapse it to one count per column, and click again, or click the counts, to expand it. **Expand all** and **Collapse all** are in the Group menu. While something in a band needs you, its Needs you cell is tinted, and a collapsed band shows its Needs you count in color. Grouping and the collapsed bands are remembered for each profile, and your columns' order and hidden columns apply to every band.
+
+Grouped, the whole Board scrolls, and the column headers and the projects' names stay in view. <kbd>↑</kbd> and <kbd>↓</kbd> move down a column through the bands, <kbd>←</kbd> and <kbd>→</kbd> stay within a band, and <kbd>Tab</kbd> reaches each band's header, where <kbd>↵</kbd> collapses or expands it.
 
 ### Drag to delete
 

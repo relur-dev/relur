@@ -1,3 +1,4 @@
+import { type BoardGroup, boardLanes } from '@shared/board-group';
 import {
   type BoardLayout,
   canMove,
@@ -21,7 +22,7 @@ import { backgroundNote, STATE_LABEL } from '@shared/status';
 import { SUSPENDED_TOOLTIP } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import { workspaceGlyph } from '@shared/unfinished';
-import type { Workspace } from '@shared/workspaces';
+import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
@@ -112,6 +113,9 @@ export function HomeBoard({
   actions,
   layout,
   onLayout,
+  group,
+  collapsed,
+  onToggleLane,
 }: {
   profile: Profile;
   projects: Project[];
@@ -121,6 +125,11 @@ export function HomeBoard({
   actions: HomeActions;
   layout: BoardLayout;
   onLayout: (layout: BoardLayout) => void;
+  /** Grouped by project, a band per project (spec §6.7). */
+  group: BoardGroup;
+  /** The projects whose bands are collapsed. */
+  collapsed: string[];
+  onToggleLane: (projectId: string) => void;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -187,10 +196,9 @@ export function HomeBoard({
     const card = target.closest<HTMLElement>('[data-board-card]');
     // Only from a card itself or the Board: its buttons and field keep their keys.
     if (card ? target !== card : target !== root.current) return;
-    const cardsOf = (column: Element | null) => [
-      ...(column?.querySelectorAll<HTMLElement>('[data-board-card]') ?? []),
+    const cardsOf = (cell: Element | null | undefined) => [
+      ...(cell?.querySelectorAll<HTMLElement>('[data-board-card]') ?? []),
     ];
-    const columnEls = [...(root.current?.querySelectorAll('[data-board-column]') ?? [])];
     const go = (next: HTMLElement | null | undefined) => {
       e.preventDefault();
       focusCard(next);
@@ -202,21 +210,26 @@ export function HomeBoard({
       return;
     }
     const w = workspaces.find((x) => x.id === card.dataset.boardCard);
-    const column = card.closest('[data-board-column]');
-    const cards = cardsOf(column);
+    // A cell is a column, or a column in a project's band when grouped.
+    const cell = card.closest<HTMLElement>('[data-board-cell]');
+    // ↑ ↓ go down the column, across the open bands when grouped.
+    const cards = [
+      ...(root.current?.querySelectorAll<HTMLElement>(
+        `[data-board-cell="${cell?.dataset.boardCell}"] [data-board-card]`,
+      ) ?? []),
+    ];
     const at = cards.indexOf(card);
     if (e.key === 'ArrowDown') go(cards[Math.min(cards.length - 1, at + 1)]);
     else if (e.key === 'ArrowUp') go(cards[Math.max(0, at - 1)]);
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      // The nearest column with cards that way, at the card nearest in height.
+      // The nearest cell with cards that way, in the same band when grouped,
+      // at the card nearest in height; none past the last.
       const step = e.key === 'ArrowRight' ? 1 : -1;
       const top = card.getBoundingClientRect().top;
-      for (
-        let i = columnEls.indexOf(column as Element) + step;
-        i >= 0 && i < columnEls.length;
-        i += step
-      ) {
-        const there = cardsOf(columnEls[i] ?? null);
+      const row = card.closest('[data-board-lane]') ?? root.current;
+      const cells = [...(row?.querySelectorAll('[data-board-cell]') ?? [])];
+      for (let i = cells.indexOf(cell as Element) + step; i >= 0 && i < cells.length; i += step) {
+        const there = cardsOf(cells[i]);
         if (there.length === 0) continue;
         const nearest = there.reduce((a, b) =>
           Math.abs(b.getBoundingClientRect().top - top) <
@@ -538,6 +551,7 @@ export function HomeBoard({
             w={w}
             it={it}
             project={projectName(w.projectId)}
+            linkedIn={group === 'project' ? projectName : null}
             suspended={suspended.has(w.id) && column !== 'idle'}
           />
           {offer === 'field' && !lifted && !wasSent
@@ -658,109 +672,251 @@ export function HomeBoard({
     ? BOARD_COLUMNS.find((c) => columns[c].some((w) => w.id === lifted.id))
     : undefined;
 
+  const shown = shownColumns(layout);
+  const grouped = group === 'project';
+  const lanes = grouped ? boardLanes(projects, workspaces, columns) : [];
+  /** The shown columns side by side, each at least 220 px wide (spec §6.7). */
+  const gridColumns = { gridTemplateColumns: `repeat(${shown.length}, minmax(220px, 1fr))` };
+
+  /** A column's header: title, count, Delete n merged and ⋯; dragging it moves the column. */
+  const header = (column: BoardColumn, tone: NeedsTone | null, moving: boolean) => {
+    const list = columns[column];
+    return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: dragging a header moves its column; its menu button does the same from the keyboard
+      <div
+        data-board-column-header
+        title="Drag to move the column"
+        className={`group/header flex flex-none touch-none items-center gap-2 pr-2 pl-3 select-none ${grouped ? 'h-9' : 'h-10'} ${moving ? 'opacity-60' : ''}`}
+        onPointerDown={(e) => {
+          if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+          if (dragRef.current) return;
+          columnPress.current = { column, x: e.clientX, y: e.clientY };
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          void columnMenu(column, false);
+        }}
+      >
+        <h2 className="text-base font-semibold whitespace-nowrap">{BOARD_COLUMN_TITLE[column]}</h2>
+        <span
+          data-board-count
+          className={`font-mono text-sm ${tone ? `font-semibold ${TONE_TEXT[tone]}` : 'text-fg-subtle'}`}
+        >
+          {list.length}
+        </span>
+        <span className="flex-1" />
+        {column === 'merged' && list.length > 0 ? (
+          <button
+            type="button"
+            data-home-action="delete-merged"
+            title="Deletes their worktrees and local branches"
+            className="flex h-6 items-center rounded-[5px] border border-line-strong px-2 text-sm whitespace-nowrap text-fg outline-none hover:bg-raised focus-visible:shadow-[0_0_0_2px_var(--color-canvas),0_0_0_3.5px_var(--color-focus)]"
+            onClick={() => actions.deleteMerged(list)}
+          >
+            Delete {list.length} merged
+          </button>
+        ) : null}
+        <button
+          type="button"
+          data-board-column-menu={column}
+          aria-label={`${BOARD_COLUMN_TITLE[column]} column`}
+          aria-haspopup="menu"
+          title="Move or hide this column"
+          className="flex size-6 flex-none items-center justify-center rounded-[5px] text-base text-fg-subtle opacity-0 outline-none group-hover/header:opacity-100 hover:bg-band-strong hover:text-fg focus-visible:opacity-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+          onClick={() => void columnMenu(column, true)}
+        >
+          ⋯
+        </button>
+      </div>
+    );
+  };
+  /** A column's frame: Needs you tinted while it has cards, dashed while it is lifted. */
+  const frame = (tone: NeedsTone | null, moving: boolean) =>
+    moving
+      ? 'border-dashed border-line-strong bg-canvas'
+      : tone
+        ? NEEDS_TONE[tone]
+        : 'border-line bg-canvas';
+  const toneOf = (column: BoardColumn, list: Workspace[]) =>
+    column === 'needs' && list.length > 0 ? needsTone(list) : null;
+  const dropLine = (offset: number, className: string) =>
+    columnDrag && columnDrag.at !== null ? (
+      <div
+        data-board-column-drop={columnDrag.index}
+        aria-hidden
+        style={{ left: columnDrag.at - 1 - offset }}
+        className={`pointer-events-none absolute w-0.5 rounded-full bg-focus ${className}`}
+      />
+    ) : null;
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: arrow keys between the cards inside it
     <div
       ref={root}
       tabIndex={-1}
       data-home-board={drag ? 'dragging' : ''}
+      data-board-grouped={grouped ? 'project' : undefined}
       data-board-column-drag={columnDrag?.column}
       className={`relative flex min-h-0 flex-1 flex-col bg-term outline-none ${columnDrag ? 'cursor-grabbing' : ''}`}
       onKeyDown={onKeyDown}
     >
-      <div
-        ref={scroller}
-        className={`relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-6 pt-[18px] ${drag ? 'pb-[112px]' : 'pb-5'}`}
-      >
-        {shownColumns(layout).map((column) => {
-          const list = columns[column];
-          const tone = column === 'needs' && list.length > 0 ? needsTone(list) : null;
-          const moving = columnDrag?.column === column;
-          return (
-            <section
-              key={column}
-              data-board-column={column}
-              data-board-tone={tone ?? undefined}
-              data-board-column-lifted={moving || undefined}
-              aria-label={BOARD_COLUMN_TITLE[column]}
-              className={`flex min-h-0 min-w-[220px] flex-[1_0_220px] flex-col rounded-lg border ${
-                moving
-                  ? 'border-dashed border-line-strong bg-canvas'
-                  : tone
-                    ? NEEDS_TONE[tone]
-                    : 'border-line bg-canvas'
-              }`}
+      {grouped ? (
+        // Grouped by project (spec §6.7): one scroller both ways; the column headers
+        // stay on top, the bands' names at the left.
+        <div
+          ref={scroller}
+          className={`relative min-h-0 flex-1 overflow-auto px-6 ${drag ? 'pb-[112px]' : 'pb-5'}`}
+        >
+          <div
+            className="relative flex flex-col gap-3.5"
+            style={{ minWidth: shown.length * 220 + (shown.length - 1) * 12 }}
+          >
+            <div
+              data-board-headers
+              style={gridColumns}
+              className="sticky top-0 z-[3] grid gap-3 bg-term pt-[18px] pb-1"
             >
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging a header moves its column; its menu button does the same from the keyboard */}
-              <div
-                data-board-column-header
-                title="Drag to move the column"
-                className={`group/header flex h-10 flex-none touch-none items-center gap-2 pr-2 pl-3 select-none ${moving ? 'opacity-60' : ''}`}
-                onPointerDown={(e) => {
-                  if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
-                  if (dragRef.current) return;
-                  columnPress.current = { column, x: e.clientX, y: e.clientY };
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  void columnMenu(column, false);
-                }}
-              >
-                <h2 className="text-base font-semibold whitespace-nowrap">
-                  {BOARD_COLUMN_TITLE[column]}
-                </h2>
-                <span
-                  data-board-count
-                  className={`font-mono text-sm ${tone ? `font-semibold ${TONE_TEXT[tone]}` : 'text-fg-subtle'}`}
+              {shown.map((column) => {
+                const tone = toneOf(column, columns[column]);
+                const moving = columnDrag?.column === column;
+                return (
+                  <section
+                    key={column}
+                    data-board-column={column}
+                    data-board-tone={tone ?? undefined}
+                    data-board-column-lifted={moving || undefined}
+                    aria-label={BOARD_COLUMN_TITLE[column]}
+                    className={`min-w-0 rounded-lg border ${frame(tone, moving)}`}
+                  >
+                    {header(column, tone, moving)}
+                  </section>
+                );
+              })}
+            </div>
+            {lanes.map((lane) => {
+              const open = !collapsed.includes(lane.projectId);
+              return (
+                <div
+                  key={lane.projectId}
+                  data-board-lane={lane.projectId}
+                  data-board-lane-open={open}
+                  className="flex flex-col gap-1.5"
                 >
-                  {list.length}
-                </span>
-                <span className="flex-1" />
-                {column === 'merged' && list.length > 0 ? (
                   <button
                     type="button"
-                    data-home-action="delete-merged"
-                    title="Deletes their worktrees and local branches"
-                    className="flex h-6 items-center rounded-[5px] border border-line-strong px-2 text-sm whitespace-nowrap text-fg outline-none hover:bg-raised focus-visible:shadow-[0_0_0_2px_var(--color-canvas),0_0_0_3.5px_var(--color-focus)]"
-                    onClick={() => actions.deleteMerged(list)}
+                    data-board-lane-toggle={lane.projectId}
+                    aria-expanded={open}
+                    title={open ? `Collapse ${lane.name}` : `Expand ${lane.name}`}
+                    className="sticky left-0 z-[2] -ml-1.5 flex h-7 items-center gap-2 self-start rounded-[5px] pr-2.5 pl-1.5 whitespace-nowrap outline-none hover:bg-band-strong focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+                    onClick={() => onToggleLane(lane.projectId)}
                   >
-                    Delete {list.length} merged
+                    <span aria-hidden className="w-3 text-center text-2xs text-fg-subtle">
+                      {open ? '▾' : '▸'}
+                    </span>
+                    <span className="font-mono text-[12.5px] font-medium text-fg">{lane.name}</span>
+                    <span data-board-lane-count className="text-sm text-fg-subtle">
+                      {lane.count} {lane.count === 1 ? 'workspace' : 'workspaces'}
+                    </span>
+                    {lane.linkedIn > 0 ? (
+                      <span
+                        data-board-lane-linked={lane.linkedIn}
+                        title={`${lane.linkedIn} ${lane.linkedIn === 1 ? 'workspace' : 'workspaces'} of other projects linked into ${lane.name}; ${lane.linkedIn === 1 ? 'it shows' : 'they show'} with ${lane.linkedIn === 1 ? 'its' : 'their'} own project`}
+                        className="text-sm text-fg-subtle"
+                      >
+                        ↗ {lane.linkedIn} linked in
+                      </span>
+                    ) : null}
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  data-board-column-menu={column}
-                  aria-label={`${BOARD_COLUMN_TITLE[column]} column`}
-                  aria-haspopup="menu"
-                  title="Move or hide this column"
-                  className="flex size-6 flex-none items-center justify-center rounded-[5px] text-base text-fg-subtle opacity-0 outline-none group-hover/header:opacity-100 hover:bg-band-strong hover:text-fg focus-visible:opacity-100 focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
-                  onClick={() => void columnMenu(column, true)}
-                >
-                  ⋯
-                </button>
-              </div>
-              <div
-                className={`flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content ${moving ? 'opacity-60' : ''}`}
+                  {open ? (
+                    <div style={gridColumns} className="grid items-stretch gap-3">
+                      {shown.map((column) => {
+                        const list = lane.columns[column];
+                        const tone = toneOf(column, list);
+                        const moving = columnDrag?.column === column;
+                        return (
+                          <div
+                            key={column}
+                            data-board-cell={column}
+                            data-board-tone={tone ?? undefined}
+                            className={`flex min-h-12 min-w-0 flex-col gap-1.5 rounded-lg border p-1.5 ${frame(tone, moving)} ${moving ? 'opacity-60' : ''}`}
+                          >
+                            {list.map((w) => card(column, w))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    // Collapsed: each column's count; a click expands the band (its header is the key's way).
+                    // biome-ignore lint/a11y/useKeyWithClickEvents: the band's header button expands it from the keyboard
+                    // biome-ignore lint/a11y/noStaticElementInteractions: as above
+                    <div
+                      data-board-lane-counts
+                      style={gridColumns}
+                      className="grid cursor-default gap-3"
+                      onClick={() => onToggleLane(lane.projectId)}
+                    >
+                      {shown.map((column) => {
+                        const n = lane.columns[column].length;
+                        const tone = toneOf(column, lane.columns[column]);
+                        return (
+                          <div
+                            key={column}
+                            data-board-lane-cell={column}
+                            title={`${lane.name} · ${BOARD_COLUMN_TITLE[column]}: ${n}`}
+                            className={`flex h-8 min-w-0 items-center rounded-md border border-line bg-canvas px-3 hover:border-line-strong ${columnDrag?.column === column ? 'opacity-60' : ''}`}
+                          >
+                            <span
+                              className={`font-mono text-sm font-medium ${tone ? TONE_TEXT[tone] : n > 0 ? 'text-fg' : 'text-fg-subtle'}`}
+                            >
+                              {n > 0 ? n : '–'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {dropLine(24, 'top-[18px] bottom-0')}
+          </div>
+        </div>
+      ) : (
+        <div
+          ref={scroller}
+          className={`relative flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-6 pt-[18px] ${drag ? 'pb-[112px]' : 'pb-5'}`}
+        >
+          {shown.map((column) => {
+            const list = columns[column];
+            const tone = toneOf(column, list);
+            const moving = columnDrag?.column === column;
+            return (
+              <section
+                key={column}
+                data-board-column={column}
+                data-board-cell={column}
+                data-board-tone={tone ?? undefined}
+                data-board-column-lifted={moving || undefined}
+                aria-label={BOARD_COLUMN_TITLE[column]}
+                className={`flex min-h-0 min-w-[220px] flex-[1_0_220px] flex-col rounded-lg border ${frame(tone, moving)}`}
               >
-                {list.map((w) => card(column, w))}
-                {list.length === 0 ? (
-                  <div className="rounded-[7px] border border-dashed border-line px-2 py-[22px] text-center text-sm text-fg-subtle">
-                    Nothing here
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          );
-        })}
-        {columnDrag && columnDrag.at !== null ? (
-          <div
-            data-board-column-drop={columnDrag.index}
-            aria-hidden
-            style={{ left: columnDrag.at - 1 }}
-            className="pointer-events-none absolute top-[18px] bottom-5 w-0.5 rounded-full bg-focus"
-          />
-        ) : null}
-      </div>
+                {header(column, tone, moving)}
+                <div
+                  className={`flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content ${moving ? 'opacity-60' : ''}`}
+                >
+                  {list.map((w) => card(column, w))}
+                  {list.length === 0 ? (
+                    <div className="rounded-[7px] border border-dashed border-line px-2 py-[22px] text-center text-sm text-fg-subtle">
+                      Nothing here
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            );
+          })}
+          {dropLine(0, 'top-[18px] bottom-5')}
+        </div>
+      )}
 
       {drag ? (
         <div
@@ -859,11 +1015,17 @@ function CardBody({
   w,
   it,
   project,
+  linkedIn = null,
   suspended,
 }: {
   w: Workspace;
   it: HomeItem;
   project: string;
+  /**
+   * Grouped by project, the band names the project: the card shows its
+   * linked repositories' count in its place, named by this (spec §6.7).
+   */
+  linkedIn?: ((projectId: string) => string) | null;
   /** Its Claude is suspended (spec §9.8): said after the status, outside Idle. */
   suspended: boolean;
 }): ReactNode {
@@ -875,7 +1037,19 @@ function CardBody({
           <span className="flex-none font-mono text-[11.5px] text-fg-subtle">{w.task.id}</span>
         ) : null}
         <span className="flex-1" />
-        <span className="min-w-0 truncate font-mono text-xs text-fg-subtle">{project}</span>
+        {!linkedIn ? (
+          <span className="min-w-0 truncate font-mono text-xs text-fg-subtle">{project}</span>
+        ) : linkedRepos(w).length > 0 ? (
+          <span
+            data-linked-chip
+            title={`Also in ${linkedRepos(w)
+              .map((r) => linkedIn(r.projectId))
+              .join(', ')}`}
+            className="flex-none rounded-xs border border-line-strong px-1 font-mono text-2xs text-fg-muted"
+          >
+            +{linkedRepos(w).length}
+          </span>
+        ) : null}
       </div>
       <span
         className={`line-clamp-2 text-base text-pretty ${
