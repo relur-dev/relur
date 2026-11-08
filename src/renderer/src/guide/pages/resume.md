@@ -16,6 +16,8 @@ To quit whenever the window closes, choose **Quit When the Window Closes** in th
 
 ## Starting again
 
+The window opens where you left it: the same profile, or the Guide if it was open, and in it what you were looking at. That's Home on its Overview or Terminal tab, a project on its tab, or a workspace on its tab (Claude, a shell, the spec and so on) with its Changes and Responses panels open or closed as they were. A shell tab comes back as a new shell in the same folder. When something is gone by then, the window steps back: a deleted workspace opens its project, a removed project the profile's Home, and a removed profile the first profile. This holds after **Restart now** for an update and when interrupted work is continued at start, too: the workspaces that continue start as usual, and the window still shows where you were.
+
 When {{app}} starts again, Claude continues the same conversation in each workspace where it was running, and starts there when you open the others. Terminal history isn't kept across restarts; Claude's conversation is.
 
 In a profile that [suspends idle sessions](suspend), only the workspace you're looking at and those whose work is continued start right away; the others start suspended and resume when you open them.

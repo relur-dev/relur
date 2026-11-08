@@ -28,6 +28,7 @@ import {
   launchApp,
   openContextMenu,
   pressKey,
+  pressShortcut,
   type RunningApp,
   showHomeList,
   sleep,
@@ -307,7 +308,9 @@ exec sleep 600
     );
     // Delta in Personal: under Home's Needs you (spec §6.7), with Continue and
     // Dismiss; Dismiss drops the marker and sends nothing.
+    // Personal opens on Delta, shown when the app quit (spec §5); then its Home.
     await pressKey(page, 'Digit2', CMD);
+    await pressShortcut(page, 'home');
     await showHomeList(page);
     const homeDelta = `document.querySelector('[data-home-row="${ids.Delta}"]')`;
     await page.waitFor(

@@ -7,7 +7,7 @@ import type { SessionInfo } from '@shared/terminal-protocol';
 import type { OtherWorktree, Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { AdoptWorktreeDialog } from './components/AdoptWorktreeDialog';
 import { CloseNotice } from './components/CloseNotice';
@@ -36,10 +36,12 @@ import { UpdateNotice } from './components/UpdateNotice';
 import { FOCUS_CLAUDE_EVENT, WorkspaceView } from './components/WorkspaceView';
 import { type GuideTarget, GuideView, target } from './guide/GuideView';
 import { GuideContext } from './guide/link';
+import { LAST_SHOWN_KEY, type LastShown, parseLastShown, resolveLastShown } from './last-shown';
 import { trpcClient, useTRPC } from './trpc';
 import { button, iconButton, isMac, Kbd } from './ui/controls';
 import { requestOnOpen } from './ui/open-requests';
 import { useProjectDisclosure } from './ui/project-disclosure';
+import { remember } from './ui/remember';
 import { playAlert } from './ui/sounds';
 import { SessionMarks, type SuspendedSession } from './ui/suspended';
 import { useNativeTheme } from './ui/theme';
@@ -85,6 +87,8 @@ export function App() {
     }),
   );
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
+  // Whether the window is back where it was when the app quit (spec §5).
+  const [restored, setRestored] = useState(false);
   // What each profile shows, and the selected tab of each view (by profile and view key).
   const [views, setViews] = useState<Record<string, View>>({});
   const [selectedTab, setSelectedTab] = useState<Record<string, string>>({});
@@ -295,7 +299,7 @@ export function App() {
     firstLaunchHandled.current = true;
     if (currentConfig.profiles.length === 0) setCreatingProfile(true);
   }, [currentConfig]);
-  // On launch, the first profile. TODO(M5): the last used one.
+  // On launch, the profile shown when the app quit (spec §5), else the first.
   const profile = profiles.find((p) => p.id === selectedProfile) ?? profiles[0] ?? null;
   const profileId = profile?.id ?? null;
   const profileProjects = (currentConfig?.projects ?? []).filter((p) => p.profileId === profileId);
@@ -371,13 +375,14 @@ export function App() {
   };
   // A workspace that no longer exists (deleted since, or the notification is
   // from before a restart) leaves the app as it is.
+  // It waits for the window to be back where it was, then takes over.
   useEffect(() => {
-    if (!notificationClick || !workspaces.data || !sessions.data) return;
+    if (!restored || !notificationClick || !workspaces.data || !sessions.data) return;
     setNotificationClick(null);
     if (!workspaces.data.some((w) => w.id === notificationClick)) return;
     openRequest.current(notificationClick);
     setFocusClaudeOf(notificationClick);
-  }, [notificationClick, workspaces.data, sessions.data]);
+  }, [restored, notificationClick, workspaces.data, sessions.data]);
   const [newWorkspace, setNewWorkspace] = useState<{ project: Project | null } | null>(null);
   const [deleting, setDeleting] = useState<Workspace | null>(null);
   // Home's Delete n merged workspaces (spec §6.7): one dialog for all of them.
@@ -410,6 +415,57 @@ export function App() {
     }),
   );
   const showHomeTab = (id: string, tab: HomeTab) => setHomeTabs((t) => ({ ...t, [id]: tab }));
+
+  // At start, the window shows what it showed when the app quit (spec §5),
+  // falling back a step for whatever no longer exists. Once, when the
+  // profiles, workspaces and sessions are known; the main area waits for it.
+  const restoreDone = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when loaded
+  useEffect(() => {
+    if (restoreDone.current || !currentConfig || !workspaces.isFetched || !sessions.isFetched) {
+      return;
+    }
+    restoreDone.current = true;
+    setRestored(true);
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(LAST_SHOWN_KEY);
+    } catch {
+      // no local storage: the first profile
+    }
+    const at = resolveLastShown(parseLastShown(stored), {
+      profiles: currentConfig.profiles,
+      projects: currentConfig.projects,
+      workspaces: workspaces.data ?? [],
+    });
+    if (!at) return;
+    const shown = at.view;
+    if (shown.kind === 'home') {
+      selectProfile(at.profileId);
+      showHomeTab(at.profileId, shown.tab);
+    } else if (shown.kind === 'project') {
+      showView(at.profileId, { kind: 'project', projectId: shown.projectId }, shown.tab);
+    } else {
+      const { workspaceId, tab } = shown;
+      const next: View = { kind: 'workspace', projectId: shown.projectId, workspaceId };
+      const session =
+        tab.kind === 'claude' || tab.kind === 'setup'
+          ? sessions.data?.find((s) => s.workspaceId === workspaceId && s.kind === tab.kind)
+          : undefined;
+      showView(at.profileId, next, session?.id);
+      if (shown.changes) toggleChanges(workspaceId, true);
+      if (shown.responses) requestOnOpen(workspaceId, 'responses');
+      if (tab.kind === 'spec') requestOnOpen(workspaceId, 'spec');
+      // Shells end with the app: a new one in the same repository.
+      if (tab.kind === 'shell') {
+        workspaceShell.mutate({
+          workspaceId,
+          projectId: tab.projectId === shown.projectId ? null : tab.projectId,
+        });
+      }
+    }
+    if (at.guide) setGuide((g) => ({ ...g, open: true, from: null }));
+  }, [currentConfig, workspaces.isFetched, sessions.isFetched]);
   // Start Claude here on Home types into the home shell, on the Terminal tab (spec §6.7).
   const startClaudeIn = (v: View) => {
     if (v.kind === 'home' && profileId) {
@@ -482,6 +538,49 @@ export function App() {
   const shownSession =
     viewSessions.find((s) => s.id === selectedTab[tabKey]) ?? viewSessions[0] ?? null;
   const claudeTabShown = Boolean(workspace && shownSession?.kind === 'claude');
+
+  // What the window shows, remembered for the next start (spec §5).
+  const [panels, setPanels] = useState({ spec: false, responses: false });
+  const onPanels = useCallback(
+    (next: { spec: boolean; responses: boolean }) =>
+      setPanels((current) =>
+        current.spec === next.spec && current.responses === next.responses ? current : next,
+      ),
+    [],
+  );
+  const shownNow: LastShown | null = profileId
+    ? {
+        profileId,
+        guide: guideOpen,
+        view:
+          view.kind === 'workspace' && workspace
+            ? {
+                kind: 'workspace',
+                projectId: workspace.projectId,
+                workspaceId: workspace.id,
+                tab: panels.spec
+                  ? { kind: 'spec' }
+                  : shownSession?.kind === 'shell'
+                    ? { kind: 'shell', projectId: shownSession.projectId ?? workspace.projectId }
+                    : shownSession?.kind === 'setup'
+                      ? { kind: 'setup' }
+                      : { kind: 'claude' },
+                changes: changesOpen.has(workspace.id),
+                responses: panels.responses,
+              }
+            : view.kind === 'project' && project
+              ? {
+                  kind: 'project',
+                  projectId: project.id,
+                  tab: PROJECT_TABS.includes(projectTab) ? projectTab : WORKSPACES_TAB,
+                }
+              : { kind: 'home', tab: homeTab },
+      }
+    : null;
+  const shownJson = shownNow && JSON.stringify(shownNow);
+  useEffect(() => {
+    if (restored && shownJson) remember(LAST_SHOWN_KEY, shownJson);
+  }, [restored, shownJson]);
   // A main checkout's Claude tab, shown in a project view, isn't suspended (spec §9.8).
   const shownSessionId = !workspace && projectTab === shownSession?.id ? shownSession.id : null;
   // What is shown changes the idle clocks (spec §9.8): the table's tooltips read them again.
@@ -733,7 +832,7 @@ export function App() {
         <div data-app-ready={ready || undefined} className="flex h-full flex-col bg-chrome text-fg">
           <ProfileTabs
             profiles={profiles}
-            activeId={guideOpen ? null : profileId}
+            activeId={guideOpen || !restored ? null : profileId}
             attention={Object.fromEntries(
               profiles.map((p) => [
                 p.id,
@@ -787,7 +886,7 @@ export function App() {
                 }
                 onBack={guide.from ? closeGuide : null}
               />
-            ) : (
+            ) : currentConfig && !restored ? null : (
               <>
                 {currentConfig && profile ? (
                   <Sidebar
@@ -897,6 +996,7 @@ export function App() {
                       onDelete={() => setDeleting(workspace)}
                       changesOpen={changesOpen.has(workspace.id)}
                       onToggleChanges={() => toggleChanges(workspace.id)}
+                      onPanels={onPanels}
                     />
                   ) : profile && project ? (
                     <ProjectView

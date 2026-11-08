@@ -13,7 +13,7 @@ You can change your mind in the {{mac}}{{app}} menu{{/mac}}{{other}}Help menu{{/
 When a newer version is out, a bar under the profile tabs says so: **{{app}} 0.3.0 is available**, next to the version you have. It never opens a dialog or takes the focus.
 
 - **Update** downloads the new version from the release on GitHub, with a progress bar and **Cancel**. Nothing is downloaded before you click it. {{app}} checks the download against the release's checksums and that it really is {{app}} at that version, then says **{{app}} 0.3.0 is ready**.
-- **Restart now** quits {{app}} as <kbd>{{key:quit}}</kbd> does, asking first while sessions run, replaces it where it is installed and opens the new version. As after any quit, Claude's conversations resume afterwards, and work it hadn't finished is marked **Unfinished**; see [Quitting and resuming](resume#work-that-was-cut-off).
+- **Restart now** quits {{app}} as <kbd>{{key:quit}}</kbd> does, asking first while sessions run, replaces it where it is installed and opens the new version, showing where you were (see [Starting again](resume#starting-again)). As after any quit, Claude's conversations resume afterwards, and work it hadn't finished is marked **Unfinished**; see [Quitting and resuming](resume#work-that-was-cut-off).
 - **Later** keeps the bar; the new version is installed the next time you quit {{app}}. Logging out or shutting down leaves it for the quit after that.
 - **Update in terminal** runs the install command in your terminal instead{{mac}}, the one you made the default for `.command` files{{/mac}}. It asks before it quits {{app}}, installs the new version and offers to open it again.
 - **Release notes** opens the release page in your browser.

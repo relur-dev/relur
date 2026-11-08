@@ -157,6 +157,7 @@ export function WorkspaceView({
   onDelete,
   changesOpen,
   onToggleChanges,
+  onPanels,
 }: {
   profile: Profile;
   /** The profile's projects. */
@@ -172,13 +173,16 @@ export function WorkspaceView({
   /** The Changes panel (spec §6.4), toggled with ⌘⇧D. */
   changesOpen: boolean;
   onToggleChanges: () => void;
+  /** Whether the spec view and the Responses panel are open, remembered for the next start (spec §5). */
+  onPanels: (panels: { spec: boolean; responses: boolean }) => void;
 }) {
   const trpc = useTRPC();
   // The spec view's tab (spec §13.8) replaces the terminal while shown.
   // Review at a gate on Home opens it straight away (spec §6.7).
   const [docShown, setDocShown] = useState(() => takeRequest(workspace.id, 'spec'));
   // The Responses panel (spec §6.8) and the Claude terminal it scrolls.
-  const [responsesOpen, setResponsesOpen] = useState(false);
+  // At start, open as it was when the app quit (spec §5).
+  const [responsesOpen, setResponsesOpen] = useState(() => takeRequest(workspace.id, 'responses'));
   const [responsesFull, setResponsesFull] = useState(false);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
   const [changesFull, setChangesFull] = useState(false);
@@ -309,6 +313,10 @@ export function WorkspaceView({
   const workflowSettings = mainProject ? effectiveWorkflow(profile, mainProject) : null;
   const showDoc = docShown && !!workspace.workflow?.file;
   const responsesShown = responsesOpen && active?.kind === 'claude' && !showDoc;
+  useEffect(
+    () => onPanels({ spec: showDoc, responses: responsesOpen }),
+    [onPanels, showDoc, responsesOpen],
+  );
   // ⌘⇧↵ at a gate (spec §13.5): the Claude terminal, for the answer the gate waits for.
   useEffect(() => {
     const focus = (event: Event) => {
