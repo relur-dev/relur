@@ -14,6 +14,10 @@ When Claude needs you, the workspace shows a status glyph, the profile tab gets 
 
 Each profile has a Home <kbd>{{key:home}}</kbd>, where you go back to between tasks. Its **Overview** shows what needs you, what is working, what is ready to ship and what can be cleaned up, as a **Board** with a column for each state (the default) or as a list. On the Board you can answer Claude from a workspace's card without opening it. Its **Terminal** is a shell in your home folder that uses the profile's account, for anything that isn't a task. See [Home](home).
 
+## Appearance
+
+{{app}} follows your system's light or dark appearance. To keep one whatever the system uses, choose **View › Appearance › Light** or **Dark**; **System** follows it again. The change applies at once to the whole window, every terminal and this Guide, and {{app}} remembers it the next time it starts. The light theme is a dim one, about as bright as a paper notebook under room light.
+
 ## Updates and quitting
 
 On the first start a bar under the tabs also asks whether {{app}} may check GitHub for new versions; until you answer, it sends nothing. When a new version is out, **Update** downloads it, and {{app}} replaces itself when you restart or quit it. See [Updates and privacy](updates).

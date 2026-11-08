@@ -7,6 +7,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 ### Added
 
 - **Arrange the Board's columns**, for each profile: drag a column's header to move it, or use the **⋯** in its header (or a right click) for **Move Left**, **Move Right** and **Hide Column**. **Columns**, next to **List | Board**, lists every column with a checkbox to show or hide it, and **Reset to default**. One column always stays shown, and the layout is kept across restarts. A hidden column's workspaces are still in the List and the sidebar; if **Needs you** is hidden while something needs you, **Columns** shows a small dot in its color.
+- **View › Appearance**: **System** (the default) follows your system's light or dark appearance, **Light** and **Dark** keep that theme whatever the system uses. The choice applies at once to the whole window, every terminal and the Guide's screenshots, and is remembered across restarts (`"appearance"` in `config.json`).
+
+### Changed
+
+- **A new light theme.** Light is now dim rather than bright: warm putty grays, about as bright as a paper notebook under room light, with the cards and dialogs as the brightest surface. All text, status and diff colors read at 4.5:1 or more on every surface. The light terminal has its own ANSI colors, so colored output (and "white" text from command line tools) stays readable on its background, and the diff viewer's syntax colors are darkened to match. While **Needs you** on the Board has cards, its column also gets a top edge in the color of its most urgent card. The dark theme is unchanged.
 
 ### Fixed
 

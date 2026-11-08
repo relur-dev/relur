@@ -27,13 +27,47 @@ function hex(cssColor: string): string {
 const token = (name: string) =>
   hex(getComputedStyle(document.documentElement).getPropertyValue(`--color-${name}`).trim());
 
+/**
+ * Light only: Monaco's light syntax colors that read under 4.5:1 on the light
+ * theme's background (spec §6), each replaced by an app text token of the same
+ * hue. The dark theme keeps Monaco's own.
+ */
+const LIGHT_SYNTAX: Record<string, string> = {
+  comment: 'diff-add',
+  number: 'profile-teal',
+  type: 'profile-sky',
+  'variable.predefined': 'profile-blue',
+  'tag.id.pug': 'profile-blue',
+  'tag.class.pug': 'profile-blue',
+  'keyword.flow': 'st-approval',
+  'predefined.sql': 'st-input',
+  constant: 'st-error',
+  invalid: 'st-error',
+  metatag: 'st-error',
+  'metatag.content.html': 'st-error',
+  'attribute.name': 'st-error',
+  'string.sql': 'st-error',
+  annotation: 'fg-subtle',
+  'metatag.html': 'fg-subtle',
+  'metatag.xml': 'fg-subtle',
+  'operator.scss': 'fg-subtle',
+  'operator.sql': 'fg-subtle',
+  'operator.swift': 'fg-subtle',
+};
+
 /** Defines the app's theme from the current tokens and applies it. */
 export function applyMonacoTheme(): void {
   const dark = document.documentElement.dataset.theme === 'dark';
   monaco.editor.defineTheme('app', {
     base: dark ? 'vs-dark' : 'vs',
     inherit: true,
-    rules: [],
+    // Rules take colors as rrggbb, without # or alpha.
+    rules: dark
+      ? []
+      : Object.entries(LIGHT_SYNTAX).map(([syntax, name]) => ({
+          token: syntax,
+          foreground: token(name).slice(1, 7),
+        })),
     colors: {
       'editor.background': token('term'),
       'editor.foreground': token('fg'),
