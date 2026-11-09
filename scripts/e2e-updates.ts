@@ -219,7 +219,6 @@ exec sleep 600
     };
     const quit = async (running: RunningApp) => {
       running.page.close();
-      running.main.close();
       assert.equal(await running.stop(), false, 'the app quit by itself');
       app = undefined;
     };

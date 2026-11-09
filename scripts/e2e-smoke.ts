@@ -4284,7 +4284,6 @@ exec sleep 600
     };
     const quit = async (running: RunningApp) => {
       running.page.close();
-      running.main.close();
       // As a user quits; right after a launch the window still starts its sessions (spec §5).
       assert.equal(await running.stop(), false, 'the app quit by itself');
       app = undefined;

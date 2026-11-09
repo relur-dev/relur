@@ -293,7 +293,6 @@ exec sleep 600
         app = again;
         assert.equal(await again.page.eval(remembered), changed, `kept with ${end}`);
         again.page.close();
-        again.main.close();
         assert.equal(await again.stop(), false, 'the app quit by itself');
         app = undefined;
       }
