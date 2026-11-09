@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { WorkspaceState } from '@shared/status';
 import { type UnfinishedKind, unfinishedKind } from '@shared/unfinished';
 import type {
+  BranchOrigin,
   MergedInto,
   PrStatus,
   RepoAddedBy,
@@ -46,6 +47,7 @@ interface Row {
   last_prompt: string | null;
   keep_running: number;
   claude_may_link: number;
+  branch_origin: string | null;
 }
 
 interface RepoRow {
@@ -61,6 +63,7 @@ interface RepoRow {
   pr_url: string | null;
   pr_source: string | null;
   added_by: string | null;
+  branch_origin: string | null;
 }
 
 const toPr = (row: {
@@ -79,6 +82,10 @@ const toPr = (row: {
 const toMerged = (value: string | null): MergedInto | null =>
   value === 'base' || value === 'local' ? value : null;
 
+/** Rows made before spec §7.6 have none: their branch was new. */
+const toOrigin = (value: string | null): BranchOrigin =>
+  value === 'remote' || value === 'local' ? value : 'new';
+
 const toRepo = (row: RepoRow): WorkspaceRepo => ({
   projectId: row.project_id,
   primary: false,
@@ -89,6 +96,7 @@ const toRepo = (row: RepoRow): WorkspaceRepo => ({
   merged: toMerged(row.merged_into),
   setupError: row.setup_error,
   addedBy: row.added_by === 'claude' || row.added_by === 'terminal' ? row.added_by : null,
+  branchOrigin: toOrigin(row.branch_origin),
 });
 
 /** A linked repository to record (spec §21.1), and who linked it (§21.9). */
@@ -158,6 +166,7 @@ const toWorkspace = (row: Row, linked: WorkspaceRepo[] = []): Workspace => ({
       hasCommits: row.has_commits === 1,
       merged: toMerged(row.merged_into),
       setupError: row.setup_error,
+      branchOrigin: toOrigin(row.branch_origin),
     },
     ...linked,
   ],
@@ -606,6 +615,17 @@ export class WorkspaceRecords {
       projectId,
     }) as { start_commit: string | null } | undefined;
     return row?.start_commit ?? null;
+  }
+
+  /** Where a repository's branch came from (spec §7.6); new unless set. */
+  setBranchOrigin(id: string, origin: BranchOrigin, projectId: string | null = null): void {
+    const { table, where } = this.repoTarget(id, projectId);
+    this.prepare(`UPDATE ${table} SET branch_origin = @origin WHERE ${where}`).run({
+      id,
+      projectId,
+      origin,
+    });
+    this.events.emit('change');
   }
 
   /** A repository's pull request as last checked (null clears it), and whether it has commits. */

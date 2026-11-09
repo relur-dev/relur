@@ -21,6 +21,8 @@ export class GitError extends Error {
     readonly args: string[],
     readonly exitCode: number | null,
     readonly stderr: string,
+    /** What git printed before it failed (`merge-tree` lists conflicts there). */
+    readonly stdout = '',
   ) {
     super(stderr.trim() || `git ${args.join(' ')} failed with exit code ${exitCode}`);
     this.name = 'GitError';
@@ -106,7 +108,7 @@ export class Git {
         (error, stdout, stderr) => {
           if (error) {
             const code = typeof error.code === 'number' ? error.code : null;
-            reject(new GitError(args, code, stderr || error.message));
+            reject(new GitError(args, code, stderr || error.message, stdout));
           } else {
             resolve(stdout);
           }
@@ -499,4 +501,151 @@ export class Git {
   async deleteBranch(repo: string, branch: string): Promise<void> {
     await this.run(repo, ['branch', '--quiet', '-D', branch]);
   }
+
+  /** `git fetch --prune <remote>`: every branch of the remote (network, spec §7.6). */
+  async fetchRemote(repo: string, remote: string): Promise<void> {
+    await this.run(repo, ['fetch', '--quiet', '--prune', remote], {
+      timeoutSec: NETWORK_TIMEOUT_SEC,
+    });
+  }
+
+  /** The remote's URL, or null when it has none. */
+  async remoteUrl(repo: string, remote: string): Promise<string | null> {
+    return (await this.tryRun(repo, ['remote', 'get-url', remote]))?.trim() || null;
+  }
+
+  /** The commit a ref names on the remote (`git ls-remote <remote> <ref>`), or null (network). */
+  async remoteRef(repo: string, remote: string, ref: string): Promise<string | null> {
+    const out = await this.run(repo, ['ls-remote', remote, ref], {
+      timeoutSec: NETWORK_TIMEOUT_SEC,
+    });
+    const line = out.split('\n').find((l) => l.endsWith(`\t${ref}`));
+    return line?.split('\t')[0] || null;
+  }
+
+  /**
+   * Local and remote-tracking branches with their tip and last commit
+   * (author, ISO date, subject), most recently committed first (spec §7.6).
+   */
+  async branchRefs(repo: string): Promise<BranchRef[]> {
+    const out = await this.run(repo, [
+      'for-each-ref',
+      '--sort=-committerdate',
+      '--format=%(refname)%00%(objectname)%00%(authorname)%00%(committerdate:iso-strict)%00%(subject)',
+      'refs/heads',
+      'refs/remotes',
+    ]);
+    return out
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [ref = '', commit = '', author = '', date = '', subject = ''] = line.split('\0');
+        return { ref, commit, author, date, subject };
+      })
+      .filter((r) => !r.ref.endsWith('/HEAD'));
+  }
+
+  /** A branch's upstream (`branch.<b>.remote` and `.merge`), or null without one. */
+  async upstream(repo: string, branch: string): Promise<{ remote: string; branch: string } | null> {
+    const remote = (await this.tryRun(repo, ['config', `branch.${branch}.remote`]))?.trim();
+    const merge = (await this.tryRun(repo, ['config', `branch.${branch}.merge`]))?.trim();
+    if (!remote || remote === '.' || !merge) return null;
+    return { remote, branch: merge.replace(/^refs\/heads\//, '') };
+  }
+
+  /**
+   * A worktree at `dir` on an existing branch (spec §7.6), without a new name:
+   * the local branch when there is one (its upstream set to `<remote>/<branch>`
+   * when it has none), else a new local branch tracking `<remote>/<branch>`.
+   * Says which it was: `local` or `remote`.
+   */
+  async addWorktreeOnBranch(
+    repo: string,
+    dir: string,
+    branch: string,
+    remote: string | null,
+  ): Promise<'local' | 'remote'> {
+    const tracking = remote ? `refs/remotes/${remote}/${branch}` : null;
+    const hasTracking = tracking ? (await this.revParse(repo, tracking)) !== null : false;
+    if (await this.localBranchExists(repo, branch)) {
+      await this.run(repo, ['worktree', 'add', '--quiet', dir, branch]);
+      if (remote && hasTracking && !(await this.upstream(repo, branch))) {
+        await this.run(repo, [
+          'branch',
+          '--quiet',
+          `--set-upstream-to=${remote}/${branch}`,
+          branch,
+        ]);
+      }
+      return 'local';
+    }
+    if (!remote || !hasTracking) throw new GitError(['worktree', 'add'], 1, `No branch ${branch}`);
+    await this.run(repo, [
+      'worktree',
+      'add',
+      '--quiet',
+      '--track',
+      '-b',
+      branch,
+      dir,
+      `${remote}/${branch}`,
+    ]);
+    return 'remote';
+  }
+
+  /** How many commits `ref` has that HEAD of `dir` doesn't (spec §6.4). */
+  async behind(dir: string, ref: string): Promise<number> {
+    const out = await this.tryRun(dir, ['rev-list', '--count', `HEAD..${ref}`]);
+    return out ? Number(out.trim()) : 0;
+  }
+
+  /**
+   * The files merging `ref` into HEAD would conflict in (spec §6.4), from
+   * `git merge-tree --write-tree` (git 2.38 or newer); null when git can't
+   * tell (an older git, unrelated histories).
+   */
+  async mergeConflicts(dir: string, ref: string): Promise<string[] | null> {
+    try {
+      await this.run(dir, [
+        'merge-tree',
+        '--write-tree',
+        '--name-only',
+        '--no-messages',
+        'HEAD',
+        ref,
+      ]);
+      return [];
+    } catch (error) {
+      // Exit 1 is a merge with conflicts: the tree, then the conflicted files.
+      if (!(error instanceof GitError) || error.exitCode !== 1) return null;
+      return [...new Set(error.stdout.split('\n').slice(1).filter(Boolean))];
+    }
+  }
+
+  /** The author emails of the commits in `range` (`a..b`), lowercase and distinct. */
+  async authors(dir: string, range: string): Promise<{ name: string; email: string }[]> {
+    const out = await this.tryRun(dir, ['log', '--format=%an%x00%ae', range]);
+    const seen = new Map<string, string>();
+    for (const line of (out ?? '').split('\n').filter(Boolean)) {
+      const [name = '', email = ''] = line.split('\0');
+      if (!seen.has(email.toLowerCase())) seen.set(email.toLowerCase(), name);
+    }
+    return [...seen].map(([email, name]) => ({ name, email }));
+  }
+
+  /** The email git would author a commit with in `dir` (environment and config), or null. */
+  async identityEmail(dir: string): Promise<string | null> {
+    const ident = await this.tryRun(dir, ['var', 'GIT_AUTHOR_IDENT']);
+    return /<([^>]*)>/.exec(ident ?? '')?.[1]?.toLowerCase() || null;
+  }
+}
+
+/** One ref of `branchRefs`. */
+export interface BranchRef {
+  /** Full ref name: `refs/heads/<b>` or `refs/remotes/<remote>/<b>`. */
+  ref: string;
+  commit: string;
+  author: string;
+  date: string;
+  subject: string;
 }

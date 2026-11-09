@@ -2,13 +2,18 @@ import { BRAND } from '@shared/brand';
 import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { glyphFor } from '@shared/status';
+import { branchChoice, type RepoDeleteCheck, type WorkspaceDeleteCheck } from '@shared/workspaces';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
 import { StatusGlyph } from '../ui/StatusGlyph';
-import { plural, RepoCard, repoChoice, Warning } from './DeleteWorkspaceDialog';
+import { plural, RepoCard, repoChoice, TrackedBranch, Warning } from './DeleteWorkspaceDialog';
 import { Modal, ModalFooter } from './Modal';
+
+/** The main repository's part of a workspace's delete check. */
+const mainCheck = (c: WorkspaceDeleteCheck) =>
+  c.repos.find((r) => r.primary) ?? (c.repos[0] as RepoDeleteCheck);
 
 /**
  * Remove project (spec §14.3). Without workspaces only the app's entry goes.
@@ -39,7 +44,8 @@ export function RemoveProjectDialog({
   );
   const remove = useMutation(trpc.projects.remove.mutationOptions({ onSuccess: onRemoved }));
   // Workspaces whose local branch (with unpushed commits) should go too.
-  const [deleteBranch, setDeleteBranch] = useState<Record<string, boolean>>({});
+  // Undefined until ticked or unticked: the checkbox's default (spec §14.2, §7.6).
+  const [deleteBranch, setDeleteBranch] = useState<Record<string, boolean | undefined>>({});
   const data = check.data;
   const workspaces = data?.workspaces ?? [];
   const linked = data?.linked ?? [];
@@ -88,20 +94,19 @@ export function RemoveProjectDialog({
             workspaces: workspaces.map(({ workspace, check: c }) => ({
               workspaceId: workspace.id,
               force: c.uncommitted.length > 0,
-              deleteBranch: c.unpushed === 0 || Boolean(deleteBranch[workspace.id]),
+              deleteBranch: repoChoice(mainCheck(c), deleteBranch[workspace.id], false)
+                .deleteBranch,
               repos: c.repos.map((r) =>
                 repoChoice(
                   r,
-                  Boolean(
-                    deleteBranch[r.primary ? workspace.id : `${workspace.id}:${r.projectId}`],
-                  ),
+                  deleteBranch[r.primary ? workspace.id : `${workspace.id}:${r.projectId}`],
                   false,
                 ),
               ),
             })),
             linked: linked.map(({ workspace, check: c }) => ({
               workspaceId: workspace.id,
-              ...repoChoice(c, Boolean(deleteBranch[`linked:${workspace.id}`]), false),
+              ...repoChoice(c, deleteBranch[`linked:${workspace.id}`], false),
             })),
           });
         }}
@@ -121,6 +126,8 @@ export function RemoveProjectDialog({
           >
             {workspaces.map(({ workspace, check: c }) => {
               const shown = c.uncommitted.slice(0, 8);
+              const main = mainCheck(c);
+              const mainBox = branchChoice(main);
               return (
                 <li key={workspace.id} className="rounded-lg border border-line">
                   <div className="px-3 py-2">
@@ -153,12 +160,13 @@ export function RemoveProjectDialog({
                       ) : null}
                     </div>
                   ) : null}
-                  {c.unpushed > 0 ? (
+                  <TrackedBranch check={main} branch={workspace.branch} className="m-2" />
+                  {mainBox.shown ? (
                     <label className="flex items-center gap-2 border-t border-line px-3 py-2 text-md">
                       <input
                         type="checkbox"
                         className="size-3.5 accent-fg"
-                        checked={Boolean(deleteBranch[workspace.id])}
+                        checked={deleteBranch[workspace.id] ?? mainBox.ticked}
                         onChange={(e) =>
                           setDeleteBranch((d) => ({ ...d, [workspace.id]: e.target.checked }))
                         }
@@ -184,7 +192,7 @@ export function RemoveProjectDialog({
                                   ?.baseBranch ?? workspace.baseBranch
                               }
                               remote={remoteOf(r.projectId)}
-                              alsoDeleteBranch={Boolean(deleteBranch[key])}
+                              alsoDeleteBranch={deleteBranch[key]}
                               onAlsoDeleteBranch={(value) =>
                                 setDeleteBranch((d) => ({ ...d, [key]: value }))
                               }
@@ -231,21 +239,23 @@ export function RemoveProjectDialog({
                   <div className="truncate font-mono text-xs text-fg-muted">
                     Deleted {c.worktreePath}
                   </div>
-                  {c.unpushed > 0 ? (
+                  {branchChoice(c).shown ? (
                     <label className="mt-1.5 flex items-center gap-2 text-md">
                       <input
                         type="checkbox"
                         className="size-3.5 accent-fg"
-                        checked={Boolean(deleteBranch[key])}
+                        checked={deleteBranch[key] ?? branchChoice(c).ticked}
                         onChange={(e) =>
                           setDeleteBranch((d) => ({ ...d, [key]: e.target.checked }))
                         }
                       />
                       Also delete the local branch{' '}
                       <span className="font-mono">{workspace.branch}</span>
-                      <span className="text-fg-subtle">
-                        ({plural(c.unpushed, 'commit')} not pushed)
-                      </span>
+                      {c.unpushed > 0 ? (
+                        <span className="text-fg-subtle">
+                          ({plural(c.unpushed, 'commit')} not pushed)
+                        </span>
+                      ) : null}
                     </label>
                   ) : null}
                 </li>

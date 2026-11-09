@@ -17,6 +17,8 @@ If you merge the branch yourself, for example with `git merge --ff-only` in your
 
 The local branch is deleted with the workspace, unless it has unpushed commits (commits in a merged branch don't count): then it's kept unless you tick **Also delete the local branch**. The branch on the remote is never touched.
 
+For a workspace made from [an existing branch](new-workspace#from-an-existing-branch), the dialog says the branch on the remote stays. When that branch has commits by someone else, such as a colleague's pull request, an amber block names them and shows **Also delete the local branch**, ticked: your local copy goes, their branch and pull request stay. A local branch that was there before the workspace is kept unless you tick the box.
+
 ## Several repositories
 
 A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).

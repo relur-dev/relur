@@ -34,6 +34,7 @@ const workspace = (id: string, projectId = 'api'): Workspace => ({
       hasCommits: false,
       merged: null,
       setupError: null,
+      branchOrigin: 'new',
     },
   ],
   createdAt: `2026-10-28T10:00:0${id.length}Z`,

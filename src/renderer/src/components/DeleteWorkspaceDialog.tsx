@@ -1,5 +1,5 @@
 import type { Project } from '@shared/schemas';
-import { mergedText, type RepoDeleteCheck, type Workspace } from '@shared/workspaces';
+import { branchChoice, mergedText, type RepoDeleteCheck, type Workspace } from '@shared/workspaces';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { GuideLink } from '../guide/link';
@@ -60,9 +60,45 @@ export function MergedNote({
 }
 
 /**
+ * An existing branch's remote branch (spec §14.2, §7.6): it stays, and when
+ * others committed to it, a warning names them before its local branch goes.
+ */
+export function TrackedBranch({
+  check,
+  branch,
+  className = '',
+}: {
+  check: RepoDeleteCheck;
+  branch: string;
+  className?: string;
+}) {
+  if (!check.upstream || check.branchOrigin === 'new') return null;
+  if (check.otherAuthors.length === 0) {
+    return (
+      <p data-remote-kept className={`text-sm text-fg-muted ${className}`}>
+        <span className="font-mono">{check.upstream}</span> stays on the remote.
+      </p>
+    );
+  }
+  const names = check.otherAuthors.slice(0, 3).join(', ');
+  const more = check.otherAuthors.length > 3 ? ` and ${check.otherAuthors.length - 3} more` : '';
+  return (
+    <div
+      data-others-branch
+      className={`rounded-lg border border-st-permission/50 bg-st-permission/8 ${className}`}
+    >
+      <Warning title={`${branch} tracks ${check.upstream}, with commits by ${names}${more}`}>
+        Deleting the local branch keeps {check.upstream} and its pull request on the remote.
+      </Warning>
+    </div>
+  );
+}
+
+/**
  * One repository's card in Delete workspace, Unlink and Remove project
  * (spec §21.6): its warnings, or that it is clean, and its own "Also delete
- * the local branch" when it has unpushed commits.
+ * the local branch" when it has unpushed commits or is an existing branch
+ * (spec §7.6). `alsoDeleteBranch` is undefined until the user chooses.
  */
 export function RepoCard({
   name,
@@ -79,10 +115,11 @@ export function RepoCard({
   /** Its base branch, for "Merged into <base>". */
   base: string;
   remote: string | null;
-  alsoDeleteBranch: boolean;
+  alsoDeleteBranch: boolean | undefined;
   onAlsoDeleteBranch: (value: boolean) => void;
 }) {
   const shown = check.uncommitted.slice(0, 6);
+  const choice = branchChoice(check);
   const clean = check.uncommitted.length === 0 && check.unpushed === 0 && !check.prOpen;
   return (
     <div
@@ -126,12 +163,13 @@ export function RepoCard({
           {check.prOpen ? <Warning title="Its pull request isn't merged" /> : null}
         </div>
       )}
-      {check.unpushed > 0 ? (
+      <TrackedBranch check={check} branch={branch} className="mx-3 mb-2" />
+      {choice.shown ? (
         <label className="flex items-center gap-2 border-t border-line px-3 py-2 text-md text-fg">
           <input
             type="checkbox"
             className="size-3.5 accent-fg"
-            checked={alsoDeleteBranch}
+            checked={alsoDeleteBranch ?? choice.ticked}
             onChange={(e) => onAlsoDeleteBranch(e.target.checked)}
           />
           Also delete the local branch <span className="font-mono">{branch}</span>
@@ -145,16 +183,23 @@ export function RepoCard({
 const repoBase = (w: Workspace, projectId: string) =>
   w.repos.find((r) => r.projectId === projectId)?.baseBranch ?? w.baseBranch;
 
-/** What deleting one repository's worktree does, from its check and the user's choices. */
+/**
+ * What deleting one repository's worktree does, from its check and the
+ * user's choices: the local branch goes unless its checkbox is shown and
+ * unticked (spec §14.2, §7.6); undefined is the checkbox's default.
+ */
 export const repoChoice = (
   check: RepoDeleteCheck,
-  alsoDeleteBranch: boolean,
+  alsoDeleteBranch: boolean | undefined,
   refused: boolean,
-) => ({
-  projectId: check.projectId,
-  force: check.uncommitted.length > 0 || refused,
-  deleteBranch: check.unpushed === 0 || alsoDeleteBranch,
-});
+) => {
+  const choice = branchChoice(check);
+  return {
+    projectId: check.projectId,
+    force: check.uncommitted.length > 0 || refused,
+    deleteBranch: choice.shown ? (alsoDeleteBranch ?? choice.ticked) : true,
+  };
+};
 
 /**
  * Unlink <repo> (spec §21.4): that repository's card as in Delete, Cancel
@@ -182,7 +227,7 @@ export function UnlinkDialog({
   );
   const unlink = useMutation(trpc.workspaces.unlink.mutationOptions({ onSuccess: onDone }));
   const [refused, setRefused] = useState(false);
-  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState(false);
+  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<boolean | undefined>(undefined);
   const data = check.data;
   return (
     <Modal
@@ -274,20 +319,23 @@ export function DeleteWorkspaceDialog({
   const remove = useMutation(trpc.workspaces.delete.mutationOptions({ onSuccess: onDeleted }));
   // A plain delete that git refused (e.g. a locked worktree) can be forced after confirming.
   const [refused, setRefused] = useState(false);
-  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState(false);
+  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<boolean | undefined>(undefined);
   const data = check.data;
+  const main = data?.repos.find((r) => r.primary) ?? null;
   const warnings = data
     ? data.uncommitted.length > 0 || data.unpushed > 0 || data.running > 0 || data.prOpen
     : false;
   const force = (data?.uncommitted.length ?? 0) > 0 || refused;
   const danger = warnings || refused;
-  const hasUnpushed = (data?.unpushed ?? 0) > 0;
-  const deleteBranch = !hasUnpushed || alsoDeleteBranch;
+  const branchBox = main ? branchChoice(main) : { shown: false, ticked: true };
+  const deleteBranch = main ? repoChoice(main, alsoDeleteBranch, false).deleteBranch : true;
 
   const changes = data?.uncommitted ?? [];
   const shown = changes.slice(0, 8);
   const linked = workspace.repos.length > 1;
-  const [alsoDeleteBranches, setAlsoDeleteBranches] = useState<Record<string, boolean>>({});
+  const [alsoDeleteBranches, setAlsoDeleteBranches] = useState<Record<string, boolean | undefined>>(
+    {},
+  );
   const repoName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const repoRemote = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
   const dirty = (data?.repos ?? []).some((r) => r.uncommitted.length > 0 || r.unpushed > 0);
@@ -316,7 +364,7 @@ export function DeleteWorkspaceDialog({
                 force: refused,
                 deleteBranch: false,
                 repos: data.repos.map((r) =>
-                  repoChoice(r, alsoDeleteBranches[r.projectId] ?? false, refused),
+                  repoChoice(r, alsoDeleteBranches[r.projectId], refused),
                 ),
               },
               { onError: () => setRefused(true) },
@@ -339,7 +387,7 @@ export function DeleteWorkspaceDialog({
               branch={workspace.branch}
               base={repoBase(workspace, r.projectId)}
               remote={repoRemote(r.projectId)}
-              alsoDeleteBranch={alsoDeleteBranches[r.projectId] ?? false}
+              alsoDeleteBranch={alsoDeleteBranches[r.projectId]}
               onAlsoDeleteBranch={(value) =>
                 setAlsoDeleteBranches((all) => ({ ...all, [r.projectId]: value }))
               }
@@ -387,12 +435,12 @@ export function DeleteWorkspaceDialog({
       description={
         <>
           Removes the worktree at <span className="font-mono">{workspace.worktreePath}</span>
-          {hasUnpushed ? null : (
+          {deleteBranch ? (
             <>
               {' '}
               and the local branch <span className="font-mono">{workspace.branch}</span>
             </>
-          )}
+          ) : null}
           , and ends its terminals.{remote ? ` The branch on ${remote} is kept.` : ''}
         </>
       }
@@ -441,12 +489,13 @@ export function DeleteWorkspaceDialog({
             className={warnings ? 'mt-3' : ''}
           />
         ) : null}
-        {hasUnpushed ? (
+        {main ? <TrackedBranch check={main} branch={workspace.branch} className="mt-3" /> : null}
+        {branchBox.shown ? (
           <label className="mt-3 flex items-center gap-2 text-md text-fg">
             <input
               type="checkbox"
               className="size-3.5 accent-fg"
-              checked={alsoDeleteBranch}
+              checked={alsoDeleteBranch ?? branchBox.ticked}
               onChange={(e) => setAlsoDeleteBranch(e.target.checked)}
             />
             Also delete the local branch <span className="font-mono">{workspace.branch}</span>
@@ -523,7 +572,7 @@ export function DeleteWorkspacesDialog({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   // "Also delete the local branch", by workspace and repository.
-  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<Record<string, boolean>>({});
+  const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<Record<string, boolean | undefined>>({});
   const name = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const remote = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
   const left = workspaces.filter((w) => !deleted.includes(w.id));
@@ -539,7 +588,7 @@ export function DeleteWorkspacesDialog({
       if (deleted.includes(w.id) || !check) continue;
       const force = refused === w.id;
       const choice = (r: RepoDeleteCheck) =>
-        repoChoice(r, alsoDeleteBranch[`${w.id}:${r.projectId}`] ?? false, force);
+        repoChoice(r, alsoDeleteBranch[`${w.id}:${r.projectId}`], force);
       const main = check.repos.find((r) => r.primary);
       try {
         const result = await trpcClient.workspaces.delete.mutate(
@@ -614,7 +663,7 @@ export function DeleteWorkspacesDialog({
                       branch={w.branch}
                       base={repoBase(w, r.projectId)}
                       remote={remote(r.projectId)}
-                      alsoDeleteBranch={alsoDeleteBranch[key] ?? false}
+                      alsoDeleteBranch={alsoDeleteBranch[key]}
                       onAlsoDeleteBranch={(value) =>
                         setAlsoDeleteBranch((all) => ({ ...all, [key]: value }))
                       }

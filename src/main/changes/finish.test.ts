@@ -9,7 +9,14 @@ import { WorkspaceRecords } from '../db/workspaces';
 import type { TerminalService } from '../services/terminals';
 import { createFixture, type Fixture } from '../test-support/git-fixtures';
 import { SEED_CONFIG } from '../test-support/seed-config';
-import { commitMessage, FinishService, fillTemplate, parsePrStatus, pushProblem } from './finish';
+import {
+  commitMessage,
+  FinishService,
+  fillTemplate,
+  parsePrOutput,
+  parsePrStatus,
+  pushProblem,
+} from './finish';
 
 describe('finish helpers', () => {
   it('fills the create prompt, dropping what is empty', () => {
@@ -63,6 +70,15 @@ describe('finish helpers', () => {
     });
     expect(() => parsePrStatus('nope')).toThrow(/didn't print JSON/);
     expect(() => parsePrStatus('{"state":"weird"}')).toThrow(/unknown state/);
+  });
+
+  it('reads the PR title when the command prints one (spec §7.6)', () => {
+    expect(parsePrOutput('{"state":"open","url":"u","title":" ABC-1: Fix it "}')).toEqual({
+      status: { state: 'open', url: 'u', source: 'command' },
+      title: 'ABC-1: Fix it',
+    });
+    expect(parsePrOutput('{"state":"open","url":"u"}').title).toBeNull();
+    expect(parsePrOutput('null')).toEqual({ status: null, title: null });
   });
 });
 

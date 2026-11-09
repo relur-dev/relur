@@ -3,6 +3,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { numberedBranch, validBranchName } from '@shared/branch';
 import { BRAND } from '@shared/brand';
+import {
+  type CheckedOut,
+  checkedOutText,
+  type ExistingBranch,
+  type ExistingBranchList,
+  parseBranchUrl,
+  prBranchUnknown,
+  prHeadRef,
+  prName,
+  remoteRepo,
+} from '@shared/existing-branch';
 import { projectWorktreeDir, WORKTREES_DIR } from '@shared/projects';
 import { DEFAULT_PORT_RANGE, type Profile, type Project } from '@shared/schemas';
 import { NEW_CONVERSATION_NOTE } from '@shared/suspend';
@@ -10,6 +21,7 @@ import { parseTask } from '@shared/tasks';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import {
   type AdoptWorktreeInput,
+  type BranchOrigin,
   linkedRepos,
   type OtherWorktree,
   type ProjectRemovalCheck,
@@ -60,7 +72,17 @@ export interface CreateWorkspaceInput {
    * remote, the next free name (`-2`, `-3` …) is used instead (spec §7.1).
    */
   uniqueBranch?: boolean;
+  /**
+   * The branch exists already (spec §7.6): the worktree checks it out instead
+   * of making a new one, tracking it on `remote` (the project's when null).
+   */
+  existing?: { remote: string | null };
 }
+
+/** What a pasted branch or pull request URL names (spec §7.6), or why it can't be used. */
+export type ResolvedBranchUrl =
+  | { ok: true; branch: string; remote: string | null; prUrl: string | null }
+  | { ok: false; message: string };
 
 /** A repository's remote branches, why the remote couldn't be asked, or null without one. */
 /**
@@ -266,6 +288,269 @@ export class WorkspaceService {
     return { problem, suggestion: free === branch.trim() ? null : free };
   }
 
+  /**
+   * Existing branch (spec §7.6): the project's local and remote-tracking
+   * branches, one row per name, most recently updated first, with where each
+   * is checked out. With `fetch`, every remote is fetched first (`--prune`);
+   * one that fails is named and the list is as of its last fetch.
+   */
+  async existingBranches(projectId: string, fetch: boolean): Promise<ExistingBranchList> {
+    const { project, profile, git } = await this.context(projectId);
+    const repo = expandHome(project.repoPath);
+    const remotes = await git.remotes(repo);
+    const fetchErrors: ExistingBranchList['fetchErrors'] = [];
+    if (fetch) {
+      await Promise.all(
+        remotes.map((remote) =>
+          git
+            .fetchRemote(repo, remote)
+            .catch((error) => fetchErrors.push({ remote, reason: gitReason(error) })),
+        ),
+      );
+    }
+    const base = this.projectBase(profile, project);
+    const checkedOut = await this.checkedOutBranches(project, git);
+    // Longest remote names first, so `a/b` isn't read as remote `a`, branch `b/…`.
+    const byLength = [...remotes].sort((a, b) => b.length - a.length);
+    const rows = new Map<string, ExistingBranch>();
+    for (const ref of await git.branchRefs(repo)) {
+      let name: string;
+      let remote: string | null = null;
+      if (ref.ref.startsWith('refs/heads/')) name = ref.ref.slice('refs/heads/'.length);
+      else {
+        remote = byLength.find((r) => ref.ref.startsWith(`refs/remotes/${r}/`)) ?? null;
+        if (!remote) continue;
+        name = ref.ref.slice(`refs/remotes/${remote}/`.length);
+      }
+      // The refs come newest first: the first one of a name gives its last commit.
+      const row = rows.get(name) ?? {
+        name,
+        local: false,
+        remotes: [],
+        author: ref.author,
+        date: ref.date,
+        subject: ref.subject,
+        checkedOut: checkedOut.get(name) ?? null,
+        base: name === base,
+      };
+      if (remote) row.remotes.push(remote);
+      else row.local = true;
+      rows.set(name, row);
+    }
+    for (const row of rows.values()) {
+      row.remotes.sort((a, b) => Number(b === project.remote) - Number(a === project.remote));
+    }
+    return { branches: [...rows.values()], fetchErrors, fetched: fetch };
+  }
+
+  /**
+   * The branch a pasted URL names (spec §7.6), in one of the project's
+   * remotes: a branch URL's name, or a pull request's head looked up with
+   * `git ls-remote` (GitHub, GitLab, Bitbucket Server) and matched to a
+   * remote branch with that tip. A URL of another repository is refused.
+   */
+  async resolveBranchUrl(projectId: string, text: string): Promise<ResolvedBranchUrl> {
+    const parsed = parseBranchUrl(text);
+    if (!parsed) {
+      return {
+        ok: false,
+        message:
+          "That isn't a branch or pull request URL of GitHub, GitLab or Bitbucket. Paste the branch's name instead",
+      };
+    }
+    const { project, git } = await this.context(projectId);
+    const repo = expandHome(project.repoPath);
+    const remotes = await git.remotes(repo);
+    const known = await Promise.all(
+      remotes.map(async (remote) => {
+        const url = await git.remoteUrl(repo, remote);
+        return { remote, url, at: url ? remoteRepo(url) : null };
+      }),
+    );
+    const matching = known.filter(
+      (k) => k.at && k.at.host === parsed.host && k.at.repo === parsed.repo,
+    );
+    // Remotes with a local path or file:// URL can't be compared: any of them may be it.
+    const candidates =
+      matching.length > 0 ? matching : known.filter((k) => k.at === null && k.url !== null);
+    if (candidates.length === 0) {
+      const own = known.find((k) => k.remote === project.remote) ?? known[0];
+      return {
+        ok: false,
+        message: own?.at
+          ? `That URL is for ${parsed.host}/${parsed.repo}, not ${project.name} (${own.remote} is ${own.at.host}/${own.at.repo})`
+          : `${project.name} has no remote to find that branch in`,
+      };
+    }
+    candidates.sort(
+      (a, b) => Number(b.remote === project.remote) - Number(a.remote === project.remote),
+    );
+    const refs = await git.branchRefs(repo);
+    const tracked = (remote: string, branch: string) =>
+      refs.some((r) => r.ref === `refs/remotes/${remote}/${branch}`);
+    if (parsed.kind === 'branch') {
+      for (const branch of parsed.candidates) {
+        const at = candidates.find((c) => tracked(c.remote, branch));
+        if (at) return { ok: true, branch, remote: at.remote, prUrl: null };
+        if (refs.some((r) => r.ref === `refs/heads/${branch}`)) {
+          return { ok: true, branch, remote: null, prUrl: null };
+        }
+      }
+      const name = parsed.candidates[0] ?? '';
+      return {
+        ok: false,
+        message: `There is no branch ${name} on ${candidates.map((c) => c.remote).join(' or ')}`,
+      };
+    }
+    const ref = prHeadRef(parsed.prHost, parsed.number);
+    if (!ref) {
+      return { ok: false, message: prBranchUnknown(parsed.prHost, parsed.number, 'no-refs') };
+    }
+    let found = false;
+    for (const { remote } of candidates) {
+      let head: string | null;
+      try {
+        head = await git.remoteRef(repo, remote, ref);
+      } catch (error) {
+        return {
+          ok: false,
+          message: `Couldn't ask ${remote} about ${prName(parsed.prHost, parsed.number)} (${gitReason(error)})`,
+        };
+      }
+      if (!head) continue;
+      found = true;
+      const match = refs.find(
+        (r) => r.commit === head && r.ref.startsWith(`refs/remotes/${remote}/`),
+      );
+      if (match) {
+        return {
+          ok: true,
+          branch: match.ref.slice(`refs/remotes/${remote}/`.length),
+          remote,
+          prUrl: text.trim(),
+        };
+      }
+    }
+    return {
+      ok: false,
+      message: prBranchUnknown(parsed.prHost, parsed.number, found ? 'fork' : 'not-found'),
+    };
+  }
+
+  /**
+   * For Also in with an existing branch (spec §7.6): per project whether it
+   * has the branch, locally or on its remote (then it is checked out there
+   * too, else made new from its base), and where it is checked out.
+   */
+  async branchPresence(
+    projectIds: string[],
+    branch: string,
+  ): Promise<{ projectId: string; exists: boolean; checkedOut: string | null }[]> {
+    return Promise.all(
+      projectIds.map(async (projectId) => {
+        const { project, profile, git } = await this.context(projectId);
+        const at = (await this.checkedOutBranches(project, git)).get(branch);
+        // The remote's answer too (asked once, as Create does): a branch not fetched yet counts.
+        const heads = await this.askRemote(git, project, this.projectBase(profile, project), null);
+        return {
+          projectId,
+          exists: (await this.branchRemote(git, project, branch, null, heads)) !== null,
+          checkedOut: at ? checkedOutText(branch, at, project.name) : null,
+        };
+      }),
+    );
+  }
+
+  /**
+   * Why an existing branch can't get a new workspace (spec §7.6), or null:
+   * it is the base, isn't in the project, or is checked out somewhere, here
+   * or in a linked project.
+   */
+  async existingProblem(
+    projectId: string,
+    branch: string,
+    base: string,
+    linkedProjectIds: string[] = [],
+  ): Promise<string | null> {
+    if (!branch) return 'Pick a branch';
+    const { project, git } = await this.context(projectId);
+    if (branch === base) return `${branch} is the base branch; start a new branch from it instead`;
+    const projects = [project, ...linkedProjectIds.map((id) => this.linkable(project, id))];
+    for (const p of projects) {
+      const at = (await this.checkedOutBranches(p, git)).get(branch);
+      if (at) return checkedOutText(branch, at, p.name);
+    }
+    if (!(await this.branchRemote(git, project, branch, null, null))) {
+      return `There is no branch ${branch} in ${project.name}`;
+    }
+    return null;
+  }
+
+  /**
+   * Where each branch of the project is checked out (spec §7.6): in a
+   * workspace's worktree, another git worktree, or the main checkout.
+   */
+  private async checkedOutBranches(project: Project, git: Git): Promise<Map<string, CheckedOut>> {
+    const main = realpathOr(expandHome(project.repoPath));
+    const workspaces = new Map<string, Workspace>();
+    for (const w of this.records.list()) {
+      for (const r of w.repos) workspaces.set(realpathOr(r.worktreePath), w);
+    }
+    const found = new Map<string, CheckedOut>();
+    for (const w of await git.listWorktrees(main)) {
+      if (!w.branch || w.bare || w.prunable) continue;
+      const at = realpathOr(w.path);
+      const workspace = workspaces.get(at);
+      found.set(
+        w.branch,
+        at === main
+          ? { kind: 'main', path: w.path }
+          : workspace
+            ? { kind: 'workspace', workspaceId: workspace.id, name: workspace.name, path: w.path }
+            : { kind: 'worktree', path: w.path },
+      );
+    }
+    return found;
+  }
+
+  /**
+   * Which remote an existing branch is checked out to track (spec §7.6), or
+   * null when the project doesn't have it: the local branch's own upstream,
+   * else `preferred`, the project's remote (also when only the remote's
+   * answer has it), any remote with it, or a local branch without one.
+   */
+  private async branchRemote(
+    git: Git,
+    project: Project,
+    branch: string,
+    preferred: string | null,
+    remoteHeads: RemoteHeads,
+  ): Promise<{ remote: string | null } | null> {
+    const repo = expandHome(project.repoPath);
+    const local = await git.localBranchExists(repo, branch);
+    const upstream = local ? await git.upstream(repo, branch) : null;
+    if (upstream && upstream.branch === branch) return { remote: upstream.remote };
+    const remotes = await git.remotes(repo);
+    if (
+      preferred &&
+      remotes.includes(preferred) &&
+      (await git.trackingBranchExists(repo, preferred, branch))
+    ) {
+      return { remote: preferred };
+    }
+    if (
+      project.remote &&
+      ((await git.trackingBranchExists(repo, project.remote, branch)) ||
+        (remoteHeads && 'heads' in remoteHeads && remoteHeads.heads.has(branch)))
+    ) {
+      return { remote: project.remote };
+    }
+    for (const remote of remotes) {
+      if (await git.trackingBranchExists(repo, remote, branch)) return { remote };
+    }
+    return local ? { remote: null } : null;
+  }
+
   /** Branches to offer as the base: the remote's, or local ones without a remote. */
   async baseBranches(projectId: string): Promise<string[]> {
     const { project, git } = await this.context(projectId);
@@ -295,13 +580,21 @@ export class WorkspaceService {
     const { project, profile, git } = await timer.time('environment', () =>
       this.context(input.projectId),
     );
-    const wanted = input.uniqueBranch ? validBranchName(input.branch.trim()) : input.branch.trim();
+    const existing = input.existing ?? null;
+    const wanted =
+      input.uniqueBranch && !existing ? validBranchName(input.branch.trim()) : input.branch.trim();
     const base = input.baseBranch.trim();
     const title = input.title.trim();
     if (!title && !input.taskId?.trim()) throw new Error('Enter a task');
     if (!base) throw new Error('Enter a base branch');
     const linkedIds = [...new Set(input.linkedProjectIds ?? [])].filter((id) => id !== project.id);
-    if (!input.uniqueBranch) {
+    if (existing) {
+      // Spec §7.6: the branch must exist here and be checked out nowhere.
+      const problem = await timer.time('existing branch check', () =>
+        this.existingProblem(project.id, wanted, base, linkedIds),
+      );
+      if (problem) throw new Error(problem);
+    } else if (!input.uniqueBranch) {
       const problem = await timer.time('branch check', () =>
         this.branchProblem(project.id, wanted, linkedIds),
       );
@@ -320,7 +613,9 @@ export class WorkspaceService {
     );
     const notes: string[] = [];
     let branch = wanted;
-    if (input.uniqueBranch) {
+    if (existing) {
+      // Checked below, per repository: the existing branch, or a new one where it isn't.
+    } else if (input.uniqueBranch) {
       branch = await timer.time('free branch name', () =>
         this.freeBranch(git, profile, remoteTargets, wanted),
       );
@@ -335,24 +630,40 @@ export class WorkspaceService {
         }
       }
     }
-    const targets = remoteTargets.map((t, i) => ({
-      project: t.project,
-      remote: t.remote,
-      base: i === 0 ? base : this.projectBase(profile, t.project),
-    }));
+    const targets = await Promise.all(
+      remoteTargets.map(async (t, i) => ({
+        project: t.project,
+        remote: t.remote,
+        base: i === 0 ? base : this.projectBase(profile, t.project),
+        // Spec §7.6: the main repository checks out the existing branch; a
+        // linked one too where it has the branch, else it gets a new one.
+        existing: !existing
+          ? null
+          : await this.branchRemote(
+              git,
+              t.project,
+              branch,
+              i === 0 ? existing.remote : null,
+              t.remote,
+            ),
+      })),
+    );
+    if (existing && !targets[0]?.existing)
+      throw new Error(`There is no branch ${branch} in ${project.name}`);
     const paths = targets.map((t) =>
       path.join(expandHome(projectWorktreeDir(profile, t.project)), branch),
     );
     for (const p of paths) if (fs.existsSync(p)) throw new Error(`${p} already exists`);
 
     const task: WorkspaceTask = { id: input.taskId?.trim() || null, title, url: null };
-    const created: { repo: string; worktreePath: string }[] = [];
+    const created: { repo: string; worktreePath: string; madeBranch: boolean }[] = [];
+    const origins: BranchOrigin[] = [];
     const several = targets.length > 1;
     for (const p of paths) this.creating.add(path.resolve(p));
     try {
       for (const [index, target] of targets.entries()) {
         const worktreePath = paths[index] as string;
-        const note = await this.addRepoWorktree(
+        const { note, origin } = await this.addRepoWorktree(
           git,
           target.project,
           target.remote,
@@ -363,10 +674,17 @@ export class WorkspaceService {
           {
             named: several,
             timer,
-            onCreated: () =>
-              created.push({ repo: expandHome(target.project.repoPath), worktreePath }),
+            existing: target.existing,
+            // A branch that was there before stays when Create is undone.
+            onCreated: (origin) =>
+              created.push({
+                repo: expandHome(target.project.repoPath),
+                worktreePath,
+                madeBranch: origin !== 'local',
+              }),
           },
         );
+        origins.push(origin);
         if (note) notes.push(note);
       }
     } catch (error) {
@@ -412,6 +730,7 @@ export class WorkspaceService {
         hasCommits: false,
         merged: null,
         setupError: null,
+        branchOrigin: origins[i] ?? 'new',
       })),
       createdAt: now,
       lastActivityAt: now,
@@ -432,9 +751,19 @@ export class WorkspaceService {
       this.records.setStartPromptPending(workspace.id, true);
       // Spec §13.5: without a title, the status file's title field gives one.
       if (!workspace.task.title) this.records.setTitleFromStatusPending(workspace.id, true);
-      for (const repo of workspace.repos) {
-        const start = await git.revParse(repo.worktreePath, 'HEAD');
+      for (const [i, repo] of workspace.repos.entries()) {
+        const origin = repo.branchOrigin ?? 'new';
+        // An existing branch's own commits start where it left its base (spec §7.6, as §13.6).
+        const start =
+          origin === 'new'
+            ? await git.revParse(repo.worktreePath, 'HEAD')
+            : await git.mergeBase(
+                repo.worktreePath,
+                'HEAD',
+                await baseRef(git, targets[i]?.project as Project, repo),
+              );
         if (start) this.records.setStartCommit(workspace.id, start, repo.projectId);
+        if (origin !== 'new') this.records.setBranchOrigin(workspace.id, origin, repo.projectId);
       }
       timer.since('ports and records', recording);
     } catch (error) {
@@ -703,13 +1032,52 @@ export class WorkspaceService {
     branch: string,
     base: string,
     task: WorkspaceTask,
-    { named, timer, onCreated }: { named: boolean; timer: PhaseTimer; onCreated: () => void },
-  ): Promise<string | null> {
+    {
+      named,
+      timer,
+      existing = null,
+      onCreated,
+    }: {
+      named: boolean;
+      timer: PhaseTimer;
+      /** Check out this existing branch (spec §7.6), tracking it on `remote`. */
+      existing?: { remote: string | null } | null;
+      onCreated: (origin: BranchOrigin) => void;
+    },
+  ): Promise<{ note: string | null; origin: BranchOrigin }> {
     const repo = expandHome(project.repoPath);
     const of = named ? ` (${project.name})` : '';
     let startPoint = base;
     let note: string | null = null;
-    if (project.remote && remoteHeads) {
+    let origin: BranchOrigin = 'new';
+    const timed = <T>(name: string, run: () => Promise<T>) =>
+      step(name, () => timer.time(name, run));
+    if (existing) {
+      fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+      const { remote } = existing;
+      // The branch as it is on the remote now; the last fetch's when that fails.
+      if (remote) {
+        const failed = await timer
+          .time(`git fetch ${remote} ${branch}${of}`, () => git.fetch(repo, remote, branch))
+          .then(
+            () => null,
+            (error) => gitReason(error),
+          );
+        if (failed) {
+          note = `Couldn't fetch ${remote}/${branch}${of} (${failed}); the workspace uses it as last fetched`;
+        }
+      }
+      origin = await timed(`git worktree add${of}`, () =>
+        git.addWorktreeOnBranch(repo, worktreePath, branch, remote),
+      );
+      onCreated(origin);
+      if (origin === 'local' && remote) {
+        const behind = await git.behind(worktreePath, `${remote}/${branch}`);
+        if (behind > 0) {
+          note = `Your local ${branch}${of} is ${behind} ${behind === 1 ? 'commit' : 'commits'} behind ${remote}/${branch}; ask Claude to pull before changing it`;
+        }
+      }
+    } else if (project.remote && remoteHeads) {
       const remote = project.remote;
       let reason = 'error' in remoteHeads ? remoteHeads.error : null;
       if ('heads' in remoteHeads && remoteHeads.heads.has(branch)) {
@@ -734,13 +1102,13 @@ export class WorkspaceService {
           : `${base} isn't on ${remote}${of} yet; the workspace starts from your local ${base}`;
       }
     }
-    fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
-    const timed = <T>(name: string, run: () => Promise<T>) =>
-      step(name, () => timer.time(name, run));
-    await timed(`git worktree add${of}`, () =>
-      git.addWorktree(repo, worktreePath, branch, startPoint),
-    );
-    onCreated();
+    if (!existing) {
+      fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+      await timed(`git worktree add${of}`, () =>
+        git.addWorktree(repo, worktreePath, branch, startPoint),
+      );
+      onCreated('new');
+    }
     const copied = await timed(`Copying the .worktreeinclude files${of}`, () =>
       copyIncludedFiles(git, repo, worktreePath),
     );
@@ -751,17 +1119,18 @@ export class WorkspaceService {
       fs.writeFileSync(path.join(dir, 'task.md'), taskFile(task));
       await this.excludeRepoDir(git, worktreePath);
     });
-    return note;
+    return { note, origin };
   }
 
+  /** Undoes Create: the worktrees, and the branches it made (never one that was there before). */
   private async removeCreated(
     git: Git,
-    created: { repo: string; worktreePath: string }[],
+    created: { repo: string; worktreePath: string; madeBranch?: boolean }[],
     branch: string,
   ): Promise<void> {
-    for (const { repo, worktreePath } of created) {
+    for (const { repo, worktreePath, madeBranch = true } of created) {
       await git.removeWorktree(repo, worktreePath, true).catch(() => {});
-      await git.deleteBranch(repo, branch).catch(() => {});
+      if (madeBranch) await git.deleteBranch(repo, branch).catch(() => {});
     }
   }
 
@@ -1167,7 +1536,7 @@ export class WorkspaceService {
     const notes: string[] = [];
     const timer = new PhaseTimer(this.log, `link ${project.id} into ${branch}`);
     try {
-      const note = await this.addRepoWorktree(
+      const { note } = await this.addRepoWorktree(
         git,
         project,
         await this.askRemote(git, project, base, timer),
@@ -1302,6 +1671,20 @@ export class WorkspaceService {
     const merged = branchExists
       ? await refreshMerged(git, this.records, workspace, repo, project)
       : null;
+    // Spec §14.2, §7.6: the remote branch it tracks stays; others' commits on it are named.
+    const upstream = branchExists ? await git.upstream(repoPath, workspace.branch) : null;
+    const upstreamRef = upstream ? `${upstream.remote}/${upstream.branch}` : null;
+    let otherAuthors: string[] = [];
+    if (upstreamRef && (await git.revParse(repoPath, `refs/remotes/${upstreamRef}`))) {
+      const me = await git.identityEmail(repoPath);
+      const from = await git.revParse(
+        repoPath,
+        await baseRef(git, project, { worktreePath: repoPath, baseBranch: repo.baseBranch }),
+      );
+      otherAuthors = (await git.authors(repoPath, from ? `${from}..${upstreamRef}` : upstreamRef))
+        .filter((a) => a.email.toLowerCase() !== me)
+        .map((a) => a.name);
+    }
     return {
       projectId: repo.projectId,
       primary: repo.primary,
@@ -1314,6 +1697,9 @@ export class WorkspaceService {
       worktreeMissing,
       prOpen: repo.pr?.state === 'open' || repo.pr?.state === 'draft',
       merged,
+      branchOrigin: repo.branchOrigin ?? 'new',
+      upstream: upstreamRef,
+      otherAuthors,
     };
   }
 

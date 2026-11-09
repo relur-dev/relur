@@ -1,4 +1,10 @@
-import type { ChangeGroup, FileDiff, WorkspaceChanges } from '@shared/changes';
+import {
+  type BaseConflicts,
+  type ChangeGroup,
+  type FileDiff,
+  PUSH_REJECTED,
+  type WorkspaceChanges,
+} from '@shared/changes';
 import {
   DEFAULT_CREATE_PR_PROMPT,
   type Profile,
@@ -43,6 +49,14 @@ export interface FinishState {
   pr: PrStatus | null;
   /** Create PR runs a command (true) or asks Claude (false). */
   createsWithCommand: boolean;
+  /** What the branch is compared with: `<remote>/<base>`, or the local base (spec §6.4). */
+  baseRef: string;
+  /** Commits of the base the branch doesn't have yet. */
+  behind: number;
+  /** Files merging the base in would conflict in; null when git can't tell. */
+  conflicts: string[] | null;
+  /** The remote branch it tracks (`origin/feature-x`), when it has one. */
+  upstream: string | null;
 }
 
 /** The project's PR settings over its profile's, field by field. */
@@ -115,7 +129,7 @@ export function pushProblem(remote: string, stderr: string): string {
     return `git couldn't sign in to ${remote}. The app can't ask for a password, so push needs credentials git already has: a credential helper, an SSH key loaded in ssh-agent, or a CLI login such as gh auth login. Set them up and push once from a Shell tab, then try again.\n\n${detail}`;
   }
   if (/\[rejected\]|non-fast-forward|fetch first/i.test(detail)) {
-    return `${remote} rejected the push: its branch has commits this one doesn't. Pull or rebase in a Shell tab first.\n\n${detail}`;
+    return `${remote} ${PUSH_REJECTED}: its branch has commits this one doesn't (someone else pushed?). Merge them in first: ask Claude to, or pull in a Shell tab. Don't force-push a branch others use.\n\n${detail}`;
   }
   return detail || 'git push failed';
 }
@@ -128,6 +142,10 @@ export function pushProblem(remote: string, stderr: string): string {
 export class FinishService {
   private readonly lastFetch = new Map<string, number>();
   private readonly checking = new Map<string, Promise<PrStatus | null>>();
+  /** When each project's base was last fetched for behind and conflicts (spec §6.4). */
+  private readonly lastBaseFetch = new Map<string, number>();
+  /** The last conflict check per worktree, kept while HEAD and the base stay put. */
+  private readonly conflictChecks = new Map<string, { key: string; conflicts: string[] | null }>();
 
   constructor(
     private readonly config: ConfigStore,
@@ -174,7 +192,10 @@ export class FinishService {
         : await git.run(dir, ['rev-list', '--count', 'HEAD', '--not', '--remotes']);
       unpushed = Number(out.trim());
     }
+    const tracks = await git.upstream(dir, workspace.branch);
     return {
+      ...(await this.baseStatus(git, project, repo)),
+      upstream: tracks ? `${tracks.remote}/${tracks.branch}` : null,
       hasRemote: project.remote !== null,
       remote: project.remote,
       uncommitted,
@@ -200,17 +221,150 @@ export class FinishService {
     await git.run(dir, ['commit', '-q', '-m', message.trim()]);
   }
 
-  /** `git push -u <remote> <branch>`; then the PR status is checked again. */
+  /**
+   * Behind and conflicts with the base (spec §6.4): how many commits the
+   * base has that the branch doesn't, and the files a merge would conflict
+   * in (checked again only when HEAD or the base moved). The base is fetched
+   * in the background, at most once a minute per project.
+   */
+  private async baseStatus(
+    git: Git,
+    project: Project,
+    repo: WorkspaceRepo,
+  ): Promise<{ baseRef: string; behind: number; conflicts: string[] | null }> {
+    const dir = repo.worktreePath;
+    if (project.remote) {
+      const key = `${project.id}\0${repo.baseBranch}`;
+      if (Date.now() - (this.lastBaseFetch.get(key) ?? 0) > FETCH_EVERY_MS) {
+        this.lastBaseFetch.set(key, Date.now());
+        void git
+          .fetch(expandHome(project.repoPath), project.remote, repo.baseBranch)
+          .catch(() => {});
+      }
+    }
+    const ref = await baseRef(git, project, repo);
+    const [head, base] = await Promise.all([git.revParse(dir, 'HEAD'), git.revParse(dir, ref)]);
+    if (!head || !base) return { baseRef: ref, behind: 0, conflicts: null };
+    const behind = await git.behind(dir, ref);
+    if (behind === 0) return { baseRef: ref, behind, conflicts: [] };
+    const key = `${head}\0${base}`;
+    const known = this.conflictChecks.get(dir);
+    if (known?.key === key) return { baseRef: ref, behind, conflicts: known.conflicts };
+    const conflicts = await git.mergeConflicts(dir, ref);
+    this.conflictChecks.set(dir, { key, conflicts });
+    return { baseRef: ref, behind, conflicts };
+  }
+
+  /** Each repository's conflicts with its base, for the header's mark (spec §6.2). */
+  async conflicts(workspaceId: string): Promise<BaseConflicts[]> {
+    const workspace = this.workspace(workspaceId);
+    const out: BaseConflicts[] = [];
+    for (const r of workspace.repos) {
+      const { repo, project, git } = await this.context(workspaceId, r.projectId);
+      const status = await this.baseStatus(git, project, repo).catch(() => null);
+      if (status?.conflicts?.length) {
+        out.push({
+          projectId: r.projectId,
+          name: project.name,
+          baseBranch: repo.baseBranch,
+          files: status.conflicts,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Ask Claude to merge (spec §6.4, §14.1): the base, or the remote branch
+   * the branch tracks after a rejected push, into the branch, resolving
+   * conflicts; never a rebase or force-push, since others may use the branch.
+   */
+  async askClaudeToMerge(
+    workspaceId: string,
+    from: 'base' | 'upstream',
+    projectId: string | null = null,
+  ): Promise<void> {
+    const { workspace, repo, project, git } = await this.context(workspaceId, projectId);
+    let fetch: string | null = null;
+    let target: string;
+    if (from === 'base') {
+      target = await baseRef(git, project, repo);
+      if (project.remote && target !== repo.baseBranch) {
+        fetch = `git fetch ${project.remote} ${repo.baseBranch}`;
+      }
+    } else {
+      const up = await git.upstream(repo.worktreePath, workspace.branch);
+      if (!up) throw new Error(`${workspace.branch} doesn't track a remote branch`);
+      target = `${up.remote}/${up.branch}`;
+      fetch = `git fetch ${up.remote} ${up.branch}`;
+    }
+    const linked = workspace.repos.length > 1;
+    const at = shellQuote(repo.worktreePath);
+    const g = linked ? `git -C ${at}` : 'git';
+    const where = linked
+      ? ` in the ${this.projectName(repo.projectId)} repository only, whose worktree is ${repo.worktreePath}`
+      : '';
+    const steps = fetch
+      ? `run ${fetch.replace(/^git/, g)}, then ${g} merge ${target}`
+      : `run ${g} merge ${target}`;
+    await this.sendToClaude(
+      workspace,
+      `Merge ${target} into ${workspace.branch}${where}: ${steps}. Resolve any conflicts so that both sides' changes keep working, run the project's checks, and commit the merge.${
+        from === 'upstream' ? ' Then push.' : ''
+      } Don't rebase and don't force-push: others may have this branch checked out, and its pull request would lose its history.`,
+    );
+  }
+
+  /**
+   * Push (spec §14.1): to the remote branch the branch tracks, when it has
+   * one (an existing branch, §7.6, may track another remote), else
+   * `git push -u <remote> <branch>`; then the PR status is checked again.
+   */
   async push(workspaceId: string, projectId: string | null = null): Promise<void> {
     const { workspace, repo, project, git } = await this.context(workspaceId, projectId);
     if (!project.remote) throw new Error('This project has no remote');
+    const dir = repo.worktreePath;
+    const up = await git.upstream(dir, workspace.branch);
+    const tracked = up && (await git.remotes(dir)).includes(up.remote) ? up : null;
+    const remote = tracked?.remote ?? project.remote;
     try {
-      await git.run(repo.worktreePath, ['push', '-u', project.remote, workspace.branch]);
+      await git.run(
+        dir,
+        tracked
+          ? ['push', tracked.remote, `${workspace.branch}:${tracked.branch}`]
+          : ['push', '-u', project.remote, workspace.branch],
+      );
     } catch (error) {
       const stderr = error instanceof GitError ? error.stderr : String(error);
-      throw new Error(pushProblem(project.remote, stderr));
+      throw new Error(pushProblem(remote, stderr));
     }
     void this.refreshPr(workspaceId).catch(() => {});
+  }
+
+  /**
+   * The pull request of a branch without a workspace yet (spec §7.6), from
+   * the PR status command run in the main checkout with the branch's
+   * variables; null without a command, a PR or an answer.
+   */
+  async branchPr(
+    projectId: string,
+    branch: string,
+    baseBranch: string,
+  ): Promise<{ title: string | null; url: string | null } | null> {
+    const config = this.config.require();
+    const project = config.projects.find((p) => p.id === projectId);
+    const profile = config.profiles.find((p) => p.id === project?.profileId);
+    if (!project || !profile || !project.remote) return null;
+    const settings = prSettings(profile, project);
+    if (!settings.statusCommand) return null;
+    const { shell, env, cwd } = await this.terminals.branchCommandEnv(
+      projectId,
+      branch,
+      baseBranch,
+    );
+    const out = await runJsonCommand(shell, settings.statusCommand, cwd, env, settings.timeoutSec);
+    const { status, title } = parsePrOutput(out);
+    return status ? { title, url: status.url } : null;
   }
 
   /**
@@ -247,6 +401,11 @@ export class FinishService {
           prUrl: r.pr?.url ?? null,
         })),
     );
+    // Spec §7.6: a branch that existed before may have its pull request already.
+    const existing =
+      (repo.branchOrigin ?? 'new') === 'new'
+        ? ''
+        : " This branch existed before the workspace: if it already has a pull request, don't open another; tell me its URL.";
     const filled = fillTemplate(settings.createPrompt ?? DEFAULT_CREATE_PR_PROMPT, {
       base: repo.baseBranch,
       branch: workspace.branch,
@@ -254,7 +413,7 @@ export class FinishService {
       title: workspace.task.title || workspace.name,
       url: workspace.task.url ?? '',
     });
-    await this.sendToClaude(workspace, `${linked.before}${filled}${linked.after}`);
+    await this.sendToClaude(workspace, `${linked.before}${filled}${linked.after}${existing}`);
     return { via: 'claude' };
   }
 
@@ -465,6 +624,18 @@ async function runJsonCommand(
 
 /** The PR status command's output (spec §12.3): one JSON object, or nothing / `null`. */
 export function parsePrStatus(output: string): PrStatus | null {
+  return parsePrOutput(output).status;
+}
+
+/** The PR status command's output with its optional `title` (spec §12.3, §7.6). */
+export function parsePrOutput(output: string): { status: PrStatus | null; title: string | null } {
+  const status = parseStatus(output);
+  if (!status) return { status, title: null };
+  const title = (JSON.parse(output.trim()) as { title?: unknown }).title;
+  return { status, title: typeof title === 'string' && title.trim() ? title.trim() : null };
+}
+
+function parseStatus(output: string): PrStatus | null {
   const text = output.trim();
   if (!text || text === 'null') return null;
   let value: unknown;

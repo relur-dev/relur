@@ -23,13 +23,19 @@ In Full view the list is a column on the left and the diff fills the right; drag
 
 To change a file, open it in your editor: **Open**, on a file's row when you hover or focus it, opens it at its first change; **Open in editor** above the diff opens it at the line you clicked in the diff, or at the first change. It uses the editor of the file's project. See [Open in editor](open-in-editor).
 
+## Behind and conflicts
+
+When the base branch has commits your branch doesn't, the panel says so above Commit: **↓12 behind origin/main**. If merging them would conflict, it adds **conflicts in 3 files** in amber (hover it for the files), and the workspace's header shows **Conflicts with main** until it's resolved; click it to open the Changes panel. This is common for a branch that has been open a while, such as a colleague's pull request.
+
+**Ask Claude to merge main** asks Claude in the Claude tab to fetch the base, merge it into the branch, resolve the conflicts so both sides' changes keep working, run the project's checks and commit the merge. Claude is told not to rebase or force-push: others may have the branch, and its pull request would lose its history. {{app}} fetches the base by itself about once a minute while you look at the panel. Seeing the conflicts needs git 2.38 or newer; with an older git, only how far behind the branch is shows.
+
 ## Commit, Push, Create PR
 
 The panel's bottom shows one step at a time:
 
 1. **Commit**, while there are uncommitted files: the message starts as `ID: title` (the title alone without an id). **Commit n files** commits everything. **Ask Claude to write it** asks Claude in the Claude tab to write the message and commit.
-2. **Push**, while there are unpushed commits: **Push n commits to <remote>** sends the branch to the remote. If git has no credentials for the remote, you get an explanation instead of a password prompt: set up a credential helper, an SSH key or a CLI login like `gh auth login`, and push once from a Shell tab.
-3. **Create PR**, once the branch is pushed and no pull request is known: **Create PR** runs your [PR create command](#pr-commands); without one, **Create PR with Claude** asks Claude in the Claude tab to open the pull request.
+2. **Push**, while there are unpushed commits: **Push n commits to <remote>** sends the branch to the remote; a branch that tracks one on the remote, like one from [an existing branch](new-workspace#from-an-existing-branch), goes to that one. If the remote's branch has commits yours doesn't (someone else pushed), the push is refused and the panel offers **Ask Claude to merge origin/<branch>**: Claude merges them in and pushes. If git has no credentials for the remote, you get an explanation instead of a password prompt: set up a credential helper, an SSH key or a CLI login like `gh auth login`, and push once from a Shell tab.
+3. **Create PR**, once the branch is pushed and no pull request is known: **Create PR** runs your [PR create command](#pr-commands); without one, **Create PR with Claude** asks Claude in the Claude tab to open the pull request. For a branch that was there before the workspace, Claude is told it may have a pull request already, and to tell you its URL rather than open another.
 
 Then the panel shows the PR badge. Projects without a remote show only Commit, with a note on adding one: `git remote add origin <url>` in a Shell tab, which {{app}} picks up by itself. See [A new repository](add-project#a-new-repository).
 
@@ -59,7 +65,7 @@ By default {{app}} needs no setup for pull requests: Claude opens them, and git 
 ```
 
 - `createCommand` runs in the worktree with the workspace's environment, and the panel shows its output.
-- `statusCommand` prints one JSON object, `{ "state": "open", "url": "…" }`, with `open`, `draft`, `merged` or `closed`, or nothing when the branch has no pull request.
+- `statusCommand` prints one JSON object, `{ "state": "open", "url": "…" }`, with `open`, `draft`, `merged` or `closed`, or nothing when the branch has no pull request. It may add `"title"`: New workspace then names the task after the pull request when you pick an [existing branch](new-workspace#from-an-existing-branch). With `gh`, add `title` to `--json` and to the `jq` object.
 
 A project's `pr` fields override the profile's.
 

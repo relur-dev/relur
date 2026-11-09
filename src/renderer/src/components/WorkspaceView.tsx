@@ -153,6 +153,48 @@ export interface LinkNotice {
   worktreePath: string;
 }
 
+/**
+ * The header's conflict mark (spec §6.2): shown only while merging the base
+ * would conflict, in any of the workspace's repositories; it opens Changes,
+ * where Ask Claude to merge is.
+ */
+function ConflictMark({
+  workspace,
+  onOpenChanges,
+}: {
+  workspace: Workspace;
+  onOpenChanges: () => void;
+}) {
+  const trpc = useTRPC();
+  const conflicts = useQuery(
+    trpc.changes.conflicts.queryOptions(
+      { workspaceId: workspace.id },
+      { refetchInterval: 30_000, staleTime: 0 },
+    ),
+  );
+  const found = conflicts.data ?? [];
+  const first = found[0];
+  if (!first) return null;
+  const linked = workspace.repos.length > 1;
+  const label =
+    found.length > 1
+      ? `Conflicts in ${found.length} repositories`
+      : `Conflicts with ${first.baseBranch}${linked ? ` in ${first.name}` : ''}`;
+  return (
+    <button
+      type="button"
+      data-conflict-mark
+      className="ml-3 inline-flex rounded-sm border border-st-permission/60 px-1.5 align-middle font-sans text-xs font-medium text-st-permission hover:bg-st-permission/10"
+      title={`${found
+        .map((f) => `${linked ? `${f.name}: ` : ''}${f.files.join(', ')}`)
+        .join('\n')}\nOpen Changes to ask Claude to merge`}
+      onClick={onOpenChanges}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function WorkspaceView({
   profile,
   projects,
@@ -563,6 +605,12 @@ export function WorkspaceView({
               <PrBadge pr={workspace.pr} />
             </span>
           ) : null}
+          <ConflictMark
+            workspace={workspace}
+            onOpenChanges={() => {
+              if (!changesOpen) onToggleChanges();
+            }}
+          />
         </div>
         {workspace.workflow ? (
           <div data-workflow className="mt-2 flex min-w-0 items-center gap-3">

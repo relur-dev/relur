@@ -6,7 +6,7 @@ Some tasks change more than one repository: an API and the app that calls it, a 
 
 In [New workspace](new-workspace), tick the other projects under **Also in**. Each shows the base branch it starts from: its own project's base. The project you started from is the **primary**: the workspace lives under it, and Claude starts in its worktree.
 
-- The branch name must be free in every repository, locally and on each remote.
+- The branch name must be free in every repository, locally and on each remote. With **Existing branch**, a repository that has the branch checks it out, and one that doesn't gets it as a new branch from its own base; see [From an existing branch](new-workspace#from-an-existing-branch).
 - Each worktree goes where its project's worktree setting says. See [Where worktrees go](worktrees).
 - {{app}} remembers which projects you ticked, per project, and ticks them again next time ("Last used with …").
 

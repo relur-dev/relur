@@ -1,4 +1,5 @@
 import { branchFromTemplate } from '@shared/branch';
+import { type CheckedOut, taskFromBranch } from '@shared/existing-branch';
 import type { Profile, Project } from '@shared/schemas';
 import { parseTask } from '@shared/tasks';
 import { LINK_TRUST_NOTE } from '@shared/workspaces';
@@ -8,6 +9,7 @@ import { GuideLink } from '../guide/link';
 import { type AppRouterOutputs, useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
 import { remember } from '../ui/remember';
+import { ExistingBranchPicker, type PickedBranch } from './ExistingBranchPicker';
 import { Modal, ModalFooter } from './Modal';
 
 export type CreatedWorkspace = AppRouterOutputs['workspaces']['create'];
@@ -70,8 +72,13 @@ function rememberedMayLink(projectId: string): boolean {
   }
 }
 
+/** The Task field's text for an id and a title. */
+const joinTask = (id: string | null, title: string) => [id, title].filter(Boolean).join(' ');
+
 /**
- * New workspace (spec §7.1): one Task field (a leading `ABC-123` or `#42` is
+ * New workspace (spec §7.1): **New branch** or **Existing branch** (§7.6:
+ * the branch is checked out, tracking its remote one, and names the task);
+ * one Task field (a leading `ABC-123` or `#42` is
  * the id, the rest the title), a branch derived from the profile's branch
  * template until edited, and the base branch inherited from the project.
  * "Run setup, then start Claude" shows when the project has setup commands
@@ -87,6 +94,7 @@ export function NewWorkspaceDialog({
   initialProject,
   onClose,
   onCreated,
+  onOpenElsewhere,
 }: {
   profile: Profile;
   /** The profile's projects. */
@@ -94,10 +102,19 @@ export function NewWorkspaceDialog({
   initialProject: Project | null;
   onClose: () => void;
   onCreated: (created: CreatedWorkspace) => void;
+  /** An existing branch is checked out elsewhere: open that instead (spec §7.6). */
+  onOpenElsewhere: (at: CheckedOut, project: Project) => void;
 }) {
   const trpc = useTRPC();
   const [projectId, setProjectId] = useState(initialProject?.id ?? projects[0]?.id ?? '');
+  const [mode, setMode] = useState<'new' | 'existing'>('new');
+  const existingMode = mode === 'existing';
+  const [picked, setPicked] = useState<PickedBranch | null>(null);
+  // A typed branch that exists, carried over by "Use the existing branch".
+  const [searchSeed, setSearchSeed] = useState('');
   const [taskText, setTaskText] = useState('');
+  // Spec §7.6: the task comes from the picked branch (or its PR) until typed.
+  const [taskTyped, setTaskTyped] = useState(false);
   const { id: taskId, title } = parseTask(taskText);
   // Edits; null means "use the derived or inherited value".
   const [branchEdit, setBranch] = useState<string | null>(null);
@@ -140,12 +157,13 @@ export function NewWorkspaceDialog({
       { enabled: Boolean(project && checkedBranch) },
     ),
   );
-  const checked = checkedBranch === wanted.trim() && wanted.trim() ? (check.data ?? null) : null;
+  const checked =
+    !existingMode && checkedBranch === wanted.trim() && wanted.trim() ? (check.data ?? null) : null;
   // A taken branch from the task becomes the next free name (spec §7.1); a
   // typed one is the user's to change, with the free name offered.
   const renamed =
     branchEdit === null && checked?.problem && checked.suggestion ? checked.suggestion : null;
-  const branch = branchEdit ?? renamed ?? derived;
+  const branch = existingMode ? (picked?.branch ?? '') : (branchEdit ?? renamed ?? derived);
   const bases = useQuery(
     trpc.workspaces.baseBranches.queryOptions({ projectId }, { enabled: Boolean(project) }),
   );
@@ -229,13 +247,46 @@ export function NewWorkspaceDialog({
   const hasSetup = (setup.data?.setup.length ?? 0) > 0;
   const [runSetup, setRunSetup] = useState(true);
 
-  const branchError = !renamed && checked?.problem ? checked.problem : null;
+  // Spec §7.6: the picked branch's PR title, when the PR status command can tell.
+  const branchPr = useQuery(
+    trpc.workspaces.branchPr.queryOptions(
+      { projectId, branch: picked?.branch ?? '', baseBranch: base.trim() },
+      { enabled: Boolean(existingMode && picked && project?.remote), staleTime: 60_000 },
+    ),
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on a new pick or PR title only
+  useEffect(() => {
+    if (!existingMode || !picked || taskTyped) return;
+    const fromBranch = taskFromBranch(picked.branch);
+    const prTitle = branchPr.data?.title ? parseTask(branchPr.data.title) : null;
+    setTaskText(
+      prTitle
+        ? joinTask(prTitle.id ?? fromBranch.id, prTitle.title)
+        : joinTask(fromBranch.id, fromBranch.title),
+    );
+  }, [picked?.branch, branchPr.data?.title, existingMode]);
+  // Also in with an existing branch (spec §7.6): which projects have it too.
+  const presence = useQuery(
+    trpc.workspaces.branchPresence.queryOptions(
+      { projectIds: linkedProjectIds, branch: picked?.branch ?? '' },
+      { enabled: Boolean(existingMode && picked && linkedProjectIds.length > 0), staleTime: 0 },
+    ),
+  );
+  const presenceOf = (id: string) =>
+    existingMode && picked ? presence.data?.find((p) => p.projectId === id) : undefined;
+  const linkedCheckedOut = existingMode
+    ? (presence.data ?? []).filter((p) => linkedProjectIds.includes(p.projectId) && p.checkedOut)
+    : [];
+
+  const branchError = !existingMode && !renamed && checked?.problem ? checked.problem : null;
   const canCreate =
     project !== null &&
     (title !== '' || taskId !== null) &&
     branch.trim() !== '' &&
     base.trim() !== '' &&
     !branchError &&
+    (!existingMode ||
+      (picked !== null && !picked.checkedOut && !picked.base && linkedCheckedOut.length === 0)) &&
     !create.isPending &&
     !lookingUp;
 
@@ -257,7 +308,8 @@ export function NewWorkspaceDialog({
         linkedProjectIds,
         claudeMayLink: others.length > 0 ? mayLink : undefined,
         // A branch from the task, not typed: a taken one gets the next free name.
-        uniqueBranch: branchEdit === null,
+        uniqueBranch: !existingMode && branchEdit === null,
+        existing: existingMode && picked ? { remote: picked.remote } : undefined,
       },
       {
         onSuccess: (created) =>
@@ -299,8 +351,10 @@ export function NewWorkspaceDialog({
         createWith(
           project,
           result.title,
-          branchEdit ??
-            branchFromTemplate(profile.defaults.branchTemplate, { id, title: result.title }),
+          existingMode
+            ? branch
+            : (branchEdit ??
+                branchFromTemplate(profile.defaults.branchTemplate, { id, title: result.title })),
         );
         return;
       }
@@ -310,7 +364,9 @@ export function NewWorkspaceDialog({
           project,
           '',
           branch,
-          `${id} wasn't found; the branch is named after what you typed`,
+          existingMode
+            ? `${id} wasn't found`
+            : `${id} wasn't found; the branch is named after what you typed`,
         );
         return;
       }
@@ -347,8 +403,10 @@ export function NewWorkspaceDialog({
       description={
         project ? (
           <>
-            In <span className="font-mono text-fg">{project.name}</span> · creates a worktree and
-            branch.
+            In <span className="font-mono text-fg">{project.name}</span> ·{' '}
+            {existingMode
+              ? 'checks out an existing branch in a new worktree.'
+              : 'creates a worktree and branch.'}
           </>
         ) : (
           'Add a project first.'
@@ -370,6 +428,7 @@ export function NewWorkspaceDialog({
                 const id = e.target.value;
                 setProjectId(id);
                 setBase(null);
+                setPicked(null);
                 const remembered = rememberedAlsoIn(id).filter((o) => o !== id);
                 setAlsoIn(remembered);
                 setAlsoRemembered(remembered.length > 0);
@@ -382,6 +441,70 @@ export function NewWorkspaceDialog({
                 </option>
               ))}
             </select>
+          </div>
+        ) : null}
+
+        {project ? (
+          <fieldset
+            data-branch-mode
+            aria-label="Branch"
+            className="flex rounded-lg border border-line bg-surface p-0.5"
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+              e.preventDefault();
+              const next = mode === 'new' ? 'existing' : 'new';
+              setMode(next);
+              (
+                e.currentTarget.querySelector(`[data-mode="${next}"]`) as HTMLButtonElement | null
+              )?.focus();
+            }}
+          >
+            {(
+              [
+                ['new', 'New branch'],
+                ['existing', 'Existing branch'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                data-mode={value}
+                aria-pressed={mode === value}
+                tabIndex={mode === value ? 0 : -1}
+                className={`h-6.5 flex-1 rounded-md text-md ${
+                  mode === value
+                    ? 'bg-raised font-medium text-fg ring-1 ring-line-strong'
+                    : 'text-fg-muted hover:text-fg'
+                }`}
+                onClick={() => setMode(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+        ) : null}
+
+        {project && existingMode ? (
+          <div>
+            <div className={`${labelClass} flex items-center gap-1.5`}>
+              Branch{' '}
+              <GuideLink
+                to="new-workspace#from-an-existing-branch"
+                label="From an existing branch"
+                before={onClose}
+              />
+            </div>
+            <ExistingBranchPicker
+              projectId={project.id}
+              projectName={project.name}
+              initialSearch={searchSeed}
+              value={picked}
+              onPick={(next) => {
+                setPicked(next);
+                if (next?.branch !== picked?.branch) setTaskTyped(false);
+              }}
+              onOpenElsewhere={(at) => onOpenElsewhere(at, project)}
+            />
           </div>
         ) : null}
 
@@ -418,6 +541,11 @@ export function NewWorkspaceDialog({
                   />
                   <span className="font-mono text-sm">{p.name}</span>
                   <span className="flex-1" />
+                  {presenceOf(p.id) ? (
+                    <span data-presence={p.id} className="text-xs text-fg-muted">
+                      {presenceOf(p.id)?.exists ? 'uses its branch' : 'new branch'}
+                    </span>
+                  ) : null}
                   <span className="font-mono text-xs text-fg-subtle">
                     ← {p.baseBranch ?? profile.defaults.baseBranch}
                   </span>
@@ -444,6 +572,17 @@ export function NewWorkspaceDialog({
                 One Claude works in all of them, starting in {project.name}.
               </p>
             ) : null}
+            {existingMode && picked && linkedProjectIds.length > 0 ? (
+              <p className="text-sm text-fg-muted">
+                Where <span className="font-mono">{picked.branch}</span> exists it is checked out;
+                elsewhere it is made new from that project's base.
+              </p>
+            ) : null}
+            {linkedCheckedOut.map((p) => (
+              <p key={p.projectId} role="alert" className="text-sm text-st-error select-text">
+                ✕ {p.checkedOut}
+              </p>
+            ))}
             <p data-trust-note className="text-sm text-fg-subtle">
               {LINK_TRUST_NOTE}
             </p>
@@ -460,13 +599,14 @@ export function NewWorkspaceDialog({
             className={inputClass}
             placeholder="PROJ-123 Fix login timeout"
             // biome-ignore lint/a11y/noAutofocus: the task is the field you start with
-            autoFocus
-            data-autofocus
+            autoFocus={!existingMode}
+            data-autofocus={existingMode ? undefined : true}
             ref={taskInput}
             readOnly={lookingUp !== null}
             value={taskText}
             onChange={(e) => {
               setTaskText(e.target.value);
+              setTaskTyped(true);
               setLookupError(null);
             }}
           />
@@ -490,47 +630,66 @@ export function NewWorkspaceDialog({
           ) : null}
         </div>
 
-        <div>
-          <label htmlFor="ws-branch" className={labelClass}>
-            Branch name
-          </label>
-          <div className="relative">
-            <input
-              id="ws-branch"
-              className={`${inputClass} ${linkedProjectIds.length > 0 ? 'pr-44' : 'pr-28'} font-mono text-sm`}
-              spellCheck={false}
-              value={branch}
-              aria-invalid={Boolean(branchError) || undefined}
-              onChange={(e) => setBranch(e.target.value)}
-            />
-            {branchEdit === null ? (
-              <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm text-fg-subtle">
-                from the task
-                {linkedProjectIds.length > 0 ? ` · same in all ${linkedProjectIds.length + 1}` : ''}
-              </span>
+        {existingMode ? null : (
+          <div>
+            <label htmlFor="ws-branch" className={labelClass}>
+              Branch name
+            </label>
+            <div className="relative">
+              <input
+                id="ws-branch"
+                className={`${inputClass} ${linkedProjectIds.length > 0 ? 'pr-44' : 'pr-28'} font-mono text-sm`}
+                spellCheck={false}
+                value={branch}
+                aria-invalid={Boolean(branchError) || undefined}
+                onChange={(e) => setBranch(e.target.value)}
+              />
+              {branchEdit === null ? (
+                <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm text-fg-subtle">
+                  from the task
+                  {linkedProjectIds.length > 0
+                    ? ` · same in all ${linkedProjectIds.length + 1}`
+                    : ''}
+                </span>
+              ) : null}
+            </div>
+            {renamed ? (
+              <p data-branch-renamed className="mt-1 text-sm text-fg-muted">
+                {checked?.problem}; using <span className="font-mono text-fg">{renamed}</span>
+              </p>
+            ) : null}
+            {branchError ? (
+              <p role="alert" className="mt-1 flex items-center gap-2 text-sm text-st-error">
+                <span>✕ {branchError}</span>
+                {checked?.suggestion ? (
+                  <button
+                    type="button"
+                    data-use-branch
+                    className={button('ghost', 'sm')}
+                    onClick={() => setBranch(checked.suggestion)}
+                  >
+                    Use <span className="font-mono">{checked.suggestion}</span>
+                  </button>
+                ) : null}
+                {branchEdit !== null &&
+                linkedProjectIds.length === 0 &&
+                /already (exists|has a branch)/.test(branchError) ? (
+                  <button
+                    type="button"
+                    data-use-existing
+                    className={button('ghost', 'sm')}
+                    onClick={() => {
+                      setSearchSeed(branch.trim());
+                      setMode('existing');
+                    }}
+                  >
+                    Use the existing branch
+                  </button>
+                ) : null}
+              </p>
             ) : null}
           </div>
-          {renamed ? (
-            <p data-branch-renamed className="mt-1 text-sm text-fg-muted">
-              {checked?.problem}; using <span className="font-mono text-fg">{renamed}</span>
-            </p>
-          ) : null}
-          {branchError ? (
-            <p role="alert" className="mt-1 flex items-center gap-2 text-sm text-st-error">
-              <span>✕ {branchError}</span>
-              {checked?.suggestion ? (
-                <button
-                  type="button"
-                  data-use-branch
-                  className={button('ghost', 'sm')}
-                  onClick={() => setBranch(checked.suggestion)}
-                >
-                  Use <span className="font-mono">{checked.suggestion}</span>
-                </button>
-              ) : null}
-            </p>
-          ) : null}
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -610,7 +769,12 @@ export function NewWorkspaceDialog({
         ) : null}
         {create.isPending ? (
           <p className="text-sm text-fg-muted">
-            {project?.remote ? `Fetching ${project.remote}/${base}, then a` : 'A'}dding the worktree
+            {existingMode && picked?.remote
+              ? `Fetching ${picked.remote}/${picked.branch}, then a`
+              : project?.remote
+                ? `Fetching ${project.remote}/${base}, then a`
+                : 'A'}
+            dding the worktree
             {linkedProjectIds.length > 0 ? 's' : ''}…
           </p>
         ) : null}

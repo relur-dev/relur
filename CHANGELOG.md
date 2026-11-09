@@ -4,6 +4,18 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **A workspace from an existing branch.** New workspace has **New branch** (as before) and **Existing branch** at the top. Existing branch lists the project's branches, local and on its remotes, newest first with the last commit's author and date, after fetching every remote; type to filter, or paste a branch's URL or a pull request's URL from GitHub, GitLab or Bitbucket Server. The worktree checks the branch out and tracks the remote one, so **Push** updates the existing pull request. The task's id and title come from the branch name, or from the pull request's title when your PR status command prints a `title`, and stay editable. Bitbucket Cloud doesn't tell git which branch a pull request comes from: paste the branch name shown on the pull request page, or pick it from the list.
+- A branch that's already checked out says where: in a workspace (**Open workspace**), in a worktree (**Open as workspace**), or in your main checkout (**Open project**; Relur never switches your main checkout's branch).
+- With **Also in**, each other project uses the same branch where it has it, and gets it as a new branch from its own base where it doesn't.
+- **Behind and conflicts**: the Changes panel shows how far each workspace's branch is behind its base and whether merging the base would conflict, with **Ask Claude to merge**, which merges and resolves the conflicts without rebasing or force-pushing. While there are conflicts, the workspace's header says **Conflicts with <base>**.
+
+### Changed
+
+- **Push** goes to the branch the workspace's branch tracks, when it tracks one. When the remote refuses because someone else pushed, the Changes panel offers **Ask Claude to merge** that branch.
+- **Delete workspace** says the branch on the remote stays for a workspace made from an existing branch, and when that branch has commits by someone else, names them before deleting your local copy. A local branch that was there before the workspace is kept unless you tick **Also delete the local branch**.
+
 ## [0.6.1] - 2026-11-09
 
 ### Fixed

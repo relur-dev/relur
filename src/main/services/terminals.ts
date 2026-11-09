@@ -390,6 +390,24 @@ export class TerminalService {
   }
 
   /**
+   * The user's shell and a project's environment for a command in its main
+   * checkout about a branch that has no workspace yet (spec §7.6): the PR
+   * status command, with the workspace's branch variables set.
+   */
+  async branchCommandEnv(
+    projectId: string,
+    branch: string,
+    baseBranch: string,
+  ): Promise<{ shell: string; env: Record<string, string>; cwd: string }> {
+    const project = this.project(projectId);
+    const login = await this.env.login();
+    const env = await this.processEnv(this.env.profile(project.profileId), project);
+    env[envVar('BRANCH')] = branch;
+    env[envVar('BASE_BRANCH')] = baseBranch;
+    return { shell: defaultShell(login.env), env, cwd: expandHome(project.repoPath) };
+  }
+
+  /**
    * Where a task lookup runs (spec §13.7): the profile's environment and
    * Claude, its skill sources as `--plugin-dir`, in the project's repository
    * (home without a project).

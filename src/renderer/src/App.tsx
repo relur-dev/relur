@@ -1213,6 +1213,26 @@ export function App() {
               projects={profileProjects}
               initialProject={newWorkspace.project}
               onClose={() => setNewWorkspace(null)}
+              onOpenElsewhere={(at, project) => {
+                // Spec §7.6: the branch's workspace, Open as workspace for its
+                // worktree, or the project for its main checkout.
+                setNewWorkspace(null);
+                if (at.kind === 'workspace') {
+                  const found = workspaces.data?.find((w) => w.id === at.workspaceId);
+                  if (found) openWorkspace(found);
+                } else if (at.kind === 'worktree') {
+                  setAdopting({
+                    projectId: project.id,
+                    worktree: {
+                      path: at.path,
+                      branch: null,
+                      taskId: null,
+                      title: '',
+                      titleFromField: false,
+                    },
+                  });
+                } else openProject(project);
+              }}
               onCreated={({ workspace: created, claude, claudeError, setup, notes }) => {
                 setNewWorkspace(null);
                 // A renamed branch, a local base, a task not found (spec §7.1, §7.3).

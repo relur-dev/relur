@@ -2,6 +2,8 @@
 
 Click the **+** at the right of a project's row in the sidebar (or of its band's header, when Home's Board is [grouped by project](home#board)), or **New workspace** in the project view or on Home. <kbd>{{key:newWorkspace}}</kbd> uses the project you're looking at, or the project of the workspace you're in; from Home the dialog has a **Project** field to pick one, when the profile has more than one.
 
+At the top, **New branch** starts the task on a branch of its own, made for it: that's the default, and what most of this page is about. **Existing branch** works on a branch that's already there, such as a colleague's pull request; see [From an existing branch](#from-an-existing-branch).
+
 ## The Task field
 
 There is one **Task** field. A leading key like `ABC-123` or `#42` becomes the task id, the rest the title; a preview under the field shows the split. Anything you type gives a workspace: an id alone, a title alone, one word or lowercase text like `abc-12` (that's a title; an id starts with capitals).
@@ -16,7 +18,7 @@ There is one **Task** field. A leading key like `ABC-123` or `#42` becomes the t
 
 The slug part of the branch is at most 50 characters, cut between words. Characters git doesn't allow in branch names are replaced with `-`, and text with no letters it can use (another script, only punctuation) gives `task`. When your profile's branch template has only `{id}`, text without an id fills it instead.
 
-The **Branch name** comes from the task until you edit it, and it can't already exist, locally or on the remote. When the one from the task is taken, the dialog uses the next free name and says so under the field ("A branch named landing already exists; using landing-2"). A name you typed that exists, or that git doesn't allow, shows why with **Use <name>** for a free one. The **Base branch** is the project's; you can type or pick another.
+The **Branch name** comes from the task until you edit it, and it can't already exist, locally or on the remote. When the one from the task is taken, the dialog uses the next free name and says so under the field ("A branch named landing already exists; using landing-2"). A name you typed that exists, or that git doesn't allow, shows why with **Use <name>** for a free one; when it exists, **Use the existing branch** switches to [Existing branch](#from-an-existing-branch) with it picked. The **Base branch** is the project's; you can type or pick another.
 
 ## Looking up the title
 
@@ -45,3 +47,41 @@ Clicking **Create workspace** (<kbd>{{key:confirm}}</kbd>):
 3. Runs setup, if the project has any, then starts Claude, with the [Start prompt](workflows#the-start-prompt) as its first message when there is one and the task has an id. When the project has setup, the dialog shows **Run setup, then start Claude with the task brief**; untick it to skip setup and start Claude at once.
 
 With **Also in** ticked, steps 1 and 2 happen in every repository, setup runs in each, and Claude starts once all of them have passed.
+
+## From an existing branch
+
+Choose **Existing branch** at the top of the dialog to work on a branch that's already there: a colleague's pull request on GitHub, GitLab or Bitbucket, or a branch you started before you had {{app}}. The workspace's worktree checks that branch out and tracks the branch on the remote. No new branch is made, so **Push** updates the existing pull request.
+
+### Picking the branch
+
+The list shows the project's branches, local and on its remotes, most recently updated first, each with the last commit's author and how long ago. It shows at once, then {{app}} fetches every remote and updates it; if a fetch fails, a line under the list says why and the list is as of the last fetch. Type to filter by name or author, and use <kbd>↑</kbd> <kbd>↓</kbd> to choose; <kbd>{{key:confirm}}</kbd> creates the workspace.
+
+You can also paste a URL instead:
+
+- **A branch's URL**, from GitHub, GitLab or Bitbucket (the page that shows the branch's files): the branch is picked.
+- **A pull request's URL**, from GitHub, GitLab or Bitbucket Server: {{app}} asks the remote which commit the pull request is at and picks the branch that has it.
+- **A Bitbucket Cloud pull request's URL** can't be used this way: Bitbucket Cloud doesn't tell git which branch a pull request comes from. The dialog says so; copy the branch name shown at the top of the pull request page and paste that, or pick the branch from the list. The same goes for a pull request from a fork, whose branch isn't on your remote.
+
+A URL of another repository than the project's remote is refused, and the dialog says which repository it's for.
+
+### The task
+
+The **Task** is filled in from the branch name: `ENG-1423-fix-login` gives the id ENG-1423 and the title "fix login", and a prefix like `feature/` is left out. If you've set a [PR status command](finishing-work#pr-commands) that prints the pull request's `title`, the title comes from the pull request instead. Change either as you like before you create the workspace.
+
+### When the branch is in use
+
+A branch can be checked out in one place only. If it's already open somewhere, the dialog says where and offers that instead:
+
+- in another workspace: **Open workspace**;
+- in a worktree that isn't a workspace yet: **Open as workspace**, see [Adopting worktrees](adopting-worktrees);
+- in your main checkout: **Open project**. {{app}} never switches your main checkout to another branch; switch it yourself (for example to `main` in a Shell tab) if you want a workspace for that branch.
+
+The base branch itself can't be used: start a new branch from it instead.
+
+### With Also in
+
+With other projects ticked under **Also in**, each one checks out the same branch when it has it, and gets it as a new branch from its own base when it doesn't. Each row says which: **uses its branch** or **new branch**.
+
+### Afterwards
+
+The workspace works like any other: Claude, shells, Changes, Push. When the base branch has moved on, the Changes panel shows how far behind the branch is and whether merging would conflict, with **Ask Claude to merge**; see [Finishing work](finishing-work#behind-and-conflicts). Deleting the workspace never deletes the branch on the remote; see [Deleting a workspace](delete-workspace#the-branch).

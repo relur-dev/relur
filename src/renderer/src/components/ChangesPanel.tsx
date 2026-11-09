@@ -1,5 +1,11 @@
 import { BRAND } from '@shared/brand';
-import { type ChangedFile, type ChangeGroup, diffFirstLine, type FileDiff } from '@shared/changes';
+import {
+  type ChangedFile,
+  type ChangeGroup,
+  diffFirstLine,
+  type FileDiff,
+  PUSH_REJECTED,
+} from '@shared/changes';
 import type { Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
 import { PR_LABEL, type PrStatus, type Workspace, type WorkspaceRepo } from '@shared/workspaces';
@@ -274,6 +280,86 @@ const commitFocus = (workspaceId: string) => (box: HTMLTextAreaElement | null) =
   if (box && takeRequest(workspaceId, 'commit')) setTimeout(() => box.focus(), 150);
 };
 
+/** The base branch's name in a base ref (`origin/develop` → `develop`). */
+const baseName = (ref: string, remote: string | null) =>
+  remote && ref.startsWith(`${remote}/`) ? ref.slice(remote.length + 1) : ref;
+
+/**
+ * Behind and conflicts with the base (spec §6.4): "↓12 behind origin/develop
+ * · conflicts in 3 files", with Ask Claude to merge; and after a push the
+ * remote refused, Ask Claude to merge the remote branch (spec §14.1).
+ */
+function MergeLine({
+  state,
+  input,
+  pushError,
+}: {
+  state: {
+    behind: number;
+    conflicts: string[] | null;
+    baseRef: string;
+    remote: string | null;
+    upstream: string | null;
+  };
+  input: { workspaceId: string; projectId?: string };
+  pushError: string | null;
+}) {
+  const trpc = useTRPC();
+  const [sent, setSent] = useState<string | null>(null);
+  const merge = useMutation(trpc.changes.askClaudeToMerge.mutationOptions());
+  const rejected = Boolean(pushError?.includes(PUSH_REJECTED) && state.upstream);
+  if (state.behind === 0 && !rejected && !sent) return null;
+  const conflicts = state.conflicts ?? [];
+  const ask = (from: 'base' | 'upstream', what: string) =>
+    merge.mutate(
+      { ...input, from },
+      { onSuccess: () => setSent(`Sent to Claude: it merges ${what} and resolves any conflicts.`) },
+    );
+  const base = baseName(state.baseRef, state.remote);
+  return (
+    <div data-merge-line className="space-y-1 text-sm">
+      {state.behind > 0 ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span data-behind className="font-mono text-fg-muted">
+            ↓{state.behind} behind {state.baseRef}
+          </span>
+          {conflicts.length > 0 ? (
+            <span data-conflicts className="text-st-permission" title={conflicts.join('\n')}>
+              · conflicts in {conflicts.length} {conflicts.length === 1 ? 'file' : 'files'}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            data-ask-merge="base"
+            className={button(conflicts.length > 0 ? 'secondary' : 'ghost', 'sm')}
+            disabled={merge.isPending}
+            onClick={() => ask('base', base)}
+          >
+            Ask Claude to merge {base}
+          </button>
+        </div>
+      ) : null}
+      {rejected && state.upstream ? (
+        <button
+          type="button"
+          data-ask-merge="upstream"
+          className={button('secondary', 'sm')}
+          disabled={merge.isPending}
+          onClick={() => ask('upstream', state.upstream ?? '')}
+        >
+          Ask Claude to merge {state.upstream}
+        </button>
+      ) : null}
+      {sent ? <p className="text-fg-muted">{sent}</p> : null}
+      {merge.error ? (
+        <p role="alert" className="text-st-error select-text">
+          ✕ {merge.error.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Commit → Push → Create PR → PR badge (spec §14.1), one step at a time.
  * Projects without a remote only commit.
@@ -332,6 +418,11 @@ function FinishControls({ workspace }: { workspace: Workspace }) {
 
   return (
     <div data-finish className="shrink-0 space-y-2 border-t border-line bg-surface p-3 text-md">
+      <MergeLine
+        state={s}
+        input={{ workspaceId: workspace.id }}
+        pushError={push.error?.message ?? null}
+      />
       {s.uncommitted > 0 ? (
         <>
           <textarea
@@ -507,6 +598,7 @@ function RepoControls({
   const text = message ?? s.commitMessage;
   return (
     <div data-repo-controls={repo.projectId} className="space-y-1.5 px-2 pt-1 pb-2">
+      <MergeLine state={s} input={input} pushError={push.error?.message ?? null} />
       {s.uncommitted > 0 ? (
         <>
           <textarea

@@ -86,9 +86,18 @@ export interface WorkspaceRepo {
    * terminal; null for the main one and ones linked in the app.
    */
   addedBy?: RepoAddedBy | null;
+  /**
+   * Where its branch came from (spec §7.6): made for the workspace (`new`),
+   * made from a remote branch that already existed (`remote`), or a local
+   * branch that already existed (`local`).
+   */
+  branchOrigin?: BranchOrigin;
 }
 
 export type RepoAddedBy = 'claude' | 'terminal';
+
+/** Where a workspace repository's branch came from (spec §7.6). */
+export type BranchOrigin = 'new' | 'remote' | 'local';
 
 /** The linked repositories, without the main one. */
 export const linkedRepos = (w: Pick<Workspace, 'repos'>) => w.repos.filter((r) => !r.primary);
@@ -167,6 +176,26 @@ export interface RepoDeleteCheck {
    * commits are safe in the base.
    */
   merged: MergedInto | null;
+  /** Where its branch came from (spec §7.6). */
+  branchOrigin: BranchOrigin;
+  /** The remote branch it tracks (`origin/feature-x`), kept by Delete; null without one. */
+  upstream: string | null;
+  /** Authors of the remote branch's commits other than you (spec §14.2), by name. */
+  otherAuthors: string[];
+}
+
+/**
+ * Whether Delete shows "Also delete the local branch" for a repository, and
+ * whether it starts ticked (spec §14.2, §7.6): unticked when it has unpushed
+ * commits, or when the local branch was there before the workspace; ticked
+ * when the workspace made it from a remote branch with others' commits (the
+ * remote one stays). Otherwise it isn't shown and the branch is deleted.
+ */
+export function branchChoice(check: RepoDeleteCheck): { shown: boolean; ticked: boolean } {
+  if (check.unpushed > 0) return { shown: true, ticked: false };
+  if (check.branchOrigin === 'local') return { shown: true, ticked: false };
+  if (check.otherAuthors.length > 0) return { shown: true, ticked: true };
+  return { shown: false, ticked: true };
 }
 
 /**

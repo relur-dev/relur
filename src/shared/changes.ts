@@ -47,3 +47,15 @@ export function firstChangedLine(original: string | null, modified: string | nul
 /** A diff's first changed line; 1 for a binary file. */
 export const diffFirstLine = (diff: FileDiff) =>
   diff.binary ? 1 : firstChangedLine(diff.original, diff.modified);
+
+/** What a rejected push's message says (spec §14.1), so the panel can offer Ask Claude to merge. */
+export const PUSH_REJECTED = 'rejected the push';
+
+/** One repository's conflicts with its base, for the workspace header's mark (spec §6.2). */
+export interface BaseConflicts {
+  projectId: string;
+  name: string;
+  baseBranch: string;
+  /** The files a merge of the base would conflict in. */
+  files: string[];
+}

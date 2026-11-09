@@ -88,6 +88,9 @@ const MIGRATIONS: string[] = [
   // Whether Claude may link repositories itself, and who linked each one (spec §21.9).
   `ALTER TABLE workspaces ADD COLUMN claude_may_link INTEGER NOT NULL DEFAULT 1;
    ALTER TABLE workspace_repos ADD COLUMN added_by TEXT;`,
+  // Where each repository's branch came from: new, or an existing one (spec §7.6).
+  `ALTER TABLE workspaces ADD COLUMN branch_origin TEXT;
+   ALTER TABLE workspace_repos ADD COLUMN branch_origin TEXT;`,
 ];
 
 export type StateDb = Database.Database;

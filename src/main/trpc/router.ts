@@ -884,6 +884,27 @@ export function createAppRouter({
       baseBranches: publicProcedure
         .input(projectId)
         .query(({ input }) => workspaces.baseBranches(input.projectId)),
+      /** Existing branch (spec §7.6): the branches, after fetching every remote with `fetch`. */
+      existingBranches: publicProcedure
+        .input(projectId.extend({ fetch: z.boolean() }))
+        .query(({ input }) => workspaces.existingBranches(input.projectId, input.fetch)),
+      /** The branch a pasted branch or pull request URL names (spec §7.6). */
+      resolveBranchUrl: publicProcedure
+        .input(projectId.extend({ url: z.string().min(1).max(4096) }))
+        .query(({ input }) => workspaces.resolveBranchUrl(input.projectId, input.url)),
+      /** Also in with an existing branch (spec §7.6): which projects have it. */
+      branchPresence: publicProcedure
+        .input(z.object({ projectIds: z.array(IdSchema).max(50), branch: z.string().max(250) }))
+        .query(({ input }) => workspaces.branchPresence(input.projectIds, input.branch)),
+      /** The PR of a branch without a workspace, for its title (spec §7.6). */
+      branchPr: publicProcedure
+        .input(
+          projectId.extend({
+            branch: z.string().min(1).max(250),
+            baseBranch: z.string().max(250),
+          }),
+        )
+        .query(({ input }) => finish.branchPr(input.projectId, input.branch, input.baseBranch)),
       /** New workspace asks the remotes early, for Create to reuse (spec §7.3). */
       prepareRemotes: publicProcedure
         .input(
@@ -909,6 +930,8 @@ export function createAppRouter({
             claudeMayLink: z.boolean().optional(),
             /** The branch came from the task: a taken one gets the next free name (spec §7.1). */
             uniqueBranch: z.boolean().optional(),
+            /** Check out this existing branch, tracking it on `remote` (spec §7.6). */
+            existing: z.object({ remote: z.string().max(250).nullable() }).optional(),
           }),
         )
         .mutation(({ input }) => workspaces.create(input)),
@@ -1094,6 +1117,16 @@ export function createAppRouter({
       push: publicProcedure
         .input(workspaceId.extend(repo))
         .mutation(({ input }) => finish.push(input.workspaceId, input.projectId ?? null)),
+      /** Ask Claude to merge the base, or the remote branch after a rejected push (spec §6.4). */
+      askClaudeToMerge: publicProcedure
+        .input(workspaceId.extend({ ...repo, from: z.enum(['base', 'upstream']) }))
+        .mutation(({ input }) =>
+          finish.askClaudeToMerge(input.workspaceId, input.from, input.projectId ?? null),
+        ),
+      /** Each repository's conflicts with its base, for the header (spec §6.2). */
+      conflicts: publicProcedure
+        .input(workspaceId)
+        .query(({ input }) => finish.conflicts(input.workspaceId)),
       createPr: publicProcedure
         .input(workspaceId.extend(repo))
         .mutation(({ input }) => finish.createPr(input.workspaceId, input.projectId ?? null)),
