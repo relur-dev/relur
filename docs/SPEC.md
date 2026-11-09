@@ -1392,7 +1392,7 @@ flowchart LR
 | **Helper** | `relur-helper`: one small executable with `hook`, `statusline`, `add`, `link` and `projects` subcommands, `apply-update`, which replaces the app after it quit (§15.7), and `identity`, which prints an app's id and version as an update checks them; must start in well under 100 ms on every OS (§17). |
 | **Workflow reader** | Finds each workspace's status file, reads its front matter when it changes, and gives the UI the status, gates and Continue (§13.4, §13.5). It has no state machine of its own: the skills move the status. |
 | **Skill sources** | Clones and updates git sources, wraps plain skill folders in a plugin, lists their skills, and works out which sources each session gets (§13.2, §13.3). |
-| **Git service** | Wraps the `git` CLI rather than a git library, so behaviour matches the user's git config, credentials and hooks. Also provides the git-only PR fallback (§12.3). |
+| **Git service** | Wraps the `git` CLI rather than a git library, so behaviour matches the user's git config, credentials and hooks. Also provides the git-only PR fallback (§12.3). Its commands run with `GIT_OPTIONAL_LOCKS=0`, so a background `git status` never takes the index lock and the user's own git commands in the same worktree don't fail on `index.lock`. |
 | **Command runner** | Runs the user-defined task-source and PR commands with the profile environment, enforces timeouts and parses their JSON (§12.4). |
 | **Memory monitor** | Measures the process tree of each Claude session and the app's own processes every 10 s while the window is visible (§6.14). |
 | **Store** | §3.4. |

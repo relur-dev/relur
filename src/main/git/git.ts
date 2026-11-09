@@ -102,7 +102,10 @@ export class Git {
    * stopped after that long: the ssh it started for a remote goes too.
    */
   run(cwd: string, args: string[], { timeoutSec }: { timeoutSec?: number } = {}): Promise<string> {
-    const env = { ...this.options.env, GIT_TERMINAL_PROMPT: '0' };
+    // No optional locks: a background `git status` would otherwise take the
+    // index lock to refresh it, and the user's own git command could fail
+    // on `index.lock` meanwhile (spec §16).
+    const env = { ...this.options.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
     if (timeoutSec !== undefined) return this.runTimed(cwd, args, env, timeoutSec);
     return new Promise((resolve, reject) => {
       execFile(

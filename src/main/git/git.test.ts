@@ -51,6 +51,14 @@ describe('Git', () => {
     expect(await git.currentBranch(repo)).toBeNull();
   });
 
+  it('runs git without prompts and without optional locks (spec §16)', async () => {
+    // `env` in place of git prints the environment git would get.
+    const env = new Git({ gitPath: '/usr/bin/env', env: fx.env });
+    const out = (await env.run(fx.root, [])).split('\n');
+    expect(out).toContain('GIT_TERMINAL_PROMPT=0');
+    expect(out).toContain('GIT_OPTIONAL_LOCKS=0');
+  });
+
   it('reports git stderr in errors', async () => {
     const repo = fx.localRepo('errors');
     const error = await git.run(repo, ['rev-parse', 'no-such-ref']).catch((e) => e);
