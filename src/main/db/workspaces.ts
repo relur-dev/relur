@@ -80,7 +80,9 @@ const toPr = (row: {
     : null;
 
 const toMerged = (value: string | null): MergedInto | null =>
-  value === 'base' || value === 'local' ? value : null;
+  value === 'base' || value === 'local' || value === 'squash' || value === 'squash-local'
+    ? value
+    : null;
 
 /** Rows made before spec §7.6 have none: their branch was new. */
 const toOrigin = (value: string | null): BranchOrigin =>

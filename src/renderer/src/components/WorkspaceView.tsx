@@ -12,6 +12,7 @@ import {
 import { documentLabel, effectiveWorkflow } from '@shared/workflow';
 import {
   linkedRepos,
+  mergedLocally,
   setupFailed,
   type Workspace,
   type WorkspaceRepo,
@@ -729,7 +730,7 @@ export function WorkspaceView({
               ? `${workspace.branch} is merged in every repository with commits.`
               : mergedRepo?.pr?.state === 'likely-merged' && !mergedRepo.merged
                 ? `${workspace.branch} was deleted on the remote, so it was likely merged.`
-                : mergedRepo?.merged === 'local' && mergedRepo.pr?.state !== 'merged'
+                : mergedLocally(mergedRepo?.merged ?? null) && mergedRepo?.pr?.state !== 'merged'
                   ? `${workspace.branch} is merged into your local ${workspace.baseBranch} (not pushed yet).`
                   : `${workspace.branch} is merged into ${workspace.baseBranch}.`}{' '}
             Delete workspace?

@@ -476,7 +476,10 @@ exec sleep 30
     setSetup('web', [], [`echo "$PWD" >> ${torn}`]);
     const { workspace } = await create('delete-me', ['web']);
     const [api, web] = workspace.repos as [WorkspaceRepo, WorkspaceRepo];
-    fx.git(web.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local work');
+    // A change of its own: an empty commit would change nothing in the base (§14.2).
+    fs.writeFileSync(path.join(web.worktreePath, 'work.txt'), 'x');
+    fx.git(web.worktreePath, 'add', 'work.txt');
+    fx.git(web.worktreePath, 'commit', '-q', '-m', 'local work');
     const check = await workspaces.deleteCheck(workspace.id);
     expect(check.repos.map((r) => [r.projectId, r.unpushed])).toEqual([
       ['api', 0],
@@ -514,6 +517,85 @@ exec sleep 30
     // Pushed: merged into the base itself.
     fx.git(webPath, 'push', '-q', 'origin', 'main');
     expect((await workspaces.deleteCheck(workspace.id)).repos[1]?.merged).toBe('base');
+  });
+
+  describe('squash merges (spec §14.2)', () => {
+    const repoOf = (id: string) => projects.find((p) => p.id === id)?.repoPath as string;
+    /** Commits on the branch in a worktree, on no remote branch. */
+    const work = (dir: string, file: string, n = 1) => {
+      for (let i = 0; i < n; i++) {
+        fs.writeFileSync(path.join(dir, `${file}-${i}`), `${i}\n`);
+        fx.git(dir, 'add', '.');
+        fx.git(dir, 'commit', '-q', '-m', `${file} ${i}`);
+      }
+    };
+    /** As a pull request squash-merged on the remote: one new commit on its main. */
+    const squashMerge = (id: string, branch: string) => {
+      fx.git(repoOf(id), 'merge', '-q', '--squash', branch);
+      fx.git(repoOf(id), 'commit', '-q', '-m', `Merged in ${branch}`);
+      fx.git(repoOf(id), 'push', '-q', 'origin', 'main');
+    };
+
+    it('counts a squash-merged branch as merged, its commits not as unpushed', async () => {
+      const { workspace } = await create('squashed', []);
+      const api = workspace.repos[0] as WorkspaceRepo;
+      work(api.worktreePath, 'a', 3);
+      expect((await workspaces.deleteCheck(workspace.id)).unpushed).toBe(3);
+      squashMerge('api', 'squashed');
+      // Its commits are still on no remote branch, but their changes are in origin/main.
+      expect(fx.git(repoOf('api'), 'branch', '-r', '--contains', 'squashed')).toBe('');
+      const check = await workspaces.deleteCheck(workspace.id);
+      expect([check.unpushed, check.merged]).toEqual([0, 'squash']);
+      // Home's Merged column and Clean up read the same record.
+      expect(workspaceMerged(records.get(workspace.id) as Workspace)?.merged).toBe('squash');
+    });
+
+    it('counts a commit whose changes are not in the base as unpushed', async () => {
+      const { workspace } = await create('one-more', []);
+      const api = workspace.repos[0] as WorkspaceRepo;
+      work(api.worktreePath, 'a', 2);
+      squashMerge('api', 'one-more');
+      work(api.worktreePath, 'b');
+      const check = await workspaces.deleteCheck(workspace.id);
+      expect([check.unpushed, check.merged]).toEqual([3, null]);
+      expect(workspaceMerged(records.get(workspace.id) as Workspace)).toBeNull();
+    });
+
+    it('checks a linked repository on its own: primary merged, linked one not', async () => {
+      const { workspace } = await create('real-case', ['web']);
+      const [api, web] = workspace.repos as [WorkspaceRepo, WorkspaceRepo];
+      work(api.worktreePath, 'api');
+      fx.git(api.worktreePath, 'push', '-q', 'origin', 'real-case');
+      fx.git(repoOf('api'), 'merge', '-q', '--ff-only', 'real-case');
+      fx.git(repoOf('api'), 'push', '-q', 'origin', 'main');
+      // web: three commits, no upstream, on no remote branch.
+      work(web.worktreePath, 'web', 3);
+      let check = await workspaces.deleteCheck(workspace.id);
+      expect(check.repos.map((r) => [r.projectId, r.merged, r.unpushed])).toEqual([
+        ['api', 'base', 0],
+        ['web', null, 3],
+      ]);
+      // Squash-merged on web's remote: web counts as merged too.
+      squashMerge('web', 'real-case');
+      check = await workspaces.deleteCheck(workspace.id);
+      expect(check.repos.map((r) => [r.projectId, r.merged, r.unpushed])).toEqual([
+        ['api', 'base', 0],
+        ['web', 'squash', 0],
+      ]);
+    });
+
+    it('keeps counting such commits as unpushed on git before 2.38', async () => {
+      const old = vi.spyOn(Git.prototype, 'hasMergeTreeWriteTree').mockResolvedValue(false);
+      try {
+        const { workspace } = await create('old-git', []);
+        work((workspace.repos[0] as WorkspaceRepo).worktreePath, 'a', 2);
+        squashMerge('api', 'old-git');
+        const check = await workspaces.deleteCheck(workspace.id);
+        expect([check.unpushed, check.merged]).toEqual([2, null]);
+      } finally {
+        old.mockRestore();
+      }
+    });
   });
 
   it('removing a linked project deletes only its worktree; the workspace stays', async () => {

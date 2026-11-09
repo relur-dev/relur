@@ -369,9 +369,12 @@ export class Git {
    * Where `branch` is merged (spec §14.2): it has commits of its own (since
    * its own start, `ownStart`), and its tip is contained in `<remote>/<base>`
    * (`base`) or only in the local base (`local`), or every one of its commits'
-   * changes is already there (`git cherry`, for rebased branches). Without a
-   * remote the local base is the base. Null when not merged, without commits
-   * of its own, or when its start isn't known.
+   * changes is already there (`git cherry`, for rebased branches). Otherwise,
+   * when merging it would change nothing (`git merge-tree --write-tree` gives
+   * the base's own tree, as after a squash merge), `squash` or
+   * `squash-local`; never on git before 2.38, which hasn't `--write-tree`.
+   * Without a remote the local base is the base. Null when not merged,
+   * without commits of its own, or when its start isn't known.
    */
   async mergedInto(
     repo: string,
@@ -392,9 +395,35 @@ export class Git {
         .filter(Boolean);
       return lines.length > 0 && lines.every((l) => l.startsWith('-'));
     };
-    if (remote && (await contains(`refs/remotes/${remote}/${base}`))) return 'base';
-    if (await contains(`refs/heads/${base}`)) return remote ? 'local' : 'base';
+    // Its changes are there although its commits aren't: a squash merge.
+    const changesIn = async (ref: string) => {
+      if (!(await this.hasMergeTreeWriteTree()) || !(await this.revParse(repo, ref))) return false;
+      const merged = (await this.tryRun(repo, ['merge-tree', '--write-tree', ref, head]))
+        ?.split('\n')[0]
+        ?.trim();
+      return Boolean(merged) && merged === (await this.revParse(repo, `${ref}^{tree}`));
+    };
+    const remoteBase = remote ? `refs/remotes/${remote}/${base}` : null;
+    const localBase = `refs/heads/${base}`;
+    if (remoteBase && (await contains(remoteBase))) return 'base';
+    if (await contains(localBase)) return remote ? 'local' : 'base';
+    if (remoteBase && (await changesIn(remoteBase))) return 'squash';
+    if (await changesIn(localBase)) return remote ? 'squash-local' : 'squash';
     return null;
+  }
+
+  private writeTree: Promise<boolean> | null = null;
+
+  /** Whether git has `merge-tree --write-tree` (git 2.38 and later). */
+  hasMergeTreeWriteTree(): Promise<boolean> {
+    this.writeTree ??= this.run(process.cwd(), ['version']).then(
+      (out) => {
+        const [major = 0, minor = 0] = (/(\d+)\.(\d+)/.exec(out) ?? []).slice(1).map(Number);
+        return major > 2 || (major === 2 && minor >= 38);
+      },
+      () => false,
+    );
+    return this.writeTree;
   }
 
   /**

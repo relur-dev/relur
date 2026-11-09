@@ -17,6 +17,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 - **Push** goes to the branch the workspace's branch tracks, when it tracks one. When the remote refuses because someone else pushed, the Changes panel offers **Ask Claude to merge** that branch.
 - **Delete workspace** says the branch on the remote stays for a workspace made from an existing branch, and when that branch has commits by someone else, names them before deleting your local copy. A local branch that was there before the workspace is kept unless you tick **Also delete the local branch**.
+- **Squash-merged branches count as merged.** A branch whose pull request was squash-merged has its changes in the base branch but not its commits, so Delete workspace warned about unpushed commits and Home never moved it to **Merged**. Now a branch counts as merged when merging it into its base would change nothing (`git merge-tree`, git 2.38 or later): Delete workspace says **✓ Merged into main (its changes are already there, for example after a squash merge)** and deletes its local branch with it, Home shows it under **Merged**, and **Delete n merged** includes it. With an older git its commits still count as not pushed.
 
 ### Fixed
 

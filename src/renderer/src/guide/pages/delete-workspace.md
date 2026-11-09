@@ -20,17 +20,17 @@ When the worktree and its submodules are clean, **Delete** removes it as git req
 
 ## Merged branches
 
-If you merge the branch yourself, for example with `git merge --ff-only` in your main checkout, its commits are safe in the base branch, so the dialog doesn't warn that they aren't pushed. It says **✓ Merged into main** instead, or **✓ Merged into your local main (not pushed yet)** when only your local main has them. A branch counts as merged when it has commits of its own and they're all in the base branch, on your machine or on the remote: merged, fast-forwarded, or rebased onto it. Squash merges aren't recognised this way; a merged pull request covers them. A new workspace without commits is never merged, and neither is one whose branch only caught up with the base, for example when Claude rebased it onto a newer main before starting: those commits came from main, they aren't the branch's own. The other warnings, such as uncommitted changes, still show.
+If you merge the branch yourself, for example with `git merge --ff-only` in your main checkout, its commits are safe in the base branch, so the dialog doesn't warn that they aren't pushed. It says **✓ Merged into main** instead, or **✓ Merged into your local main (not pushed yet)** when only your local main has them. A branch counts as merged when it has commits of its own and they're all in the base branch, on your machine or on the remote: merged, fast-forwarded, or rebased onto it. It also counts as merged when its changes are already in the base although its commits aren't, as after a pull request was squash-merged: merging it again would change nothing. The dialog then says **✓ Merged into main (its changes are already there, for example after a squash merge)**. This needs git 2.38 or later; with an older git such commits still show as not pushed. A new workspace without commits is never merged, and neither is one whose branch only caught up with the base, for example when Claude rebased it onto a newer main before starting: those commits came from main, they aren't the branch's own. The other warnings, such as uncommitted changes, still show.
 
 ## The branch
 
-The local branch is deleted with the workspace, unless it has unpushed commits (commits in a merged branch don't count): then it's kept unless you tick **Also delete the local branch**. The branch on the remote is never touched.
+The local branch is deleted with the workspace, unless it has unpushed commits (commits in a merged branch don't count): then it's kept unless you tick **Also delete the local branch**. Commits that are on no branch of the remote count as unpushed, also when the branch was never pushed. The branch on the remote is never touched.
 
 For a workspace made from [an existing branch](new-workspace#from-an-existing-branch), the dialog says the branch on the remote stays. When that branch has commits by someone else, such as a colleague's pull request, an amber block names them and shows **Also delete the local branch**, ticked: your local copy goes, their branch and pull request stay. A local branch that was there before the workspace is kept unless you tick the box.
 
 ## Several repositories
 
-A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
+A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, each checked on its own: one repository being merged says nothing about the others, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
 
 ## Teardown
 

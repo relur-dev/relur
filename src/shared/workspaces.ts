@@ -114,13 +114,29 @@ export function workspaceRepo(
  * Where a branch with commits of its own is merged (spec §14.2): `base` when
  * its tip, or every commit's change (`git cherry`), is in `<remote>/<base>`
  * (in the local base for a project without a remote); `local` when only the
- * local base has it, not pushed yet.
+ * local base has it, not pushed yet. `squash` and `squash-local` when its
+ * commits aren't there but merging it would change nothing (`git merge-tree
+ * --write-tree` gives the base's own tree), as after a squash merge.
  */
-export type MergedInto = 'base' | 'local';
+export type MergedInto = 'base' | 'local' | 'squash' | 'squash-local';
 
-/** "Merged into main", "Merged into your local main (not pushed yet)". */
-export const mergedText = (into: MergedInto, base: string) =>
-  into === 'base' ? `Merged into ${base}` : `Merged into your local ${base} (not pushed yet)`;
+/** Whether only the local base has it, not pushed yet. */
+export const mergedLocally = (into: MergedInto | null) =>
+  into === 'local' || into === 'squash-local';
+
+/** "Merged into main", "Merged into your local main (not pushed yet)", and the squash forms. */
+export function mergedText(into: MergedInto, base: string): string {
+  switch (into) {
+    case 'base':
+      return `Merged into ${base}`;
+    case 'local':
+      return `Merged into your local ${base} (not pushed yet)`;
+    case 'squash':
+      return `Merged into ${base} (its changes are already there, for example after a squash merge)`;
+    case 'squash-local':
+      return `Merged into your local ${base} (its changes are already there, not pushed yet)`;
+  }
+}
 
 export const prMerged = (pr: PrStatus | null) =>
   pr?.state === 'merged' || pr?.state === 'likely-merged';

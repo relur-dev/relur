@@ -874,6 +874,44 @@ exec sleep 600
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
 
+    // 8e. Squash-merged (spec §14.2): its commit isn't in main, but merging it
+    // would change nothing, so it is merged, and Delete says why.
+    await create('squash', 'web', 'ABC-10 Squashed');
+    const squashTree = ws.squash?.tree as string;
+    // Two commits: one would equal the squash commit, which `git cherry` already sees.
+    for (const n of [1, 2]) {
+      fs.writeFileSync(path.join(squashTree, `squash-${n}.txt`), 'x\n');
+      fx.git(squashTree, 'add', '-A');
+      fx.git(squashTree, 'commit', '-q', '-m', `Add squash ${n}`);
+    }
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('squash', 'Done');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    await page.waitFor(`${columnOf(id('squash'))} === 'ship'`, 'its commits to ship', 30_000);
+    fx.git(web, 'merge', '-q', '--squash', ws.squash?.branch as string);
+    fx.git(web, 'commit', '-q', '-m', 'Squashed');
+    fx.git(web, 'push', '-q', 'origin', 'main');
+    await page.waitFor(`${columnOf(id('squash'))} === 'merged'`, 'squash-merged', 40_000);
+    await page.eval(`${card(id('squash'))}.focus()`);
+    await pressKey(page, 'Backspace');
+    await page.waitFor(
+      `${dialogText}.includes('Merged into main (its changes are already there, for example after a squash merge)')`,
+      'the squash-merged line',
+    );
+    assert.doesNotMatch(
+      await page.eval<string>(dialogText),
+      /commits? not pushed|Also delete the local branch/,
+    );
+    await submitDialog(page);
+    await page.waitFor(`!${card(id('squash'))}`, 'the card gone', 30_000);
+    assert.equal(
+      fx.git(web, 'branch', '--list', ws.squash?.branch as string),
+      '',
+      'branch deleted',
+    );
+
     // 8d. Columns (spec §6.7): reorder by dragging a header and from its menu,
     // hide and show, the mark for a hidden Needs you, Reset.
     const main = app.main;
