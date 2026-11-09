@@ -4,10 +4,19 @@ The trash icon after the workspace's title, **Delete workspace…** in its **⋯
 
 - uncommitted changes, listed;
 - commits that aren't pushed;
+- changes or commits inside a submodule, named per submodule;
 - a pull request that isn't merged yet;
 - terminals still running.
 
 With warnings the button reads **Delete anyway**, otherwise **Delete**. While there are uncommitted changes or unpushed commits, **Commit and push first** (**Commit first** without a remote) closes the dialog and opens the [Changes panel](finishing-work).
+
+## Submodules
+
+A submodule checked out in the worktree keeps its own history inside the worktree, so deleting the worktree loses whatever only that submodule has: changes you haven't committed there, and commits that aren't on its remote. Each such submodule gets its own warning, for example **Submodule lib: 1 commit not pushed**, and the button reads **Delete anyway**. To keep that work, commit and push it from inside the submodule (`cd lib && git push`) first.
+
+When the worktree and its submodules are clean, **Delete** removes it as git requires for submodules. If anything can't be removed, nothing is deleted: the dialog says why and what to do, the workspace stays as it was, and **Delete anyway** removes it regardless. **Unlink** and **Remove project** check and remove a worktree with submodules the same way.
+
+{{app}} doesn't check submodules out when it creates a workspace; your setup commands can. See [Setup for new workspaces](workspace-setup#setup-and-teardown-commands).
 
 ## Merged branches
 

@@ -159,6 +159,26 @@ export const PR_LABEL: Record<PrStatus['state'], string> = {
 };
 
 /** What deleting one repository's worktree would lose (spec §14.2, §21.6). */
+/**
+ * A checked-out submodule with work that removing its worktree would lose
+ * (spec §14.2): its own git folder lives in the worktree's, so it goes too.
+ */
+export interface SubmoduleWork {
+  /** Its path in the worktree, nested ones as `lib/vendor`. */
+  path: string;
+  /** Its own `git status --porcelain` lines. */
+  uncommitted: string[];
+  /** Commits checked out or on its local branches that aren't on any of its remotes. */
+  unpushed: number;
+}
+
+/**
+ * Whether removing the worktree needs `--force` after "Delete anyway": it
+ * has uncommitted changes, or a submodule has work of its own (spec §14.2).
+ */
+export const needsForce = (c: Pick<RepoDeleteCheck, 'uncommitted' | 'submodules'>) =>
+  c.uncommitted.length > 0 || c.submodules.length > 0;
+
 export interface RepoDeleteCheck {
   projectId: string;
   primary: boolean;
@@ -167,6 +187,8 @@ export interface RepoDeleteCheck {
   uncommitted: string[];
   /** Commits on the branch that aren't on any remote (or, without remotes, on no other branch). */
   unpushed: number;
+  /** Its checked-out submodules with work that removing the worktree would lose (spec §14.2). */
+  submodules: SubmoduleWork[];
   /** The worktree folder is gone (deleted outside the app). */
   worktreeMissing: boolean;
   /** Its pull request is known to be open or a draft. */
@@ -208,6 +230,8 @@ export interface WorkspaceDeleteCheck {
   uncommitted: string[];
   /** Commits on the branch that aren't on any remote (or, without remotes, on no other branch). */
   unpushed: number;
+  /** The main worktree's submodules with work that would be lost. */
+  submodules: SubmoduleWork[];
   /** Running sessions of the workspace. */
   running: number;
   /** The worktree folder is gone (deleted outside the app). */

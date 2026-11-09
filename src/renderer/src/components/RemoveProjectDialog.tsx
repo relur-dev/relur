@@ -2,13 +2,25 @@ import { BRAND } from '@shared/brand';
 import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { glyphFor } from '@shared/status';
-import { branchChoice, type RepoDeleteCheck, type WorkspaceDeleteCheck } from '@shared/workspaces';
+import {
+  branchChoice,
+  needsForce,
+  type RepoDeleteCheck,
+  type WorkspaceDeleteCheck,
+} from '@shared/workspaces';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
 import { StatusGlyph } from '../ui/StatusGlyph';
-import { plural, RepoCard, repoChoice, TrackedBranch, Warning } from './DeleteWorkspaceDialog';
+import {
+  plural,
+  RepoCard,
+  repoChoice,
+  SubmoduleWarnings,
+  TrackedBranch,
+  Warning,
+} from './DeleteWorkspaceDialog';
 import { Modal, ModalFooter } from './Modal';
 
 /** The main repository's part of a workspace's delete check. */
@@ -46,17 +58,18 @@ export function RemoveProjectDialog({
   // Workspaces whose local branch (with unpushed commits) should go too.
   // Undefined until ticked or unticked: the checkbox's default (spec §14.2, §7.6).
   const [deleteBranch, setDeleteBranch] = useState<Record<string, boolean | undefined>>({});
+  // A removal that a worktree refused (spec §14.3) can be forced after confirming.
+  const [refused, setRefused] = useState(false);
   const data = check.data;
   const workspaces = data?.workspaces ?? [];
   const linked = data?.linked ?? [];
   const name = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const remoteOf = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
   const warnings =
-    workspaces.some(({ check: c }) =>
-      c.repos.some((r) => r.uncommitted.length > 0 || r.unpushed > 0),
-    ) ||
-    linked.some(({ check: c }) => c.uncommitted.length > 0 || c.unpushed > 0) ||
-    (data?.runningSessions ?? 0) > 0;
+    workspaces.some(({ check: c }) => c.repos.some((r) => needsForce(r) || r.unpushed > 0)) ||
+    linked.some(({ check: c }) => needsForce(c) || c.unpushed > 0) ||
+    (data?.runningSessions ?? 0) > 0 ||
+    refused;
   const error = check.error ?? remove.error;
 
   return (
@@ -89,26 +102,29 @@ export function RemoveProjectDialog({
         className="text-md"
         onSubmit={(event) => {
           event.preventDefault();
-          remove.mutate({
-            projectId: project.id,
-            workspaces: workspaces.map(({ workspace, check: c }) => ({
-              workspaceId: workspace.id,
-              force: c.uncommitted.length > 0,
-              deleteBranch: repoChoice(mainCheck(c), deleteBranch[workspace.id], false)
-                .deleteBranch,
-              repos: c.repos.map((r) =>
-                repoChoice(
-                  r,
-                  deleteBranch[r.primary ? workspace.id : `${workspace.id}:${r.projectId}`],
-                  false,
+          remove.mutate(
+            {
+              projectId: project.id,
+              workspaces: workspaces.map(({ workspace, check: c }) => ({
+                workspaceId: workspace.id,
+                force: needsForce(c) || refused,
+                deleteBranch: repoChoice(mainCheck(c), deleteBranch[workspace.id], refused)
+                  .deleteBranch,
+                repos: c.repos.map((r) =>
+                  repoChoice(
+                    r,
+                    deleteBranch[r.primary ? workspace.id : `${workspace.id}:${r.projectId}`],
+                    refused,
+                  ),
                 ),
-              ),
-            })),
-            linked: linked.map(({ workspace, check: c }) => ({
-              workspaceId: workspace.id,
-              ...repoChoice(c, deleteBranch[`linked:${workspace.id}`], false),
-            })),
-          });
+              })),
+              linked: linked.map(({ workspace, check: c }) => ({
+                workspaceId: workspace.id,
+                ...repoChoice(c, deleteBranch[`linked:${workspace.id}`], refused),
+              })),
+            },
+            { onError: () => setRefused(true) },
+          );
         }}
       >
         <div className="rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-sm leading-relaxed select-text">
@@ -141,7 +157,7 @@ export function RemoveProjectDialog({
                       </div>
                     ) : null}
                   </div>
-                  {c.uncommitted.length > 0 || c.unpushed > 0 ? (
+                  {needsForce(c) || c.unpushed > 0 ? (
                     <div className="divide-y divide-st-permission/30 border-t border-st-permission/40 bg-st-permission/8">
                       {c.uncommitted.length > 0 ? (
                         <Warning title={plural(c.uncommitted.length, 'uncommitted change')}>
@@ -158,6 +174,7 @@ export function RemoveProjectDialog({
                             : `${workspace.branch} has commits that aren't on any other branch`}
                         </Warning>
                       ) : null}
+                      <SubmoduleWarnings submodules={c.submodules} />
                     </div>
                   ) : null}
                   <TrackedBranch check={main} branch={workspace.branch} className="m-2" />
@@ -214,7 +231,7 @@ export function RemoveProjectDialog({
           >
             {linked.map(({ workspace, check: c }) => {
               const glyph = glyphFor(workspace.state, workspace.unread, false);
-              const dirty = c.uncommitted.length > 0;
+              const dirty = needsForce(c);
               const key = `linked:${workspace.id}`;
               return (
                 <li key={workspace.id} className="rounded-lg border border-line px-3 py-2">
@@ -233,7 +250,11 @@ export function RemoveProjectDialog({
                     <span
                       className={`shrink-0 text-sm ${dirty ? 'text-st-permission' : 'text-fg-muted'}`}
                     >
-                      {dirty ? 'Uncommitted changes' : 'No uncommitted changes'}
+                      {c.submodules.length > 0
+                        ? 'Changes in a submodule'
+                        : dirty
+                          ? 'Uncommitted changes'
+                          : 'No uncommitted changes'}
                     </span>
                   </div>
                   <div className="truncate font-mono text-xs text-fg-muted">
@@ -300,7 +321,9 @@ export function RemoveProjectDialog({
                   ? 'Delete anyway and remove'
                   : 'Delete and remove'
                 : linked.length > 0
-                  ? `Remove and delete ${plural(linked.length, 'worktree')}`
+                  ? refused
+                    ? 'Delete anyway and remove'
+                    : `Remove and delete ${plural(linked.length, 'worktree')}`
                   : `Remove from ${profile.name}`}
           </button>
         </ModalFooter>

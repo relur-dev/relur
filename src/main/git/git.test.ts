@@ -96,11 +96,43 @@ describe('Git', () => {
     expect(await git.unpushedCount(clone, 'task-1', true)).toBe(1);
 
     fs.writeFileSync(path.join(dir, 'dirty.txt'), 'x');
-    await expect(git.removeWorktree(clone, dir, false)).rejects.toBeInstanceOf(GitError);
-    await git.removeWorktree(clone, dir, true);
+    await expect(git.removeWorktree(clone, dir, 'plain')).rejects.toBeInstanceOf(GitError);
+    await git.removeWorktree(clone, dir, 'force');
     expect(fs.existsSync(dir)).toBe(false);
     await git.deleteBranch(clone, 'task-1');
     expect(await git.localBranchExists(clone, 'task-1')).toBe(false);
+  });
+
+  it('finds nested submodules and what git needs to remove their worktree (spec §14.2)', async () => {
+    const allow = ['-c', 'protocol.file.allow=always'];
+    const { origin: inner } = fx.cloneWithRemote('sm-inner');
+    const { origin: outer, clone: outerClone } = fx.cloneWithRemote('sm-outer');
+    fx.git(outerClone, ...allow, 'submodule', 'add', '-q', inner, 'inner');
+    fx.git(outerClone, 'commit', '-q', '-m', 'inner');
+    fx.git(outerClone, 'push', '-q', 'origin', 'main');
+    const { clone } = fx.cloneWithRemote('sm-super');
+    fx.git(clone, ...allow, 'submodule', 'add', '-q', outer, 'deps/outer');
+    fx.git(clone, 'commit', '-q', '-m', 'outer');
+    const dir = path.join(fx.root, 'wt-sm');
+    fx.git(clone, 'worktree', 'add', '-q', '-b', 'sm', dir);
+    // Not checked out yet: nothing to refuse.
+    expect(await git.hasSubmodules(dir)).toBe(false);
+    fx.git(dir, ...allow, 'submodule', 'update', '-q', '--init', '--recursive');
+    expect(await git.checkedOutSubmodules(dir)).toEqual(['deps/outer', 'deps/outer/inner']);
+    expect(await git.submoduleWork(dir)).toEqual([]);
+    fs.writeFileSync(path.join(dir, 'deps', 'outer', 'inner', 'x'), 'x');
+    expect(await git.submoduleWork(dir)).toEqual([
+      { path: 'deps/outer', uncommitted: [' M inner'], unpushed: 0 },
+      { path: 'deps/outer/inner', uncommitted: ['?? x'], unpushed: 0 },
+    ]);
+    fs.rmSync(path.join(dir, 'deps', 'outer', 'inner', 'x'));
+    // After `deinit` git still refuses: its `modules` folder is left behind.
+    fx.git(dir, 'submodule', 'deinit', '-q', '--all');
+    expect(await git.checkedOutSubmodules(dir)).toEqual([]);
+    expect(await git.hasSubmodules(dir)).toBe(true);
+    await expect(git.removeWorktree(clone, dir, 'plain')).rejects.toThrow(/submodules/);
+    await git.removeWorktree(clone, dir, 'submodules');
+    expect(fs.existsSync(dir)).toBe(false);
   });
 
   it('counts commits not on other branches in a repository without remotes', async () => {

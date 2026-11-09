@@ -22,6 +22,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 - **PR commands in a linked repository get that repository's base branch.** Your PR create and status commands ran in a linked repository's worktree but with the primary repository's `RELUR_BASE_BRANCH` and `RELUR_WORKTREE_PATH`, so `gh pr create --base "$RELUR_BASE_BRANCH"` could target the wrong base when the repositories' bases differ. They now get the repository's own.
 - **The PR badge after Create PR shows the new pull request at once.** A PR check that was still running from the push no longer stands in for the one after Create PR.
+- **Deleting a workspace whose repository has submodules works.** Delete stopped with git's "working trees containing submodules cannot be moved or removed" although the dialog had said there was nothing to lose. The check now looks inside every checked-out submodule: uncommitted changes there, and commits that aren't on the submodule's remote, get a warning of their own, such as **Submodule lib: 1 commit not pushed**, and need **Delete anyway**. A clean worktree with clean submodules is removed as git requires. The same holds for **Unlink** and for **Remove project**.
+- **A worktree that can't be removed leaves the workspace as it was.** Every worktree is checked before anything is stopped, so a refusal no longer leaves a workspace half deleted: the dialog says why and what to do, and **Delete anyway** (or **Unlink anyway**) removes it regardless.
 
 ## [0.6.1] - 2026-11-09
 

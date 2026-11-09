@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
-import type { MergedInto } from '@shared/workspaces';
+import type { MergedInto, SubmoduleWork } from '@shared/workspaces';
 import type { Env } from '../env/scrub';
 
 /** The first line of git's error, without `fatal:` or `error:` (for notes). */
@@ -56,6 +57,8 @@ export interface GitWorktree {
   bare: boolean;
   /** Its folder is gone; `git worktree prune` would forget it. */
   prunable: boolean;
+  /** `git worktree lock`ed: a plain remove is refused. */
+  locked: boolean;
 }
 
 /** Parses `git worktree list --porcelain`: blocks of lines, separated by blank lines. */
@@ -74,6 +77,7 @@ export function parseWorktreeList(out: string): GitWorktree[] {
         branch: branch ? branch.replace(/^refs\/heads\//, '') : null,
         bare: lines.includes('bare'),
         prunable: lines.some((l) => l === 'prunable' || l.startsWith('prunable ')),
+        locked: lines.some((l) => l === 'locked' || l.startsWith('locked ')),
       };
     });
 }
@@ -393,8 +397,87 @@ export class Git {
     return null;
   }
 
-  async removeWorktree(repo: string, dir: string, force: boolean): Promise<void> {
-    await this.run(repo, ['worktree', 'remove', ...(force ? ['--force', '--force'] : []), dir]);
+  /**
+   * `git worktree remove` (spec §14.2). `plain` lets git refuse a worktree
+   * with changes; `submodules` is git's one `--force`, which a worktree with
+   * submodules needs, and only for one checked clean first (it would also
+   * drop changes); `force` (twice, for a locked one too) after Delete anyway.
+   */
+  async removeWorktree(
+    repo: string,
+    dir: string,
+    mode: 'plain' | 'submodules' | 'force',
+  ): Promise<void> {
+    const flags = { plain: [], submodules: ['--force'], force: ['--force', '--force'] }[mode];
+    await this.run(repo, ['worktree', 'remove', ...flags, dir]);
+  }
+
+  /**
+   * Whether `git worktree remove` refuses `dir` without `--force` for its
+   * submodules (git 2.17 and later): as git checks, a `modules` folder in the
+   * worktree's git dir (left by `git submodule update`, even after `deinit`),
+   * or a checked-out submodule.
+   */
+  async hasSubmodules(dir: string): Promise<boolean> {
+    const gitDir = (
+      await this.run(dir, ['rev-parse', '--path-format=absolute', '--git-dir'])
+    ).trim();
+    if (fs.existsSync(path.join(gitDir, 'modules'))) return true;
+    return (await this.checkedOutSubmodules(dir)).length > 0;
+  }
+
+  /**
+   * The submodules checked out in `dir`, nested ones too, as paths relative
+   * to it: gitlinks in the index whose folder has a `.git` (git's own test).
+   */
+  async checkedOutSubmodules(dir: string, prefix = ''): Promise<string[]> {
+    const out = await this.run(dir, ['ls-files', '-z', '--stage']);
+    const paths = new Set(
+      out
+        .split('\0')
+        .map((entry) => /^160000 [0-9a-f]+ \d\t(.+)$/s.exec(entry)?.[1])
+        .filter((p): p is string => Boolean(p)),
+    );
+    const found: string[] = [];
+    for (const p of paths) {
+      const sub = path.join(dir, p);
+      if (!fs.existsSync(path.join(sub, '.git'))) continue;
+      found.push(`${prefix}${p}`);
+      found.push(...(await this.checkedOutSubmodules(sub, `${prefix}${p}/`)));
+    }
+    return found;
+  }
+
+  /**
+   * The checked-out submodules of `dir` with work of their own (spec §14.2):
+   * uncommitted changes, or commits (checked out or on a local branch) on
+   * none of the submodule's remote-tracking branches. A submodule git can't
+   * read counts as changed, with git's reason.
+   */
+  async submoduleWork(dir: string): Promise<SubmoduleWork[]> {
+    const work: SubmoduleWork[] = [];
+    for (const sub of await this.checkedOutSubmodules(dir)) {
+      const subDir = path.join(dir, sub);
+      let uncommitted: string[];
+      let unpushed: number;
+      try {
+        uncommitted = await this.status(subDir);
+        const out = await this.run(subDir, [
+          'rev-list',
+          '--count',
+          'HEAD',
+          '--branches',
+          '--not',
+          '--remotes',
+        ]);
+        unpushed = Number(out.trim());
+      } catch (error) {
+        uncommitted = [`can't read it: ${gitReason(error)}`];
+        unpushed = 0;
+      }
+      if (uncommitted.length > 0 || unpushed > 0) work.push({ path: sub, uncommitted, unpushed });
+    }
+    return work;
   }
 
   /** The repository's worktrees (`git worktree list --porcelain`), the main checkout first. */

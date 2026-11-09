@@ -21,6 +21,7 @@ Set them in the project view's **Setup** tab, one command per line, under **Setu
 
 - Setup runs in the new worktree, in the workspace's **Setup** tab, with the workspace's environment. The commands run in order, and the first that fails stops the rest. A setup still running after 15 minutes fails.
 - Claude starts when setup succeeds, or at the same time if **Claude starts** says **together with setup**. To skip setup for one workspace, untick **Run setup, then start Claude with the task brief** in [New workspace](new-workspace).
+- A new worktree's **submodules** are empty: git doesn't check them out when it creates a worktree. If your repository has submodules, add `git submodule update --init --recursive` to the setup commands.
 - Teardown runs when you delete the workspace, for up to two minutes. If it fails, you're told, but the workspace is still deleted.
 - In a workspace across several repositories, each repository runs its own setup and teardown, in its own worktree. See [Tasks across repositories](tasks-across-repositories#setup-in-each-repository).
 

@@ -16,7 +16,7 @@ import { WorkspaceService } from './workspaces';
 vi.mock('electron', () => ({ app: { getLocale: () => 'en-US', getVersion: () => '0.0.0' } }));
 
 describe('parseWorktreeList', () => {
-  it('reads paths, branches, detached, bare and prunable entries', () => {
+  it('reads paths, branches, detached, bare, prunable and locked entries', () => {
     const out = [
       'worktree /r/main',
       'HEAD aaa',
@@ -29,6 +29,7 @@ describe('parseWorktreeList', () => {
       'worktree /r/detached',
       'HEAD ccc',
       'detached',
+      'locked',
       '',
       'worktree /r/gone',
       'HEAD ddd',
@@ -37,16 +38,24 @@ describe('parseWorktreeList', () => {
       '',
     ].join('\n');
     expect(parseWorktreeList(out)).toEqual([
-      { path: '/r/main', head: 'aaa', branch: 'main', bare: false, prunable: false },
+      { path: '/r/main', head: 'aaa', branch: 'main', bare: false, prunable: false, locked: false },
       {
         path: '/r/.worktrees/r/feat-a',
         head: 'bbb',
         branch: 'feat/a',
         bare: false,
         prunable: false,
+        locked: false,
       },
-      { path: '/r/detached', head: 'ccc', branch: null, bare: false, prunable: false },
-      { path: '/r/gone', head: 'ddd', branch: 'gone', bare: false, prunable: true },
+      {
+        path: '/r/detached',
+        head: 'ccc',
+        branch: null,
+        bare: false,
+        prunable: false,
+        locked: true,
+      },
+      { path: '/r/gone', head: 'ddd', branch: 'gone', bare: false, prunable: true, locked: false },
     ]);
     expect(parseWorktreeList('worktree /b\nbare\n')[0]?.bare).toBe(true);
   });

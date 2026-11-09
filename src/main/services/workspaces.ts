@@ -29,6 +29,7 @@ import {
   type RepoDeleteCheck,
   SETUP_FAILED_PREFIX,
   type SetupPlan,
+  type SubmoduleWork,
   setupFailed,
   type Workspace,
   type WorkspaceDeleteCheck,
@@ -154,6 +155,20 @@ async function step<T>(name: string, run: () => Promise<T>): Promise<T> {
     throw new StepError(name, error);
   }
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** What a submodule would lose, as the dialog names it (spec §14.2). */
+export function submoduleText(sub: SubmoduleWork): string {
+  const parts = [
+    sub.uncommitted.length > 0 ? plural(sub.uncommitted.length, 'uncommitted change') : null,
+    sub.unpushed > 0 ? `${plural(sub.unpushed, 'commit')} not pushed` : null,
+  ].filter(Boolean);
+  return `submodule ${sub.path} has ${parts.join(' and ')}`;
+}
+
+/** How a worktree is removed: see `Git.removeWorktree`; `prune` when its folder is gone. */
+type Removal = 'plain' | 'submodules' | 'force' | 'prune';
 
 /** The task file, `<repo dir>/task.md` (spec §7.4). */
 /** The real path, or the path itself when it doesn't exist. */
@@ -1129,7 +1144,7 @@ export class WorkspaceService {
     branch: string,
   ): Promise<void> {
     for (const { repo, worktreePath, madeBranch = true } of created) {
-      await git.removeWorktree(repo, worktreePath, true).catch(() => {});
+      await git.removeWorktree(repo, worktreePath, 'force').catch(() => {});
       if (madeBranch) await git.deleteBranch(repo, branch).catch(() => {});
     }
   }
@@ -1627,6 +1642,7 @@ export class WorkspaceService {
     const workspace = this.workspace(workspaceId);
     const repo = workspaceRepo(workspace, projectId);
     if (!repo || repo.primary) throw new Error("That repository isn't linked to this workspace");
+    await this.removal(workspace, repo, choice.force, 'Unlink anyway');
     const host = this.terminals.host;
     await Promise.all(
       host
@@ -1634,7 +1650,9 @@ export class WorkspaceService {
         .filter((s) => s.workspaceId === workspaceId && s.projectId === projectId)
         .map((s) => host.remove(s.id)),
     );
-    const teardown = await this.removeRepo(workspace, repo, choice);
+    const teardown = await this.teardownRepo(workspace, repo);
+    const removal = await this.removal(workspace, repo, choice.force, 'Unlink anyway');
+    await this.removeRepo(workspace, repo, removal, choice.deleteBranch, 'Unlink anyway');
     this.records.removeRepo(workspaceId, projectId);
     if (this.claudeSession(workspaceId)) await this.restartClaude(workspaceId);
     else await this.setupFinished(workspaceId);
@@ -1650,6 +1668,7 @@ export class WorkspaceService {
       repos,
       uncommitted: main.uncommitted,
       unpushed: main.unpushed,
+      submodules: main.submodules,
       running: this.terminals.host
         .list()
         .filter((s) => s.workspaceId === workspaceId && s.status === 'running').length,
@@ -1694,6 +1713,8 @@ export class WorkspaceService {
         branchExists && !merged
           ? await git.unpushedCount(repoPath, workspace.branch, project.remote !== null)
           : 0,
+      // Their git folders are inside the worktree's: their work goes with it.
+      submodules: worktreeMissing ? [] : await git.submoduleWork(repo.worktreePath),
       worktreeMissing,
       prOpen: repo.pr?.state === 'open' || repo.pr?.state === 'draft',
       merged,
@@ -1704,50 +1725,106 @@ export class WorkspaceService {
   }
 
   /**
-   * One repository's part of deleting (spec §14.2 steps 2–4): teardown
-   * (reported, never blocking), the worktree (`--force` only when the user
-   * confirmed), the local branch when asked (never the remote one).
+   * How a repository's worktree can be removed (spec §14.2), checked before
+   * anything is stopped or torn down and again just before it goes: `force`
+   * only after Delete anyway. Otherwise git's own refusals are found first:
+   * uncommitted changes, a submodule with work of its own, a lock; each
+   * throws with what to do, and nothing is deleted. A clean worktree with
+   * submodules is removed with git's one `--force`, which git requires for it.
+   */
+  private async removal(
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+    force: boolean,
+    /** The dialog's button that forces it, for the message. */
+    anyway = 'Delete anyway',
+  ): Promise<Removal> {
+    if (!fs.existsSync(repo.worktreePath)) return 'prune';
+    if (force) return 'force';
+    const { project, git } = await this.context(repo.projectId);
+    const repoPath = expandHome(project.repoPath);
+    const of = workspace.repos.length > 1 ? ` of ${project.name}` : '';
+    const uncommitted = await git.status(repo.worktreePath);
+    const submodules = await git.submoduleWork(repo.worktreePath);
+    const locked = (await git.listWorktrees(repoPath)).some(
+      (w) => w.locked && realpathOr(w.path) === realpathOr(repo.worktreePath),
+    );
+    const problems = [
+      uncommitted.length > 0 ? `it has ${plural(uncommitted.length, 'uncommitted change')}` : null,
+      ...submodules.map(submoduleText),
+      locked ? 'it is locked (git worktree lock)' : null,
+    ].filter(Boolean);
+    if (problems.length > 0) {
+      throw new Error(
+        `The worktree${of} wasn't deleted: ${problems.join(', ')}. Nothing was removed. Commit and push that work first, or choose ${anyway} to discard it.`,
+      );
+    }
+    return (await git.hasSubmodules(repo.worktreePath)) ? 'submodules' : 'plain';
+  }
+
+  /** One repository's teardown (spec §8.3, §14.2 step 2): reported, never blocking. */
+  private async teardownRepo(
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+  ): Promise<CommandResult | null> {
+    if (!fs.existsSync(repo.worktreePath)) return null;
+    const { project } = await this.context(repo.projectId);
+    const plan = setupPlan(project, repo.worktreePath);
+    if (plan.teardown.length === 0) return null;
+    const of = workspace.repos.length > 1 ? ` (${project.name})` : '';
+    const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, repo.projectId);
+    return runCommands({
+      shell,
+      commands: plan.teardown,
+      cwd: repo.worktreePath,
+      env,
+      timeoutSec: plan.teardownTimeoutSec,
+      label: `Teardown${of}`,
+    });
+  }
+
+  /**
+   * One repository's worktree and branch (spec §14.2 steps 3–4): the
+   * worktree as `removal` found, the local branch when asked (never the
+   * remote one). A refusal by git says what to do; the worktree stays.
    */
   private async removeRepo(
     workspace: Workspace,
     repo: WorkspaceRepo,
-    { force, deleteBranch }: RepoDeleteChoice,
-  ): Promise<CommandResult | null> {
+    removal: Removal,
+    deleteBranch: boolean,
+    anyway = 'Delete anyway',
+  ): Promise<void> {
     const { project, git } = await this.context(repo.projectId);
     const repoPath = expandHome(project.repoPath);
     const of = workspace.repos.length > 1 ? ` (${project.name})` : '';
-    let teardown: CommandResult | null = null;
-    if (fs.existsSync(repo.worktreePath)) {
-      const plan = setupPlan(project, repo.worktreePath);
-      if (plan.teardown.length > 0) {
-        const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, repo.projectId);
-        teardown = await runCommands({
-          shell,
-          commands: plan.teardown,
-          cwd: repo.worktreePath,
-          env,
-          timeoutSec: plan.teardownTimeoutSec,
-          label: `Teardown${of}`,
-        });
-      }
-    }
-    if (fs.existsSync(repo.worktreePath)) {
-      await step(`git worktree remove${of}`, () =>
-        git.removeWorktree(repoPath, repo.worktreePath, force),
-      );
-    } else {
+    if (removal === 'prune') {
       await git.pruneWorktrees(repoPath);
+    } else {
+      try {
+        await git.removeWorktree(repoPath, repo.worktreePath, removal);
+      } catch (error) {
+        const what =
+          removal === 'force'
+            ? 'Check the folder and try again.'
+            : `The worktree is still there: commit and push its work, or choose ${anyway} to force it.`;
+        throw new StepError(
+          `git worktree remove${of}`,
+          new Error(`${error instanceof Error ? error.message.trim() : String(error)}. ${what}`),
+        );
+      }
     }
     if (deleteBranch && (await git.localBranchExists(repoPath, workspace.branch))) {
       await step(`git branch -D${of}`, () => git.deleteBranch(repoPath, workspace.branch));
     }
-    return teardown;
   }
 
   /**
-   * Spec §14.2 for every repository (§21.6): stop the workspace's processes
-   * (SIGTERM, SIGKILL after 5 s), then per repository teardown, worktree and
-   * branch, then archive the record. `force` and `deleteBranch` apply to
+   * Spec §14.2 for every repository (§21.6): first checks that every
+   * worktree can go (`removal`), so a refusal leaves the workspace as it
+   * was; then stops the workspace's processes (SIGTERM, SIGKILL after 5 s),
+   * runs each repository's teardown, checks again, and removes worktrees and
+   * branches, then archives the record. `force` and `deleteBranch` apply to
    * every repository unless `repos` says otherwise for one.
    */
   async delete(
@@ -1759,6 +1836,13 @@ export class WorkspaceService {
     }: RepoDeleteChoice & { repos?: (RepoDeleteChoice & { projectId: string })[] },
   ): Promise<{ teardown: CommandResult | null; teardowns: CommandResult[] }> {
     const workspace = this.workspace(workspaceId);
+    const choices = new Map(repos.map((r) => [r.projectId, r]));
+    // Linked repositories first, so the record keeps the main one until the end.
+    const order = [...linkedRepos(workspace), workspace.repos[0] as WorkspaceRepo].map((repo) => ({
+      repo,
+      choice: choices.get(repo.projectId) ?? { force, deleteBranch },
+    }));
+    for (const { repo, choice } of order) await this.removal(workspace, repo, choice.force);
     this.timings.delete(workspaceId);
     const host = this.terminals.host;
     await Promise.all(
@@ -1768,16 +1852,18 @@ export class WorkspaceService {
         .map((s) => host.remove(s.id)),
     );
     this.afterSetup.delete(workspaceId);
-    const choices = new Map(repos.map((r) => [r.projectId, r]));
     const teardowns: CommandResult[] = [];
-    // Linked repositories first, so the record keeps the main one until the end.
-    for (const repo of [...linkedRepos(workspace), workspace.repos[0] as WorkspaceRepo]) {
-      const teardown = await this.removeRepo(
-        workspace,
-        repo,
-        choices.get(repo.projectId) ?? { force, deleteBranch },
-      );
+    for (const { repo } of order) {
+      const teardown = await this.teardownRepo(workspace, repo);
       if (teardown) teardowns.push(teardown);
+    }
+    // A teardown may have left changes: checked again before anything goes.
+    const removals = [];
+    for (const { repo, choice } of order) {
+      removals.push(await this.removal(workspace, repo, choice.force));
+    }
+    for (const [i, { repo, choice }] of order.entries()) {
+      await this.removeRepo(workspace, repo, removals[i] as Removal, choice.deleteBranch);
       if (!repo.primary) this.records.removeRepo(workspaceId, repo.projectId);
     }
     this.records.archive(workspaceId);
@@ -1848,6 +1934,31 @@ export class WorkspaceService {
         `Couldn't delete ${what}: ${error instanceof Error ? error.message : String(error)}.${done} The project was not removed.`,
       );
     };
+    // Every worktree is checked before any goes, so a refusal deletes nothing (spec §14.3).
+    const checks: [Workspace, WorkspaceRepo, boolean][] = [
+      ...linkedIn.map(({ workspace, repo: r }): [Workspace, WorkspaceRepo, boolean] => [
+        workspace,
+        r,
+        (chosenLinked.get(workspace.id) as RepoDeleteChoice).force,
+      ]),
+      ...workspaces.flatMap((workspace) => {
+        const { force, repos = [] } = chosen.get(workspace.id) as (typeof choices)[number];
+        return workspace.repos.map((r): [Workspace, WorkspaceRepo, boolean] => [
+          workspace,
+          r,
+          repos.find((c) => c.projectId === r.projectId)?.force ?? force,
+        ]);
+      }),
+    ];
+    for (const [workspace, r, force] of checks) {
+      try {
+        await this.removal(workspace, r, force, 'Delete anyway and remove');
+      } catch (error) {
+        throw new Error(
+          `${workspace.name}: ${error instanceof Error ? error.message : String(error)} The project was not removed.`,
+        );
+      }
+    }
     // Its worktrees in other projects' workspaces; those workspaces stay.
     for (const { workspace, repo: linkedRepo } of linkedIn) {
       const choice = chosenLinked.get(workspace.id) as RepoDeleteChoice;

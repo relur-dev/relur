@@ -1708,14 +1708,37 @@ exec sleep 600
 
     const worktree2 = path.join(path.dirname(worktree), 'keep-my-commits');
     fs.writeFileSync(path.join(worktree2, 'work.txt'), 'x');
+    // With a submodule that has a commit of its own: named in the dialog (spec §14.2).
+    const { origin: libOrigin } = fx.cloneWithRemote('e2e-lib', 'main');
+    fx.git(
+      worktree2,
+      '-c',
+      'protocol.file.allow=always',
+      'submodule',
+      'add',
+      '-q',
+      libOrigin,
+      'lib',
+    );
     fx.git(worktree2, 'add', 'work.txt');
     fx.git(worktree2, 'commit', '-q', '-m', 'work in progress');
+    fx.git(path.join(worktree2, 'lib'), 'commit', '-q', '--allow-empty', '-m', 'lib work');
+    fx.git(worktree2, 'commit', '-q', '-am', 'Bump lib');
     await chooseFromNextContextMenu(mainProcess, 'Delete workspace…');
     await openContextMenu(page, 'nav button[title^="Keep my commits"]');
     await page.waitFor(
-      `(${dialogText}).includes('1 commit not pushed') && (${dialogText}).includes('Also delete the local branch')`,
+      `(${dialogText}).includes('2 commits not pushed') && (${dialogText}).includes('Also delete the local branch')`,
       'the unpushed warning and the branch checkbox',
       30_000,
+    );
+    await page.waitFor(
+      `document.querySelector('dialog[open] [data-submodule="lib"]')?.textContent.includes('Submodule lib: 1 commit not pushed')`,
+      'the submodule warning',
+    );
+    assert.equal(
+      await page.eval<boolean>(hasButton('Delete anyway')),
+      true,
+      "a submodule's own commit needs Delete anyway",
     );
     assert.equal(
       await page.eval(`document.querySelector('dialog[open] input[type=checkbox]').checked`),
