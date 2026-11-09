@@ -4,9 +4,15 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-09
+
+### Highlights
+
+**Create a workspace from an existing branch**: someone else's pull request, or an older branch of your own. Pick it from the list or paste its URL, and **Push** updates the existing pull request. The Changes panel shows how far each branch is **behind** its base and whether merging it would **conflict**, with **Ask Claude to merge**. In a workspace across several repositories, **Create n PRs** opens a **pull request in every repository** with work of its own. Workspaces whose repositories contain **submodules** can be deleted, with a warning for anything inside them that would be lost. And **squash-merged branches now count as merged**, on Home and in Delete workspace.
+
 ### Added
 
-- **A workspace from an existing branch.** New workspace has **New branch** (as before) and **Existing branch** at the top. Existing branch lists the project's branches, local and on its remotes, newest first with the last commit's author and date, after fetching every remote; type to filter, or paste a branch's URL or a pull request's URL from GitHub, GitLab or Bitbucket Server. The worktree checks the branch out and tracks the remote one, so **Push** updates the existing pull request. The task's id and title come from the branch name, or from the pull request's title when your PR status command prints a `title`, and stay editable. Bitbucket Cloud doesn't tell git which branch a pull request comes from: paste the branch name shown on the pull request page, or pick it from the list.
+- **A workspace from an existing branch.** New workspace has **New branch** (as before) and **Existing branch** at the top. Existing branch lists the project's branches, local and on its remotes, newest first with the last commit's author and date, after fetching every remote; type to filter, or paste a branch's URL or a pull request's URL from GitHub, GitLab or Bitbucket Server. The worktree checks the branch out and tracks the remote one, so **Push** updates the existing pull request. The task's id and title come from the branch name, or from the pull request's title when your PR status command prints a `title`, and stay editable. Bitbucket Cloud doesn't tell git which branch a pull request comes from: paste the branch name shown on the pull request page, or pick it from the list. A remote on `ssh.bitbucket.org`, where Bitbucket moves Git over SSH from December 10, 2026, counts as `bitbucket.org`, and a remote written with a git `insteadOf` shorthand is compared as git expands it.
 - A branch that's already checked out says where: in a workspace (**Open workspace**), in a worktree (**Open as workspace**), or in your main checkout (**Open project**; Relur never switches your main checkout's branch).
 - With **Also in**, each other project uses the same branch where it has it, and gets it as a new branch from its own base where it doesn't.
 - **Behind and conflicts**: the Changes panel shows how far each workspace's branch is behind its base and whether merging the base would conflict, with **Ask Claude to merge**, which merges and resolves the conflicts without rebasing or force-pushing. While there are conflicts, the workspace's header says **Conflicts with <base>**.
@@ -23,7 +29,6 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 - **PR commands in a linked repository get that repository's base branch.** Your PR create and status commands ran in a linked repository's worktree but with the primary repository's `RELUR_BASE_BRANCH` and `RELUR_WORKTREE_PATH`, so `gh pr create --base "$RELUR_BASE_BRANCH"` could target the wrong base when the repositories' bases differ. They now get the repository's own.
 - **The PR badge after Create PR shows the new pull request at once.** A PR check that was still running from the push no longer stands in for the one after Create PR.
-- **A pasted Bitbucket URL matches a remote on ssh.bitbucket.org.** Bitbucket moves Git over SSH to `ssh.bitbucket.org` (from December 10, 2026), while its pages stay on `bitbucket.org`, so Existing branch refused a pasted branch URL as another repository's once your remote used the new address. The two now count as the same host, and a remote written with a git `insteadOf` shorthand is compared as git expands it.
 - **Delete workspace checks the branch each worktree is on.** If a worktree was switched to another branch than the workspace's, the dialog said "No uncommitted changes or unpushed commits" from the workspace's branch alone. It now says "frontend is on <branch>, not <workspace branch>" and warns about that branch's commits that aren't pushed, in Delete workspace, Unlink, Delete n merged and Remove project. The other branch is kept. Commits on a detached HEAD, which would be lost with the worktree, need **Delete anyway**.
 - **Relur's background git checks no longer get in the way of your git commands.** Reading a worktree's state (`git status`, for the Changes panel and Home) could briefly lock the worktree's index, so a commit, rebase or switch of your own at that moment failed with "Unable to create '…/index.lock': File exists". Those checks now run without optional locks.
 - **Deleting a workspace whose repository has submodules works.** Delete stopped with git's "working trees containing submodules cannot be moved or removed" although the dialog had said there was nothing to lose. The check now looks inside every checked-out submodule: uncommitted changes there, and commits that aren't on the submodule's remote, get a warning of their own, such as **Submodule lib: 1 commit not pushed**, and need **Delete anyway**. A clean worktree with clean submodules is removed as git requires. The same holds for **Unlink** and for **Remove project**.
@@ -223,7 +228,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/relur-dev/relur/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/relur-dev/relur/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/relur-dev/relur/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/relur-dev/relur/compare/v0.4.3...v0.5.0
