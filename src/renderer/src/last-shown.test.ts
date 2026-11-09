@@ -28,6 +28,7 @@ const inWorkspace = (tab: Extract<LastShown['view'], { kind: 'workspace' }>['tab
     tab,
     changes: true,
     responses: false,
+    notes: true,
   },
 });
 
@@ -142,6 +143,7 @@ describe('parseLastShown', () => {
       tab: { kind: 'claude' },
       changes: false,
       responses: false,
+      notes: false,
     });
     expect(
       parseLastShown('{"profileId":"work","view":{"kind":"project","projectId":"web"}}')?.view,

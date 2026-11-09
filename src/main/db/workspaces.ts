@@ -682,11 +682,19 @@ export class WorkspaceRecords {
     return this.list().flatMap((w) => (w.ports ? [w.ports] : []));
   }
 
-  /** Archiving releases its ports (spec §8.4, §14.2). */
+  /** Archiving releases its ports (spec §8.4, §14.2) and deletes its notes (§6.15). */
   archive(id: string, at = new Date()): void {
-    this.prepare(
-      `UPDATE workspaces SET archived_at = ?, status = 'deleted', port_base = NULL, port_count = NULL WHERE id = ?`,
-    ).run(at.toISOString(), id);
+    if (!this.db.open) {
+      console.warn(`state.db is closed; workspace ${id} not archived`);
+      return;
+    }
+    this.db.transaction(() => {
+      this.prepare(
+        `UPDATE workspaces SET archived_at = ?, status = 'deleted', port_base = NULL, port_count = NULL WHERE id = ?`,
+      ).run(at.toISOString(), id);
+      this.prepare('DELETE FROM notes WHERE workspace_id = ?').run(id);
+      this.prepare('DELETE FROM note_sends WHERE workspace_id = ?').run(id);
+    })();
     this.events.emit('change');
   }
 }

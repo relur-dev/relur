@@ -123,6 +123,19 @@ export function App() {
       else next.delete(workspaceId);
       return next;
     });
+  // Workspaces whose Notes panel is open (spec §6.15); off by default.
+  const [notesOpen, setNotesOpen] = useState<Set<string>>(new Set());
+  const showNotes = useCallback(
+    (workspaceId: string, open: boolean) =>
+      setNotesOpen((current) => {
+        if (current.has(workspaceId) === open) return current;
+        const next = new Set(current);
+        if (open) next.add(workspaceId);
+        else next.delete(workspaceId);
+        return next;
+      }),
+    [],
+  );
   // Something that happened and needs reading, such as a teardown that failed;
   // `info` for news that isn't a problem, which goes away by itself.
   // An `action` (such as Open as workspace) keeps it until used or dismissed.
@@ -464,6 +477,7 @@ export function App() {
       showView(at.profileId, next, session?.id);
       if (shown.changes) toggleChanges(workspaceId, true);
       if (shown.responses) requestOnOpen(workspaceId, 'responses');
+      if (shown.notes) showNotes(workspaceId, true);
       if (tab.kind === 'spec') requestOnOpen(workspaceId, 'spec');
       // Shells end with the app: a new one in the same repository.
       if (tab.kind === 'shell') {
@@ -576,6 +590,7 @@ export function App() {
                       : { kind: 'claude' },
                 changes: changesOpen.has(workspace.id),
                 responses: panels.responses,
+                notes: notesOpen.has(workspace.id),
               }
             : view.kind === 'project' && project
               ? {
@@ -1009,6 +1024,8 @@ export function App() {
                       onDelete={() => setDeleting(workspace)}
                       changesOpen={changesOpen.has(workspace.id)}
                       onToggleChanges={() => toggleChanges(workspace.id)}
+                      notesOpen={notesOpen.has(workspace.id)}
+                      onNotesOpen={showNotes}
                       onPanels={onPanels}
                     />
                   ) : profile && project ? (

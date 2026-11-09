@@ -2,8 +2,9 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { editorFor } from '@shared/editor';
-import { boardColumn, QUICK_REPLY_REFUSAL, quickReply } from '@shared/home';
+import { QUICK_REPLY_REFUSAL } from '@shared/home';
 import type { LastWords } from '@shared/last-words';
+import { NOTE_MAX } from '@shared/notes';
 import { answerable, optionKey } from '@shared/question';
 import type { Editor } from '@shared/schemas';
 import {
@@ -26,6 +27,7 @@ import { readResponses, watchTranscript } from '../claude/transcript';
 import { cliInstallInfo, installCli } from '../cli-install';
 import type { ConfigStore } from '../config/store';
 import { showContextMenu } from '../context-menu';
+import type { NoteRecords } from '../db/notes';
 import type { StateDb } from '../db/state-db';
 import type { UsageRecords } from '../db/usage';
 import type { WorkspaceRecords } from '../db/workspaces';
@@ -33,6 +35,7 @@ import type { EditorService } from '../editor/service';
 import type { EnvService } from '../env/service';
 import type { MemoryMonitor } from '../memory/service';
 import type { MenuFeedback, MenuRequest } from '../menu';
+import type { NotesService } from '../notes/service';
 import { contractHome, expandHome } from '../paths';
 import type { RemoteFound, RemoteWatch } from '../projects/remote-watch';
 import { chromiumSandboxOff } from '../sandbox';
@@ -40,6 +43,7 @@ import { openExternalSafe } from '../security';
 import type { CliLinkEvent, CliLinkService } from '../services/cli-link';
 import type { ProfileService } from '../services/profiles';
 import type { ProjectService } from '../services/projects';
+import { replyFacts, replyOffer } from '../services/reply';
 import type { TerminalService } from '../services/terminals';
 import type { WorkspaceService } from '../services/workspaces';
 import { attachToWindow } from '../sessions/electron';
@@ -85,6 +89,9 @@ export interface Services {
   memory: MemoryMonitor;
   /** Suspending idle sessions (spec §9.8). */
   suspend: SuspendService;
+  /** Notes per workspace (spec §6.15). */
+  notes: NotesService;
+  noteRecords: NoteRecords;
   /** The one-time notice that suspension is on by default (spec §9.8). */
   suspendNotice: SuspendDefaultNotice;
   /** Menu items the renderer answers with a dialog. */
@@ -138,6 +145,8 @@ export function createAppRouter({
   memory,
   suspend,
   suspendNotice,
+  notes,
+  noteRecords,
   menuRequests,
   feedback,
   helper,
@@ -147,6 +156,13 @@ export function createAppRouter({
   updates,
 }: Services) {
   const host = terminals.host;
+  const replyDeps = {
+    records: workspaceRecords,
+    decorate: (w: Parameters<typeof workflow.decorate>[0]) => workflow.decorate(w),
+    sessions: () => host.list(),
+    hasDraft: (id: string) => suspend.hasDraft(id),
+  };
+  const noteIds = z.array(z.string().min(1).max(100)).min(1).max(500);
   const sessionId = z.object({ sessionId: z.string().min(1) });
   const projectId = z.object({ projectId: IdSchema });
   const workspaceId = z.object({ workspaceId: z.string().min(1).max(100) });
@@ -763,14 +779,22 @@ export function createAppRouter({
        * Workspaces that haven't been deleted, oldest first, with their
        * workflow status; Awaiting approval at a gate (spec §13.5).
        */
-      list: publicProcedure.query(() => workspaceRecords.list().map((w) => workflow.decorate(w))),
+      list: publicProcedure.query(() => {
+        // Unsent notes, for the mark on Home's Board and List (spec §6.15).
+        const counts = noteRecords.counts();
+        return workspaceRecords
+          .list()
+          .map((w) => ({ ...workflow.decorate(w), notes: counts[w.id] ?? null }));
+      }),
       changes: publicProcedure.subscription(({ signal }) =>
         fromListener((listener) => {
           const offRecords = workspaceRecords.onChange(() => listener(true));
           const offWorkflow = workflow.onChange(() => listener(true));
+          const offNotes = noteRecords.onChange(() => listener(true));
           return () => {
             offRecords();
             offWorkflow();
+            offNotes();
           };
         }, signal),
       ),
@@ -782,23 +806,11 @@ export function createAppRouter({
       quickReply: publicProcedure
         .input(z.object({ workspaceId: IdSchema, text: z.string().trim().min(1).max(20_000) }))
         .mutation(async ({ input }) => {
-          const record = workspaceRecords.get(input.workspaceId);
-          if (!record) throw new Error('This workspace no longer exists');
-          const w = workflow.decorate(record);
-          const claude =
-            host
-              .list()
-              .find(
-                (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status !== 'exited',
-              ) ?? null;
-          // The card's column: what is left to ship decides only between two that both offer it.
-          const offer = quickReply(w, boardColumn(w, null), {
-            claude,
-            draft: claude ? suspend.hasDraft(claude.id) : false,
-            question: cachedConversation(workspaceRecords.transcriptPath(w.id)).pending !== null,
-          });
+          const facts = replyFacts(replyDeps, input.workspaceId);
+          if (!facts) throw new Error('This workspace no longer exists');
+          const offer = replyOffer(facts);
           if (offer !== 'field') throw new Error(QUICK_REPLY_REFUSAL[offer]);
-          await terminals.sendToClaude(w.id, input.text);
+          await terminals.sendToClaude(input.workspaceId, input.text);
         }),
       /**
        * What each of the profile's Board cards shows above its quick reply
@@ -1318,10 +1330,67 @@ export function createAppRouter({
      * workspace's session transcript, read-only (D12). Copying goes through
      * the main-process clipboard.
      */
+    /** Notes per workspace (spec §6.15). */
+    notes: router({
+      /** The panel's items, what held ones wait on, and where each sent prompt is. */
+      list: publicProcedure.input(workspaceId).query(({ input }) => notes.view(input.workspaceId)),
+      changes: publicProcedure.input(workspaceId).subscription(({ input, signal }) =>
+        fromListener<true>((listener) => {
+          const offNotes = noteRecords.onChange((id) => {
+            if (id === input.workspaceId) listener(true);
+          });
+          // What held items wait on follows the workspace's state.
+          const offRecords = workspaceRecords.onChange(() => listener(true));
+          // A sent prompt is found once Claude Code writes it to the transcript.
+          const offTranscript = watchTranscript(
+            () => workspaceRecords.transcriptPath(input.workspaceId),
+            () => listener(true),
+          );
+          return () => {
+            offNotes();
+            offRecords();
+            offTranscript();
+          };
+        }, signal),
+      ),
+      add: publicProcedure
+        .input(workspaceId.extend({ text: z.string().max(NOTE_MAX).default('') }))
+        .mutation(({ input }) => {
+          if (!workspaceRecords.get(input.workspaceId)) {
+            throw new Error('This workspace no longer exists');
+          }
+          return noteRecords.add(input.workspaceId, input.text);
+        }),
+      /** Saved as you type. */
+      setText: publicProcedure
+        .input(z.object({ id: z.string().min(1).max(100), text: z.string().max(NOTE_MAX) }))
+        .mutation(({ input }) => noteRecords.setText(input.id, input.text)),
+      delete: publicProcedure
+        .input(workspaceId.extend({ ids: noteIds }))
+        .mutation(({ input }) => noteRecords.delete(input.workspaceId, input.ids)),
+      sendNow: publicProcedure
+        .input(workspaceId.extend({ ids: noteIds }))
+        .mutation(({ input }) => notes.sendNow(input.workspaceId, input.ids)),
+      /** Send when Claude is done; at once when it already is. */
+      hold: publicProcedure.input(workspaceId.extend({ ids: noteIds })).mutation(({ input }) => {
+        noteRecords.hold(input.workspaceId, input.ids);
+      }),
+      cancel: publicProcedure
+        .input(workspaceId.extend({ ids: noteIds }))
+        .mutation(({ input }) => noteRecords.cancel(input.workspaceId, input.ids)),
+      /** Sent items back to open. */
+      reopen: publicProcedure
+        .input(workspaceId.extend({ ids: noteIds }))
+        .mutation(({ input }) => noteRecords.reopen(input.workspaceId, input.ids)),
+    }),
+
     conversation: router({
       responses: publicProcedure.input(workspaceId).query(({ input }) => {
         const file = workspaceRecords.transcriptPath(input.workspaceId);
-        return (file ? readResponses(file) : []).map((r, index) => ({ index, ...r }));
+        const responses = file ? readResponses(file) : [];
+        // The items an entry was sent from: its "from notes" label (spec §6.15).
+        const fromNotes = notes.entryNotes(input.workspaceId, responses);
+        return responses.map((r, index) => ({ index, ...r, notes: fromNotes.get(index) ?? [] }));
       }),
       /** When the transcript changes (new text, /clear, a resume), while the panel is open. */
       changes: publicProcedure.input(workspaceId).subscription(({ input, signal }) =>

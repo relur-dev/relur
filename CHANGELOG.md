@@ -4,6 +4,13 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Notes for each workspace**: a scratchpad for thoughts while Claude works. **Notes** (⇧⌘K) in a workspace's tab bar opens a panel beside the terminal; **Add note** (⌥⌘N) starts a new item, and each item is saved as you type. Notes are private until sent: Relur keeps them in its own database, never where Claude could read them. They stay across restarts and suspension and are deleted with the workspace; the Delete dialog says how many unsent notes would go.
+- **Send now** types a note into Claude like the Board's quick reply, with the same care: never into a permission request or Claude's question menu, never over a prompt you're typing; a suspended Claude resumes first. **Send when Claude is done** holds it, marked **Queued**, until Claude finishes its turn, and sends it then by itself; it waits on when Claude ends by asking you something, with **Send now** to send it anyway. Tick several notes to send them as one prompt, each its own numbered point.
+- Sent notes move to **Sent** with the time they went, and **View response** opens the Responses panel at Claude's answer, whose entry says **from notes** and leads back. A sent note can be copied, deleted or moved back to the open ones.
+- On Home's Board and List, a small notes mark shows how many notes a workspace has waiting to be sent.
+
 ## [0.6.2] - 2026-11-09
 
 ### Highlights

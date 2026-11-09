@@ -4,7 +4,6 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   memo,
-  type PointerEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -15,7 +14,7 @@ import {
 import type { ConversationAids } from '../terminal/conversation';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, keyHint } from '../ui/controls';
-import { remember } from '../ui/remember';
+import { PANEL_MIN_WIDTH, usePanelWidth } from '../ui/panel-width';
 import { renderDocument, withImages } from './SpecView';
 
 /** Puts the Claude terminal in focus, as Esc in the Changes panel does. */
@@ -25,24 +24,8 @@ const focusTerminal = () =>
 const time = (at: string | null) =>
   at ? new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
 
-/** The side panel's width: dragged by its left edge, kept in this window's storage. */
+/** The side panel's width, kept in this window's storage. */
 const WIDTH_KEY = 'responses-panel-width';
-const MIN_WIDTH = 320;
-/** At most this share of the workspace area. */
-const MAX_SHARE = 0.7;
-
-function savedWidth(): number | null {
-  try {
-    const value = Number(localStorage.getItem(WIDTH_KEY));
-    return Number.isFinite(value) && value >= MIN_WIDTH ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveWidth(width: number): void {
-  remember(WIDTH_KEY, String(Math.round(width)));
-}
 
 /** One of Claude's messages in an entry (spec §6.8). */
 interface Part {
@@ -97,6 +80,8 @@ const ResponseItem = memo(function ResponseItem({
   expanded,
   onToggle,
   onReveal,
+  fromNotes,
+  onShowNotes,
 }: {
   number: number;
   /** All its parts as one Markdown text: what Copy copies. */
@@ -112,6 +97,9 @@ const ResponseItem = memo(function ResponseItem({
   onToggle: (number: number) => void;
   /** Scrolls the terminal to it (classic mode); null where it can't. */
   onReveal: ((text: string) => boolean) | null;
+  /** The notes its prompt was sent from (spec §6.15); empty for any other prompt. */
+  fromNotes: string[];
+  onShowNotes: ((ids: string[]) => void) | null;
 }) {
   const [copied, copy] = useCopy();
   const [lastCopied, copyLast] = useCopy();
@@ -178,6 +166,25 @@ const ResponseItem = memo(function ResponseItem({
         >
           {prompt ? `› ${prompt.replace(/\s+/g, ' ')}` : ''}
         </span>
+        {fromNotes.length > 0 && onShowNotes ? (
+          <button
+            type="button"
+            data-response-from-notes
+            className="shrink-0 rounded-sm px-1 text-xs text-fg-subtle hover:bg-raised hover:text-fg"
+            title={
+              fromNotes.length > 1
+                ? `Sent from ${fromNotes.length} notes; show them`
+                : 'Sent from a note; show it'
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              onShowNotes(fromNotes);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            from notes
+          </button>
+        ) : null}
         {interrupted ? (
           <span
             data-response-interrupted
@@ -285,10 +292,15 @@ export function ResponsesPanel({
   full,
   onToggleFull,
   onClose,
+  onShowNotes = null,
 }: {
   workspaceId: string;
-  /** The entry (0-based) to show at first, expanded: from a Board card (spec §6.7). */
-  entry?: number | null;
+  /**
+   * The entry (0-based) to show, expanded and scrolled to its top: from a
+   * Board card (spec §6.7) or a note's View response (§6.15); `at` tells a new
+   * request for the same entry from the last one.
+   */
+  entry?: { index: number; at: number } | null;
   /** The Claude terminal's aids, to scroll to a response. */
   aids: ConversationAids | null;
   /** Claude is in full-screen mode: nothing to scroll to. */
@@ -300,6 +312,8 @@ export function ResponsesPanel({
   full: boolean;
   onToggleFull: () => void;
   onClose: () => void;
+  /** Opens the Notes panel at these items: an entry's "from notes" label (spec §6.15). */
+  onShowNotes?: ((ids: string[]) => void) | null;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -319,7 +333,7 @@ export function ResponsesPanel({
   const newest = list.length;
   // Every response is collapsed, the newest too, unless toggled (spec §6.8).
   const [toggled, setToggled] = useState<Record<number, boolean>>(() =>
-    entry === null ? {} : { [entry + 1]: true },
+    entry === null ? {} : { [entry.index + 1]: true },
   );
   const isExpanded = (number: number) => toggled[number] ?? false;
   const toggle = useCallback(
@@ -337,8 +351,18 @@ export function ResponsesPanel({
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when full view changes
   useEffect(() => asideRef.current?.focus(), [full]);
   // The entry asked for, once the list has it: in view from its top (spec §6.7).
-  const toEntry = useRef(entry);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the responses change
+  const toEntry = useRef(entry?.index ?? null);
+  const [scrollTick, setScrollTick] = useState(0);
+  // A new request while open (View response, spec §6.15): expanded, then in view.
+  const lastAsked = useRef(entry?.at ?? null);
+  useEffect(() => {
+    if (!entry || entry.at === lastAsked.current) return;
+    lastAsked.current = entry.at;
+    toEntry.current = entry.index;
+    setToggled((current) => ({ ...current, [entry.index + 1]: true }));
+    setScrollTick((n) => n + 1);
+  }, [entry]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the responses change or an entry is asked for
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -350,7 +374,7 @@ export function ResponsesPanel({
       el.scrollTop += item.getBoundingClientRect().top - el.getBoundingClientRect().top;
       atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
     } else if (atEnd.current && wanted === null) el.scrollTop = el.scrollHeight;
-  }, [list]);
+  }, [list, scrollTick]);
   const onScroll = () => {
     const el = scrollRef.current;
     if (el) atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
@@ -373,37 +397,12 @@ export function ResponsesPanel({
     [aids, alternate, full],
   );
 
-  // Its width beside the terminal, between MIN_WIDTH and MAX_SHARE of the area.
-  const [width, setWidth] = useState(() => savedWidth() ?? (narrow ? MIN_WIDTH : 420));
-  const [areaWidth, setAreaWidth] = useState(0);
-  useLayoutEffect(() => {
-    const area = asideRef.current?.parentElement;
-    if (!area) return;
-    const observer = new ResizeObserver(() => setAreaWidth(area.clientWidth));
-    observer.observe(area);
-    setAreaWidth(area.clientWidth);
-    return () => observer.disconnect();
-  }, []);
-  const clamp = (value: number) =>
-    Math.max(MIN_WIDTH, Math.min(value, areaWidth > 0 ? areaWidth * MAX_SHARE : value));
-  const shown = clamp(width);
-  // The drag's latest width, saved on release (the render may not have caught up yet).
-  const drag = useRef<{ x: number; width: number; now: number } | null>(null);
-  const onDragStart = (event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.clientX, width: shown, now: shown };
-  };
-  const onDragMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
-    drag.current.now = clamp(drag.current.width + drag.current.x - event.clientX);
-    setWidth(drag.current.now);
-  };
-  const onDragEnd = () => {
-    if (!drag.current) return;
-    saveWidth(drag.current.now);
-    drag.current = null;
-  };
+  // Its width beside the terminal, dragged by its left edge.
+  const { width: shown, handle } = usePanelWidth(
+    WIDTH_KEY,
+    asideRef,
+    narrow ? PANEL_MIN_WIDTH : 420,
+  );
 
   return (
     <aside
@@ -421,10 +420,7 @@ export function ResponsesPanel({
           data-responses-resize
           title="Drag to resize"
           className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-line-strong/60"
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
+          {...handle}
         />
       )}
       <div className="flex h-[34px] shrink-0 items-center gap-1.5 border-b border-line bg-surface pr-2 pl-3.5">
@@ -496,6 +492,8 @@ export function ResponsesPanel({
                 expanded={isExpanded(r.index + 1)}
                 onToggle={toggle}
                 onReveal={reveal}
+                fromNotes={r.notes}
+                onShowNotes={onShowNotes}
               />
             ))}
           </div>

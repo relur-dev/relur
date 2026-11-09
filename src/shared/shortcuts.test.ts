@@ -69,6 +69,10 @@ describe('shortcuts', () => {
       }
     }
     expect(formatShortcut(SHORTCUTS.responses, true)).toBe('⇧⌘R');
+    expect(formatShortcut(SHORTCUTS.notes, true)).toBe('⇧⌘K');
+    expect(formatShortcut(SHORTCUTS.notes, false)).toBe('Ctrl+Shift+K');
+    expect(formatShortcut(SHORTCUTS.addNote, true)).toBe('⌥⌘N');
+    expect(formatShortcut(SHORTCUTS.addNote, false)).toBe('Ctrl+Alt+N');
     expect(formatShortcut(SHORTCUTS.responsesFullView, true)).toBe('⇧⌘F');
     expect(formatShortcut(SHORTCUTS.changesFullView, true)).toBe('⇧⌘M');
     expect(formatShortcut(SHORTCUTS.changesFullView, false)).toBe('Ctrl+Shift+M');

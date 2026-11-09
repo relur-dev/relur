@@ -91,6 +91,29 @@ const MIGRATIONS: string[] = [
   // Where each repository's branch came from: new, or an existing one (spec §7.6).
   `ALTER TABLE workspaces ADD COLUMN branch_origin TEXT;
    ALTER TABLE workspace_repos ADD COLUMN branch_origin TEXT;`,
+  // Notes per workspace (spec §6.15): its items, and the prompts they went out in.
+  `CREATE TABLE notes (
+     id           TEXT PRIMARY KEY,
+     workspace_id TEXT NOT NULL,
+     position     INTEGER NOT NULL,
+     text         TEXT NOT NULL DEFAULT '',
+     state        TEXT NOT NULL DEFAULT 'open',
+     created_at   TEXT NOT NULL,
+     updated_at   TEXT NOT NULL,
+     held_at      TEXT,
+     send_id      TEXT
+   );
+   CREATE INDEX notes_workspace ON notes (workspace_id);
+   CREATE TABLE note_sends (
+     id              TEXT PRIMARY KEY,
+     workspace_id    TEXT NOT NULL,
+     text            TEXT NOT NULL,
+     sent_at         TEXT NOT NULL,
+     transcript_path TEXT,
+     ref             TEXT,
+     ref_transcript  TEXT
+   );
+   CREATE INDEX note_sends_workspace ON note_sends (workspace_id);`,
 ];
 
 export type StateDb = Database.Database;

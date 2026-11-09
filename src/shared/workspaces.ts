@@ -1,3 +1,4 @@
+import type { NoteCounts } from './notes';
 import type { WorkspaceState } from './status';
 import type { Unfinished } from './unfinished';
 import type { WorkflowInfo } from './workflow';
@@ -63,6 +64,11 @@ export interface Workspace {
    * null without a workflow, missing where it isn't added.
    */
   workflow?: WorkflowInfo | null;
+  /**
+   * Its unsent notes (spec §6.15), added by the main process for Home's mark;
+   * null without any, missing where it isn't added.
+   */
+  notes?: NoteCounts | null;
 }
 
 /** One repository of a workspace (spec §21.1): its own worktree on the workspace's branch. */

@@ -18,6 +18,20 @@ import { Modal, ModalFooter } from './Modal';
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** Unsent notes go with the workspace (spec §6.15, §14.2): said, never blocking. */
+function NotesWarning({ w }: { w: Pick<Workspace, 'notes'> }) {
+  const unsent = w.notes?.unsent ?? 0;
+  if (unsent === 0) return null;
+  return (
+    <div data-delete-notes={unsent}>
+      <Warning title={`${plural(unsent, 'unsent note')} will be deleted`}>
+        Claude never saw {unsent === 1 ? 'it' : 'them'}; copy what you want to keep from the Notes
+        panel first
+      </Warning>
+    </div>
+  );
+}
+
 export function Warning({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="flex gap-2.5 px-3 py-2.5">
@@ -409,12 +423,14 @@ export function DeleteWorkspaceDialog({
   const [alsoDeleteBranch, setAlsoDeleteBranch] = useState<boolean | undefined>(undefined);
   const data = check.data;
   const main = data?.repos.find((r) => r.primary) ?? null;
+  const unsentNotes = (workspace.notes?.unsent ?? 0) > 0;
   const warnings = data
-    ? hasWork(data) || data.checkedOut !== null || data.running > 0 || data.prOpen
+    ? hasWork(data) || data.checkedOut !== null || data.running > 0 || data.prOpen || unsentNotes
     : false;
   const force = (data ? needsForce(data) : false) || refused;
   // Another branch checked out with nothing unpushed is only said.
-  const danger = (data ? hasWork(data) || data.running > 0 || data.prOpen : false) || refused;
+  const danger =
+    (data ? hasWork(data) || data.running > 0 || data.prOpen || unsentNotes : false) || refused;
   const branchBox = main ? branchChoice(main) : { shown: false, ticked: true };
   const deleteBranch = main ? repoChoice(main, alsoDeleteBranch, false).deleteBranch : true;
 
@@ -428,7 +444,10 @@ export function DeleteWorkspaceDialog({
   const repoRemote = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
   const dirty = (data?.repos ?? []).some(hasWork);
   const linkedDanger =
-    (data?.repos ?? []).some((r) => hasWork(r) || r.prOpen) || (data?.running ?? 0) > 0 || refused;
+    (data?.repos ?? []).some((r) => hasWork(r) || r.prOpen) ||
+    (data?.running ?? 0) > 0 ||
+    unsentNotes ||
+    refused;
 
   if (linked) {
     return (
@@ -460,9 +479,12 @@ export function DeleteWorkspaceDialog({
           {check.isPending ? (
             <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
           ) : null}
-          {data && data.running > 0 ? (
-            <div className="rounded-lg border border-st-permission/50 bg-st-permission/8">
-              <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
+          {data && (data.running > 0 || unsentNotes) ? (
+            <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
+              {data.running > 0 ? (
+                <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
+              ) : null}
+              <NotesWarning w={workspace} />
             </div>
           ) : null}
           {(data?.repos ?? []).map((r) => (
@@ -573,6 +595,7 @@ export function DeleteWorkspaceDialog({
             {data.running > 0 ? (
               <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
             ) : null}
+            <NotesWarning w={workspace} />
           </div>
         ) : null}
         {data?.merged ? (
@@ -739,11 +762,14 @@ export function DeleteWorkspacesDialog({
                     {name(w.projectId)}
                   </span>
                 </div>
-                {check && check.running > 0 ? (
-                  <div className="rounded-lg border border-st-permission/50 bg-st-permission/8">
-                    <Warning
-                      title={`${plural(check.running, 'running session')} will be stopped`}
-                    />
+                {check && (check.running > 0 || (w.notes?.unsent ?? 0) > 0) ? (
+                  <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
+                    {check.running > 0 ? (
+                      <Warning
+                        title={`${plural(check.running, 'running session')} will be stopped`}
+                      />
+                    ) : null}
+                    <NotesWarning w={w} />
                   </div>
                 ) : null}
                 {(check?.repos ?? []).map((r) => {

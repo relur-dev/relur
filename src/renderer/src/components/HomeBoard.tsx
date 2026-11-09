@@ -37,6 +37,7 @@ import {
   actionClass,
   type HomeActions,
   type HomeItem,
+  NotesMark,
   type Part,
   runningMark,
   Sep,
@@ -1190,6 +1191,7 @@ function CardBody({
         {w.task.id ? (
           <span className="flex-none font-mono text-[11.5px] text-fg-subtle">{w.task.id}</span>
         ) : null}
+        <NotesMark w={w} />
         <span className="flex-1" />
         {!linkedIn ? (
           <span className="min-w-0 truncate font-mono text-xs text-fg-subtle">{project}</span>

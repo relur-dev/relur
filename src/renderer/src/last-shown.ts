@@ -2,7 +2,7 @@
  * What the window showed when the app quit, shown again at the next start
  * (spec §5, Reopening where you were): the profile (or the Guide over it) and,
  * within it, Home with its tab, a project's view with its tab, or a workspace
- * with its tab and its Changes and Responses panels. Kept in the window's
+ * with its tab and its Changes, Responses and Notes panels. Kept in the window's
  * local storage; anything that no longer exists falls back a step.
  */
 import { WORKSPACES_TAB } from './view';
@@ -24,6 +24,7 @@ export type ShownView =
       tab: ShownTab;
       changes: boolean;
       responses: boolean;
+      notes: boolean;
     };
 
 export interface LastShown {
@@ -64,6 +65,7 @@ function parseView(value: unknown): ShownView {
       tab: parseTab(view.tab),
       changes: view.changes === true,
       responses: view.responses === true,
+      notes: view.notes === true,
     };
   }
   return { kind: 'home', tab: view.tab === 'terminal' ? 'terminal' : 'overview' };

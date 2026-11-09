@@ -73,7 +73,7 @@ describe('readResponses', () => {
         '',
       ].join('\n'),
     );
-    expect(readResponses(file)).toEqual([
+    expect(readResponses(file)).toMatchObject([
       {
         text: 'Looking at it.\n\nFirst the tests.\n\nFound it in `auth.ts`.\n\nFixed **it**.\n\n```ts\nx\n```',
         parts: [
@@ -116,7 +116,7 @@ describe('readResponses', () => {
       ].join('\n'),
     );
     const [first, second] = readResponses(file);
-    expect(first).toEqual({
+    expect(first).toMatchObject({
       text: 'Started them.\n\nThe tests passed.\n\nBoth agents are done.',
       parts: [
         part('Started them.'),
@@ -152,7 +152,7 @@ describe('readResponses', () => {
         assistant('Notes written.', 't3'),
       ].join('\n'),
     );
-    expect(readResponses(file)).toEqual([
+    expect(readResponses(file)).toMatchObject([
       { text: '', parts: [], at: 't1', prompt: 'Format the files', interrupted: false },
       {
         text: 'Writing them.\n\nNotes written.',
@@ -219,7 +219,7 @@ describe('readResponses', () => {
   it('gives a prompt without an answer yet an empty entry, none for a missing file', () => {
     expect(readResponses(path.join(path.dirname(file), 'missing.jsonl'))).toEqual([]);
     fs.writeFileSync(file, user('Hello'));
-    expect(readResponses(file)).toEqual([
+    expect(readResponses(file)).toMatchObject([
       { text: '', parts: [], at: null, prompt: 'Hello', interrupted: false },
     ]);
   });
@@ -259,6 +259,57 @@ const answered = (id: string, answer: string) =>
     ],
     { toolUseResult: { ...QUESTION, answers: { 'Which color do you prefer?': answer } } },
   );
+
+describe('prompt ids and prompts taken in while Claude worked (spec §6.15)', () => {
+  it("gives each entry its prompt's uuid and time, else its line", () => {
+    fs.writeFileSync(
+      file,
+      [
+        user('Fix the login', { uuid: 'u1', origin: { kind: 'human' }, timestamp: 't1' }),
+        assistant([{ type: 'text', text: 'Done.' }], 't2'),
+        user('And now?'),
+      ].join('\n'),
+    );
+    const [first, second] = readResponses(file);
+    expect(first).toMatchObject({ id: 'u1', promptAt: 't1', queued: [] });
+    expect(second).toMatchObject({ id: 'line:3', promptAt: null });
+  });
+
+  it("adds a prompt sent while Claude worked to the running turn's entry, not one of its own", () => {
+    const queued = (prompt: string, extra = {}) =>
+      line({
+        type: 'attachment',
+        uuid: 'q1',
+        timestamp: 't3',
+        attachment: {
+          type: 'queued_command',
+          prompt,
+          commandMode: 'prompt',
+          origin: { kind: 'human' },
+          ...extra,
+        },
+      });
+    fs.writeFileSync(
+      file,
+      [
+        user('Run the tests', { uuid: 'u1', origin: { kind: 'human' }, timestamp: 't1' }),
+        line({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash' }] } }),
+        user([{ type: 'tool_result', content: 'ok' }], { uuid: 'r1' }),
+        queued('Also say <b>BANANA</b>.'),
+        line({ type: 'attachment', uuid: 'x', attachment: { type: 'date', date: 'today' } }),
+        assistant([{ type: 'text', text: 'Passed. BANANA' }], 't4'),
+      ].join('\n'),
+    );
+    const responses = readResponses(file);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      id: 'u1',
+      prompt: 'Run the tests',
+      queued: [{ id: 'q1', text: 'Also say <b>BANANA</b>.', at: 't3' }],
+      text: 'Passed. BANANA',
+    });
+  });
+});
 
 describe('readConversation', () => {
   const asked = '**Color** · Which color do you prefer?\n\n- Red: Choose red\n- Blue: Choose blue';

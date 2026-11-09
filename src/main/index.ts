@@ -17,6 +17,7 @@ import { FinishService, PR_POLL_MS } from './changes/finish';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
 import { awaitLastResponse, readPrompts, shownPrompt } from './claude/transcript';
 import { ConfigStore } from './config/store';
+import { NoteRecords } from './db/notes';
 import { openStateDb } from './db/state-db';
 import { UsageRecords } from './db/usage';
 import { WorkspaceRecords } from './db/workspaces';
@@ -34,6 +35,7 @@ import { parseFixedMemory } from './memory/fixed';
 import { readProcessTable } from './memory/processes';
 import { MemoryMonitor } from './memory/service';
 import { installAppMenu } from './menu';
+import { NotesService } from './notes/service';
 import { markShown, wasShown } from './notices';
 import { appConfigDir, contractHome } from './paths';
 import { RemoteWatch } from './projects/remote-watch';
@@ -666,6 +668,22 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     platform.onShown(() => suspend.checkShown());
     suspend.start();
     atShutdown(() => suspend.stop());
+    // Notes per workspace (spec §6.15): sent through the quick reply's path,
+    // held ones when Claude finishes its turn.
+    const noteRecords = new NoteRecords(db);
+    const notes = new NotesService({
+      notes: noteRecords,
+      records: workspaceRecords,
+      decorate: (w) => workflow.decorate(w),
+      sessions: () => host.list(),
+      hasDraft: (id) => suspend.hasDraft(id),
+      send: (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
+    });
+    status.onConversation(({ workspaceId, event, text }) => {
+      if (event !== 'SessionStart') notes.conversation(workspaceId, event, text);
+    });
+    notes.start();
+    atShutdown(() => notes.stop());
     workspaces.adoptPrefill = (projectId, worktree, branch) =>
       workflow.prefill(projectId, worktree, branch);
     // Worktrees made outside the app, by a skill or by hand (spec §13.6).
@@ -742,6 +760,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       memory: monitor,
       suspend,
       suspendNotice,
+      notes,
+      noteRecords,
       status,
       statusPlatform,
       setup,

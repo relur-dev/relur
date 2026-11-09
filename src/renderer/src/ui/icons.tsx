@@ -28,6 +28,13 @@ export const ResponsesIcon = () => (
   </Icon>
 );
 
+/** Notes: a page with lines. */
+export const NotesIcon = () => (
+  <Icon>
+    <path d="M3.5 2.5h9v11h-9zM5.5 5.5h5M5.5 8h5M5.5 10.5h3" />
+  </Icon>
+);
+
 /** Open in editor: a square with an arrow out of it. */
 export const EditorIcon = () => (
   <Icon>

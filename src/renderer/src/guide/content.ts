@@ -80,7 +80,10 @@ export const SECTIONS: { title: string; pages: string[] }[] = [
     title: 'Status and alerts',
     pages: ['status-glyphs', 'notifications', 'plan-usage', 'memory', 'suspend', 'status-line'],
   },
-  { title: 'Working with Claude', pages: ['copy-response', 'prompt-navigator', 'resume'] },
+  {
+    title: 'Working with Claude',
+    pages: ['copy-response', 'notes', 'prompt-navigator', 'resume'],
+  },
   { title: 'Command line tool', pages: ['cli'] },
   { title: 'Keyboard shortcuts', pages: ['shortcuts'] },
   { title: 'Troubleshooting', pages: ['troubleshooting'] },

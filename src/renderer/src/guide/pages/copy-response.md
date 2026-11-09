@@ -15,6 +15,7 @@ While it works, Claude often writes a few lines, runs tools, then writes more. T
 - The panel follows the conversation: while Claude works, the newest entry grows as each part arrives.
 - When Claude asks you to choose (its question menu), the question is a part of its own under a small **Claude asked** label, with its options and, once you've answered, your answer. Clicking what Claude asked on a [Board card](home#board) opens the panel at that entry.
 - When work Claude ran in the background finishes, Claude carries on by itself. You didn't send a prompt, so what it writes then joins the same entry, under a small **After background work** label.
+- An entry whose prompt you sent from the workspace's [Notes](notes) says **from notes** in its header; click it to see those notes.
 - A conversation you resumed lists its earlier entries too.
 - <kbd>Esc</kbd> closes the panel while you're in it, and so do **×** and <kbd>{{key:responses}}</kbd>; the terminal gets the focus back.
 - Before your first prompt, the panel says **No responses yet**.

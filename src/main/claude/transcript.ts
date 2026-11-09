@@ -34,6 +34,19 @@ export interface TranscriptResponse {
    * wrote nothing after: its text is what Claude got to (spec §6.8).
    */
   interrupted: boolean;
+  /**
+   * Its prompt's transcript id (`uuid`), else `line:<n>` of its line; null
+   * for an entry without a prompt. Notes find their prompt by it (spec §6.15).
+   */
+  id: string | null;
+  /** When its prompt was sent, if the transcript says. */
+  promptAt: string | null;
+  /**
+   * Prompts sent while Claude worked: Claude Code takes them into this turn
+   * (a `queued_command` attachment, checked live with 2.1.321), so they have
+   * no entry of their own (spec §6.15).
+   */
+  queued: { id: string; text: string; at: string | null }[];
 }
 
 const record = (v: unknown): Record<string, unknown> | null =>
@@ -87,6 +100,20 @@ function userTexts(entry: Record<string, unknown>): string[] {
       return p?.type === 'text' && typeof p.text === 'string' ? p.text : null;
     })
     .filter((t) => t !== null);
+}
+
+/**
+ * A prompt the user sent while Claude worked, as Claude Code records it when
+ * it takes it into the running turn: a `queued_command` attachment from a
+ * human (checked live with 2.1.321); null for any other attachment.
+ */
+function queuedPrompt(entry: Record<string, unknown>): string | null {
+  const attachment = record(entry.attachment);
+  if (attachment?.type !== 'queued_command' || typeof attachment.prompt !== 'string') return null;
+  const kind = record(attachment.origin)?.kind;
+  if (kind !== undefined && kind !== 'human') return null;
+  if (attachment.commandMode !== undefined && attachment.commandMode !== 'prompt') return null;
+  return shownPrompt(attachment.prompt) || null;
 }
 
 /** Whether a user entry is a prompt the user sent (not a tool result or app note). */
@@ -250,16 +277,22 @@ export function parseConversation(text: string): Conversation {
     parts: ResponsePart[];
     at: string | null;
     prompt: string | null;
+    id: string | null;
+    promptAt: string | null;
+    queued: TranscriptResponse['queued'];
     /** The message the last part is from; null once something came after it. */
     message: string | null;
     /** A hand-back came since the last part. */
     handBack: boolean;
     interrupted: boolean;
   } | null = null;
-  const open = (prompt: string | null, at: unknown) => ({
+  const open = (prompt: string | null, at: unknown, id: string | null = null) => ({
     parts: [],
     at: typeof at === 'string' ? at : null,
     prompt,
+    id,
+    promptAt: typeof at === 'string' ? at : null,
+    queued: [],
     message: null,
     handBack: false,
     interrupted: false,
@@ -272,11 +305,14 @@ export function parseConversation(text: string): Conversation {
         at: current.at,
         prompt: current.prompt,
         interrupted: current.interrupted,
+        id: current.id,
+        promptAt: current.promptAt,
+        queued: current.queued,
       });
     }
     current = null;
   };
-  for (const line of text.split('\n')) {
+  for (const [lineIndex, line] of text.split('\n').entries()) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown> | null;
     try {
@@ -286,10 +322,19 @@ export function parseConversation(text: string): Conversation {
     }
     if (!entry) continue;
     const prompt = entry.type === 'user' ? promptText(entry) : null;
+    const id = typeof entry.uuid === 'string' ? entry.uuid : `line:${lineIndex + 1}`;
+    const queued = entry.type === 'attachment' ? queuedPrompt(entry) : null;
     if (prompt !== null) {
       close();
-      current = open(prompt, entry.timestamp);
+      current = open(prompt, entry.timestamp, id);
       pending = null;
+    } else if (queued !== null) {
+      current ??= open(null, null);
+      current.queued.push({
+        id,
+        text: queued,
+        at: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+      });
     } else if (entry.type === 'user') {
       // Tool work, or background work handing back: the next text is a part of its own.
       current ??= open(null, null);

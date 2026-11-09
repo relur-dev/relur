@@ -118,6 +118,17 @@ export const SHORTCUTS = {
     label: 'Changes panel: full view or back',
     chords: [{ mod: true, shift: true, code: 'KeyM' }],
   },
+  notes: {
+    group: 'Workspaces',
+    label: 'Show or hide the Notes panel',
+    chords: [{ mod: true, shift: true, code: 'KeyK' }],
+  },
+  addNote: {
+    group: 'Workspaces',
+    label: 'Add a note (opens the Notes panel)',
+    // Ctrl+Alt+N on Linux and Windows: no shell or desktop key there (spec §6.6).
+    chords: [{ mod: true, alt: true, code: 'KeyN' }],
+  },
   changesFileStep: {
     group: 'Workspaces',
     label: 'Changes panel: previous / next file',

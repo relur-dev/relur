@@ -24,12 +24,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationAids, NavigatorState } from '../terminal/conversation';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, isMac, Kbd, keyHint } from '../ui/controls';
-import { ChangesIcon, EditorIcon, ResponsesIcon, TrashIcon } from '../ui/icons';
+import { ChangesIcon, EditorIcon, NotesIcon, ResponsesIcon, TrashIcon } from '../ui/icons';
 import { takeRequest, takeResponseEntry } from '../ui/open-requests';
 import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
 import { LinkRepositoryDialog } from './LinkRepositoryDialog';
+import { NotesPanel } from './NotesPanel';
 import { RepoChips } from './RepoChips';
 import { ResponsesPanel } from './ResponsesPanel';
 import { SessionNote } from './SessionNote';
@@ -209,6 +210,8 @@ export function WorkspaceView({
   onDelete,
   changesOpen,
   onToggleChanges,
+  notesOpen,
+  onNotesOpen,
   onPanels,
 }: {
   profile: Profile;
@@ -228,6 +231,9 @@ export function WorkspaceView({
   /** The Changes panel (spec §6.4), toggled with ⌘⇧D. */
   changesOpen: boolean;
   onToggleChanges: () => void;
+  /** The Notes panel (spec §6.15), toggled with ⇧⌘K; kept open per workspace, as Changes. */
+  notesOpen: boolean;
+  onNotesOpen: (workspaceId: string, open: boolean) => void;
   /** Whether the spec view and the Responses panel are open, remembered for the next start (spec §5). */
   onPanels: (panels: { spec: boolean; responses: boolean }) => void;
 }) {
@@ -238,8 +244,20 @@ export function WorkspaceView({
   // The Responses panel (spec §6.8) and the Claude terminal it scrolls.
   // At start, open as it was when the app quit (spec §5).
   const [responsesOpen, setResponsesOpen] = useState(() => takeRequest(workspace.id, 'responses'));
-  // From a Board card: the entry to show, expanded (spec §6.7).
-  const [responsesEntry] = useState(() => takeResponseEntry(workspace.id));
+  // From a Board card: the entry to show, expanded (spec §6.7); later, from a
+  // note's View response (§6.15).
+  const [responsesEntry, setResponsesEntry] = useState(() => {
+    const index = takeResponseEntry(workspace.id);
+    return index === null ? null : { index, at: Date.now() };
+  });
+  // The Notes panel (spec §6.15), on every tab; Add note's requests, and the
+  // items a Responses entry's "from notes" label shows.
+  const setNotesOpen = useCallback(
+    (open: boolean) => onNotesOpen(workspace.id, open),
+    [onNotesOpen, workspace.id],
+  );
+  const [addNote, setAddNote] = useState(0);
+  const [notesHighlight, setNotesHighlight] = useState<{ ids: string[]; at: number } | null>(null);
   const [responsesFull, setResponsesFull] = useState(false);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
   const [changesFull, setChangesFull] = useState(false);
@@ -373,6 +391,56 @@ export function WorkspaceView({
   useEffect(
     () => onPanels({ spec: showDoc, responses: responsesOpen }),
     [onPanels, showDoc, responsesOpen],
+  );
+  // In a narrow window the Notes and Responses panels replace each other (spec §6.15).
+  const narrowRef = useRef(narrow);
+  narrowRef.current = narrow;
+  const notesOpenRef = useRef(notesOpen);
+  notesOpenRef.current = notesOpen;
+  const toggleNotes = useCallback(() => {
+    const open = !notesOpenRef.current;
+    if (open && narrowRef.current) setResponsesOpen(false);
+    setNotesOpen(open);
+  }, [setNotesOpen]);
+  // ⇧⌘K shows or hides the Notes panel; ⌥⌘N opens it with a new item (spec §6.6).
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => {
+      const toggle = matchShortcut('notes', e, isMac) !== -1;
+      const add = matchShortcut('addNote', e, isMac) !== -1;
+      if (!toggle && !add) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (toggle) {
+        toggleNotes();
+        return;
+      }
+      if (narrowRef.current) setResponsesOpen(false);
+      setNotesOpen(true);
+      setAddNote((n) => n + 1);
+    };
+    window.addEventListener('keydown', listener, true);
+    return () => window.removeEventListener('keydown', listener, true);
+  }, [toggleNotes, setNotesOpen]);
+  // A sent note's View response: the Claude tab with the Responses panel at its entry.
+  const claudeSession = sessions.find((s) => s.kind === 'claude') ?? null;
+  const viewResponse = (index: number) => {
+    if (claudeSession && active?.id !== claudeSession.id) onSelect(claudeSession);
+    setDocShown(false);
+    if (narrow) setNotesOpen(false);
+    setResponsesOpen(true);
+    setResponsesFull(false);
+    setChangesFull(false);
+    setResponsesEntry({ index, at: Date.now() });
+  };
+  // A Responses entry's "from notes" label: the Notes panel at its items.
+  const showNotes = useCallback(
+    (ids: string[]) => {
+      if (narrowRef.current) setResponsesOpen(false);
+      setNotesOpen(true);
+      setNotesHighlight({ ids, at: Date.now() });
+    },
+    [setNotesOpen],
   );
   // ⌘⇧↵ at a gate (spec §13.5): the Claude terminal, for the answer the gate waits for.
   useEffect(() => {
@@ -653,13 +721,33 @@ export function WorkspaceView({
           // The workspace's views (spec §6.2): Responses on a Claude tab, Open in
           // editor and Changes; icons with tooltips in a narrow window.
           <div data-view-buttons className="flex items-center gap-1">
+            <button
+              type="button"
+              data-notes-toggle
+              className={
+                narrow
+                  ? `${iconButton} w-auto gap-1 px-1 aria-pressed:bg-raised`
+                  : button('ghost', 'sm')
+              }
+              aria-pressed={notesOpen}
+              aria-label={`Notes${workspace.notes?.unsent ? `, ${workspace.notes.unsent} unsent` : ''}`}
+              title={`Notes: thoughts for Claude, sent when you're ready (${keyHint('notes')}; ${keyHint('addNote')} adds one)`}
+              onClick={toggleNotes}
+            >
+              {narrow ? <NotesIcon /> : 'Notes'}
+              <span className="font-mono text-xs text-fg-subtle">
+                {workspace.notes?.unsent ? workspace.notes.unsent : ''}
+              </span>
+              {narrow ? null : <Kbd>{keyHint('notes')}</Kbd>}
+            </button>
             {active?.kind === 'claude' && !showDoc ? (
               <ResponsesControls
                 workspaceId={workspace.id}
                 open={responsesOpen}
                 compact={narrow}
                 onToggle={() => {
-                  setResponsesOpen((open) => !open);
+                  if (!responsesOpen && narrow) setNotesOpen(false);
+                  setResponsesOpen(!responsesOpen);
                   setResponsesFull(false);
                 }}
                 onToggleFull={() => {
@@ -863,6 +951,17 @@ export function WorkspaceView({
               setResponsesOpen(false);
               setResponsesFull(false);
             }}
+            onShowNotes={showNotes}
+          />
+        ) : null}
+        {notesOpen && !(responsesShown && responsesFull) && !(changesOpen && changesFull) ? (
+          <NotesPanel
+            workspaceId={workspace.id}
+            narrow={narrow}
+            addRequest={addNote}
+            highlight={notesHighlight}
+            onViewResponse={viewResponse}
+            onClose={() => setNotesOpen(false)}
           />
         ) : null}
         {changesOpen && !(responsesShown && responsesFull) ? (

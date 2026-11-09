@@ -27,6 +27,7 @@ import { type Workspace, workspaceMerged } from '@shared/workspaces';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
+import { NotesIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
 import { GateAnswer } from './WorkflowViews';
 
@@ -144,6 +145,30 @@ export const TONE: Record<NonNullable<Part['tone']>, string> = {
 export function runningMark(w: Pick<Workspace, 'state' | 'background'>): Part | null {
   const note = w.state === 'done' ? backgroundNote(w.state, w.background) : null;
   return note ? { text: `${w.background} running`, tone: 'quiet', title: note } : null;
+}
+
+/**
+ * A workspace with unsent notes (spec §6.15): a small notes mark with their
+ * count beside its title on the Board and the List; nothing without any.
+ */
+export function NotesMark({ w }: { w: Pick<Workspace, 'notes'> }): ReactNode {
+  const counts = w.notes;
+  if (!counts || counts.unsent === 0) return null;
+  const title = `${counts.unsent} unsent ${counts.unsent === 1 ? 'note' : 'notes'}${
+    counts.held > 0 ? `, ${counts.held} queued for when Claude is done` : ''
+  }`;
+  return (
+    <span
+      data-notes-mark={counts.unsent}
+      role="img"
+      title={title}
+      aria-label={title}
+      className="inline-flex flex-none items-center gap-0.5 self-center font-mono text-2xs text-fg-subtle"
+    >
+      <NotesIcon />
+      {counts.unsent}
+    </span>
+  );
 }
 
 /** What a row (List) or card (Board) shows for a workspace in a section. */

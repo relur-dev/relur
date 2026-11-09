@@ -18,6 +18,7 @@ import { useSuspended } from '../ui/suspended';
 import {
   actionClass,
   type HomeActions,
+  NotesMark,
   ring,
   Sep,
   TONE,
@@ -126,6 +127,7 @@ export function HomeOverview({
             >
               {w.task.title || w.name}
             </span>
+            <NotesMark w={w} />
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5 overflow-hidden text-sm whitespace-nowrap text-fg-muted">
             <span className="flex-none font-mono text-[11.5px] text-fg-subtle">
