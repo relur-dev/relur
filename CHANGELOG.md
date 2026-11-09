@@ -4,6 +4,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-09
+
 ### Fixed
 
 - **A question from Claude no longer reads as a permission request.** When Claude asks you to choose in its question menu, Claude Code reports it like a permission request, so its workspace said **Needs permission**. It now says **Asked a question**, with a pink **?**, in the sidebar, on Home's list and on the Board, and counts toward **Needs you**'s color as waiting for input. Its notification says "asked a question" and plays the **Waiting for input** sound. A real permission request is unchanged.
@@ -196,7 +198,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/relur-dev/relur/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/relur-dev/relur/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/relur-dev/relur/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/relur-dev/relur/compare/v0.4.2...v0.4.3
