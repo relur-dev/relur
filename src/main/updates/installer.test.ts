@@ -114,6 +114,28 @@ describe('downloadFile', () => {
       }),
     ).rejects.toThrow('Not an https link');
   });
+
+  it('stops while a piece is being written, without an error after it, and keeps nothing', async () => {
+    files['/big'] = Buffer.alloc(64 * 1024);
+    slow = true;
+    const file = path.join(dir, 'big');
+    const abort = new AbortController();
+    // Cancel right after a piece went to the file, while its write is still under way.
+    await expect(
+      downloadFile(`${base}/big`, file, {
+        userAgent: 'test',
+        signal: abort.signal,
+        allowHttp: true,
+        onProgress: ({ received }) => {
+          if (received >= 4 * 1024) abort.abort();
+        },
+      }),
+    ).rejects.toThrow();
+    // An error from the destroyed stream would surface as an uncaught exception here.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.existsSync(`${file}.part`)).toBe(false);
+  });
 });
 
 describe('UpdateInstaller', () => {

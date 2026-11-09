@@ -84,7 +84,12 @@ export async function downloadFile(
     if (total !== null && received !== total) throw new Error('The download was cut short');
     fs.renameSync(part, file);
   } catch (error) {
+    // A piece may still be being written: the stream reports it as an error
+    // once destroyed, which is expected here, and the part is removed only
+    // after the file is closed.
+    out.on('error', () => {});
     out.destroy();
+    if (!out.closed) await new Promise<void>((r) => out.once('close', () => r()));
     fs.rmSync(part, { force: true });
     throw error;
   }
