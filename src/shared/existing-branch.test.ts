@@ -100,6 +100,18 @@ describe('remoteRepo', () => {
     });
   });
 
+  it('reads ssh.bitbucket.org as bitbucket.org, in both forms (spec §7.6)', () => {
+    const cloud = { host: 'bitbucket.org', repo: 'shop' };
+    expect(remoteRepo('git@ssh.bitbucket.org:acme/shop.git')).toEqual(cloud);
+    expect(remoteRepo('ssh://git@ssh.bitbucket.org/acme/shop.git')).toEqual(cloud);
+    expect(remoteRepo('git@bitbucket.org:acme/shop.git')).toEqual(cloud);
+    expect(remoteRepo('https://ana@bitbucket.org/acme/shop.git')).toEqual(cloud);
+    // A pasted web URL is on bitbucket.org, and compares equal with either.
+    expect(parseBranchUrl('https://bitbucket.org/acme/shop/branch/x')).toMatchObject(cloud);
+    // Other subdomains stay apart.
+    expect(remoteRepo('git@ssh.github.com:acme/shop.git')?.host).toBe('ssh.github.com');
+  });
+
   it('is null for local paths, which no web URL can be compared with', () => {
     expect(remoteRepo('/tmp/shop-origin.git')).toBeNull();
     expect(remoteRepo('file:///tmp/shop-origin.git')).toBeNull();

@@ -62,7 +62,7 @@ You can also paste a URL instead:
 - **A pull request's URL**, from GitHub, GitLab or Bitbucket Server: {{app}} asks the remote which commit the pull request is at and picks the branch that has it.
 - **A Bitbucket Cloud pull request's URL** can't be used this way: Bitbucket Cloud doesn't tell git which branch a pull request comes from. The dialog says so; copy the branch name shown at the top of the pull request page and paste that, or pick the branch from the list. The same goes for a pull request from a fork, whose branch isn't on your remote.
 
-A URL of another repository than the project's remote is refused, and the dialog says which repository it's for.
+A URL of another repository than the project's remote is refused, and the dialog says which repository it's for. A remote at `ssh.bitbucket.org`, Bitbucket's new address for Git over SSH, matches the `bitbucket.org` URLs you paste, and a remote written with a git `insteadOf` shorthand is compared as git expands it.
 
 ### The task
 

@@ -240,6 +240,20 @@ describe('a workspace from an existing branch (spec §7.6)', () => {
       message:
         "Bitbucket Cloud doesn't tell git which branch pull request #3 comes from. Copy the branch name shown at the top of the pull request page and paste it here, or pick the branch from the list.",
     });
+    // Bitbucket's Git over SSH host, ssh.bitbucket.org, is bitbucket.org's web pages.
+    const pasted = 'https://bitbucket.org/acme/api/branch/feature/login';
+    const found = { ok: true, branch: 'feature/login', remote: 'origin', prUrl: null };
+    fx.git(api(), 'remote', 'set-url', 'origin', 'git@ssh.bitbucket.org:acme/api.git');
+    expect(await workspaces.resolveBranchUrl('api', pasted)).toEqual(found);
+    fx.git(api(), 'remote', 'set-url', 'origin', 'ssh://git@ssh.bitbucket.org/acme/api.git');
+    expect(await workspaces.resolveBranchUrl('api', pasted)).toEqual(found);
+    // A remote written with the user's insteadOf shorthand is compared as git expands it.
+    fx.git(api(), 'remote', 'set-url', 'origin', 'bb:acme/api.git');
+    fx.git(api(), 'config', 'url.git@ssh.bitbucket.org:.insteadOf', 'bb:');
+    expect(await workspaces.resolveBranchUrl('api', pasted)).toEqual(found);
+    fx.git(api(), 'config', 'url.git@bitbucket.org:.insteadOf', 'bbo:');
+    fx.git(api(), 'remote', 'set-url', 'origin', 'bbo:acme/api.git');
+    expect(await workspaces.resolveBranchUrl('api', pasted)).toEqual(found);
     // A URL of another repository than the remote's.
     fx.git(api(), 'remote', 'set-url', 'origin', 'git@github.com:acme/api.git');
     expect(

@@ -631,7 +631,10 @@ export class Git {
     });
   }
 
-  /** The remote's URL, or null when it has none. */
+  /**
+   * A remote's URL as git uses it: `git remote get-url` expands the user's
+   * `url.<base>.insteadOf` rewrites (spec §7.6). Null without that remote.
+   */
   async remoteUrl(repo: string, remote: string): Promise<string | null> {
     return (await this.tryRun(repo, ['remote', 'get-url', remote]))?.trim() || null;
   }

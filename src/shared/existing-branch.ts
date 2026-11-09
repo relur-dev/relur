@@ -61,7 +61,18 @@ const decode = (part: string): string => {
 const prefixes = (parts: string[]): string[] =>
   parts.map((_, i) => parts.slice(0, parts.length - i).join('/')).filter(Boolean);
 
-const normalHost = (host: string) => host.toLowerCase().replace(/^www\./, '');
+/**
+ * Hosts that are one site under another name (spec §7.6): Bitbucket Cloud
+ * moves Git over SSH to ssh.bitbucket.org (from December 10, 2026), while
+ * its web pages stay on bitbucket.org.
+ */
+const HOST_ALIASES: Record<string, string> = { 'ssh.bitbucket.org': 'bitbucket.org' };
+
+/** A host to compare: lowercase, without `www.`, an alias as its site. */
+const normalHost = (host: string) => {
+  const name = host.toLowerCase().replace(/^www\./, '');
+  return HOST_ALIASES[name] ?? name;
+};
 const repoName = (name: string | undefined) => (name ?? '').toLowerCase().replace(/\.git$/, '');
 
 /**
