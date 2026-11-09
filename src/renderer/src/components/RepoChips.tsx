@@ -15,7 +15,10 @@ export interface RepoActions {
 
 const GAP = 6;
 
-/** The primary repository: name, primary tag, `branch ← base`, unpushed commits, a failed setup. */
+/**
+ * The primary repository: name, primary tag, `branch ← base`, unpushed
+ * commits, a failed setup and its PR (spec §21.4).
+ */
 function PrimaryChip({
   repo,
   name,
@@ -33,7 +36,11 @@ function PrimaryChip({
   return (
     <span
       data-repo-chip={copy ? undefined : repo.projectId}
-      title={repo.worktreePath}
+      title={
+        repo.pr
+          ? `${repo.worktreePath}\n${PR_LABEL[repo.pr.state]}${repo.pr.url ? ` · ${repo.pr.url}` : ''}`
+          : repo.worktreePath
+      }
       className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-line bg-canvas px-2 font-mono text-sm select-text"
     >
       <span className="font-medium text-fg">{name}</span>
@@ -43,6 +50,22 @@ function PrimaryChip({
       </span>
       {unpushed > 0 ? <span className="text-fg-muted">↑{unpushed}</span> : null}
       {repo.setupError ? <span className="text-st-error">✕ setup failed</span> : null}
+      {repo.pr ? <PrMark repo={repo} /> : null}
+    </span>
+  );
+}
+
+/** "PR" coloured by its pull request's state (spec §21.4). */
+function PrMark({ repo }: { repo: WorkspaceRepo }) {
+  if (!repo.pr) return null;
+  return (
+    <span
+      data-chip-mark={`pr-${repo.pr.state}`}
+      role="img"
+      className={`text-xs ${prTone(repo.pr.state)}`}
+      aria-label={PR_LABEL[repo.pr.state]}
+    >
+      PR
     </span>
   );
 }
@@ -86,16 +109,7 @@ function Marks({ repo, running }: { repo: WorkspaceRepo; running: boolean }) {
           ◌
         </span>
       ) : null}
-      {repo.pr ? (
-        <span
-          data-chip-mark={`pr-${repo.pr.state}`}
-          role="img"
-          className={`text-xs ${prTone(repo.pr.state)}`}
-          aria-label={PR_LABEL[repo.pr.state]}
-        >
-          PR
-        </span>
-      ) : null}
+      <PrMark repo={repo} />
     </>
   );
 }

@@ -1,7 +1,8 @@
 /**
  * End-to-end test of Home (spec §6.7): its Overview and Terminal tabs. Every
  * section of the Overview with its actions (Open, Review and a gate's answer,
- * Commit…, Push, View PR, Delete and Delete n merged workspaces), Show all,
+ * Commit…, Push, View PR, Delete and Delete n merged workspaces), Create PR
+ * and Create PRs… for repositories without a PR, View PRs with several, Show all,
  * the keyboard (↑↓ across sections, ↵, Tab to a row's actions, hover actions
  * on focus), At a glance, the empty states (All clear, Add your first
  * project), and the Terminal tab (⌃1 ⌃2, ⌘L, ⌘0). Unfinished rows are
@@ -19,6 +20,7 @@ import { SEED_CONFIG } from '../src/main/test-support/seed-config';
 import { envVar } from '../src/shared/brand';
 import {
   CMD,
+  chooseFromNextContextMenu,
   clickButtonText,
   clickLabel,
   dialogText,
@@ -57,6 +59,8 @@ async function main() {
   try {
     const { origin, clone: web } = fx.cloneWithRemote('web', 'main');
     const api = fx.localRepo('api');
+    // Linked into a web workspace for Create PRs (spec §21.5).
+    const { origin: libOrigin, clone: lib } = fx.cloneWithRemote('lib', 'main');
     fs.writeFileSync(path.join(fx.root, '.zshrc'), '');
     // A stand-in for Claude: passes the setup check, runs SessionStart, notes
     // its workspace and worktree, turns typed words into hooks and records
@@ -128,9 +132,10 @@ exec sleep 600
                     { value: 'done', label: 'Done', kind: 'final' },
                   ],
                 },
-                // The PR status per branch, from a file the test writes (spec §12.3).
+                // The PR status per branch, from a file the test writes (spec
+                // §12.3); per repository (its project's folder) when there is one.
                 pr: {
-                  statusCommand: `cat "$HOME/pr-$${envVar('BRANCH')}" 2>/dev/null || true`,
+                  statusCommand: `p=$(basename "$(dirname "$PWD")"); cat "$HOME/pr-$p-$${envVar('BRANCH')}" 2>/dev/null || cat "$HOME/pr-$${envVar('BRANCH')}" 2>/dev/null || true`,
                 },
               }
             : {}),
@@ -145,6 +150,14 @@ exec sleep 600
             baseBranch: 'main',
           },
           { id: 'api', profileId: 'work', name: 'api', repoPath: api, remote: null },
+          {
+            id: 'lib',
+            profileId: 'work',
+            name: 'lib',
+            repoPath: lib,
+            remote: 'origin',
+            baseBranch: 'main',
+          },
         ],
       }),
     );
@@ -231,10 +244,15 @@ exec sleep 600
     // 3. Workspaces in every state. Each is created with New workspace; the
     // fake Claude says which workspace and worktree it runs in.
     const ws: Record<string, { id: string; tree: string; branch: string }> = {};
-    const create = async (key: string, project: string, task: string) => {
+    const create = async (key: string, project: string, task: string, alsoIn: string[] = []) => {
       const before = new Set(fs.readdirSync(fx.root).filter((f) => f.startsWith('tree-')));
       await clickLabel(page, `New workspace in ${project}`);
       await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
+      for (const name of alsoIn) {
+        await page.eval(
+          `[...document.querySelectorAll('[data-also-in] label')].find((l) => l.textContent.includes(${JSON.stringify(name)})).querySelector('input').click()`,
+        );
+      }
       await typeInField(page, '#ws-task', task, false);
       await sleep(600);
       await submitDialog(page);
@@ -548,6 +566,111 @@ exec sleep 600
       assert.equal(fs.existsSync(ws[key]?.tree as string), false, `${key}'s worktree is gone`);
     }
     await screenshot(page, screenshotDir, 'h7-after-delete.png');
+
+    // 9. Pushed without a pull request (spec §6.7): the profile has a PR status
+    // command, so it stays under Ready to ship. Create PR from Home asks Claude.
+    await create('nopr', 'web', 'ABC-30 No PR yet');
+    commitIn('nopr', 'nopr.txt');
+    await typeInTerminal(page, 'stop');
+    await waitState('nopr', 'Done');
+    await home();
+    const nopr = homeRow(ws.nopr?.id as string);
+    await page.waitFor(`/1 commit not pushed/.test(${nopr}?.innerText ?? '')`, 'not pushed');
+    await page.eval(`${nopr}.querySelector('[data-home-action=push]').click()`);
+    await page.waitFor(
+      `/Pushed, no PR yet/.test(${nopr}?.innerText ?? '') && !!${nopr}.querySelector('[data-home-action=create-pr]')`,
+      'Pushed, no PR yet',
+      30_000,
+    );
+    await page.eval(`${nopr}.querySelector('[data-home-action=create-pr]').click()`);
+    assert.match(
+      await waitForFile(path.join(fx.root, `input-${ws.nopr?.id}.txt`), {
+        until: /Open a pull request/,
+      }),
+      /Open a pull request from this branch into main\. Title: "ABC-30: No PR yet"/,
+    );
+
+    // A linked workspace in web and lib, both pushed: "2 repositories without
+    // a PR", Create PRs… opens the Changes panel, where Create 2 PRs asks
+    // Claude once for both; then "2 PRs open" and View PRs' menu (spec §21.5).
+    await create('linked', 'web', 'ABC-40 Shared search', ['lib']);
+    const linked = ws.linked as { id: string; tree: string; branch: string };
+    const libTree = path.join(path.dirname(path.dirname(linked.tree)), 'lib', linked.branch);
+    for (const tree of [linked.tree, libTree]) {
+      fs.writeFileSync(path.join(tree, 'search.txt'), 'search\n');
+      fx.git(tree, 'add', '-A');
+      fx.git(tree, 'commit', '-q', '-m', 'Add search');
+      fx.git(tree, 'push', '-q', '-u', 'origin', linked.branch);
+    }
+    assert.ok(fx.git(libOrigin, 'rev-parse', linked.branch).trim(), 'lib pushed');
+    await typeInTerminal(page, 'stop');
+    await waitState('linked', 'Done');
+    await home();
+    const linkedRow = homeRow(linked.id);
+    await page.waitFor(
+      `/2 repositories without a PR/.test(${linkedRow}?.innerText ?? '')`,
+      '2 repositories without a PR',
+      30_000,
+    );
+    assert.equal(
+      await page.eval(`${linkedRow}.querySelector('[data-home-action=create-pr]').textContent`),
+      'Create PRs…',
+    );
+    await page.eval(`${linkedRow}.querySelector('[data-home-action=create-pr]').click()`);
+    const createAll = `document.querySelector('[data-create-all-prs]')`;
+    await page.waitFor(
+      `${createAll}?.textContent === 'Create 2 PRs' && !${createAll}.disabled`,
+      'Create 2 PRs in the Changes panel',
+      20_000,
+    );
+    await page.eval(`${createAll}.click()`);
+    const allAsk = await waitForFile(path.join(fx.root, `input-${linked.id}.txt`), {
+      until: /link the pull requests to each other/,
+    });
+    assert.match(
+      allAsk,
+      new RegExp(`1\\. In the web repository, whose worktree is ${linked.tree}`),
+    );
+    assert.match(allAsk, new RegExp(`2\\. In the lib repository, whose worktree is ${libTree}`));
+    await page.waitFor(
+      `/Sent to Claude: it opens the pull requests in web, lib/.test(document.querySelector('[data-create-all-note]')?.innerText ?? '')`,
+      'the outcome',
+    );
+    // Claude opened them; the status command finds each repository's own.
+    for (const [repo, n] of [
+      ['web', 41],
+      ['lib', 5],
+    ] as const) {
+      fs.writeFileSync(
+        path.join(fx.root, `pr-${repo}-${linked.branch}`),
+        JSON.stringify({ state: 'open', url: `https://git.example.com/acme/${repo}/pull/${n}` }),
+      );
+    }
+    await home();
+    // The window's focus checks every PR, at most once a minute.
+    for (const end = Date.now() + 90_000; Date.now() < end; await sleep(3000)) {
+      await mainProcess.eval(
+        `setImmediate(() => process.mainModule.require('electron').app.emit('browser-window-focus'))`,
+      );
+      if (await page.eval(`/2 PRs open/.test(${linkedRow}?.innerText ?? '')`)) break;
+    }
+    await page.waitFor(`/2 PRs open/.test(${linkedRow}?.innerText ?? '')`, '2 PRs open');
+    assert.match(
+      await page.eval<string>(`${linkedRow}.querySelector('[data-home-action=pr]').textContent`),
+      /^View PRs/,
+    );
+    await chooseFromNextContextMenu(mainProcess, 'lib · PR #5 open ↗');
+    await page.eval(`${linkedRow}.querySelector('[data-home-action=pr]').click()`);
+    await sleep(300);
+    assert.deepEqual(await mainProcess.eval('globalThis.__lastMenu'), [
+      'web · PR #41 open ↗',
+      'lib · PR #5 open ↗',
+    ]);
+    assert.equal(
+      (await mainProcess.eval<string[]>('globalThis.__opened')).at(-1),
+      'https://git.example.com/acme/lib/pull/5',
+    );
+    await screenshot(page, screenshotDir, 'h8-linked-prs.png');
 
     console.log(`e2e home test passed (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {

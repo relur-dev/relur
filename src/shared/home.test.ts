@@ -7,6 +7,8 @@ import {
   homeSection,
   homeSections,
   mergedLabel,
+  openPrs,
+  openPrsText,
   permissionTool,
   prNumber,
   projectCounts,
@@ -15,6 +17,8 @@ import {
   type ShipState,
   shipCandidates,
   shipStep,
+  waitsForPr,
+  withoutPrText,
   workingFor,
 } from './home';
 import type { WorkspaceState } from './status';
@@ -69,9 +73,9 @@ function ws(state: WorkspaceState, more: Partial<Workspace> = {}): Workspace {
   };
 }
 
-const dirty: ShipState = { uncommitted: 4, unpushed: 0 };
-const ahead: ShipState = { uncommitted: 0, unpushed: 3 };
-const clean: ShipState = { uncommitted: 0, unpushed: 0 };
+const dirty: ShipState = { uncommitted: 4, unpushed: 0, withoutPr: 0 };
+const ahead: ShipState = { uncommitted: 0, unpushed: 3, withoutPr: 0 };
+const clean: ShipState = { uncommitted: 0, unpushed: 0, withoutPr: 0 };
 
 describe('homeSection', () => {
   it('puts permission, input, approval and Unfinished under Needs you', () => {
@@ -144,17 +148,81 @@ describe('homeSection', () => {
       ],
     };
     expect(homeSection(ws('done', half), clean)).toBe('ship');
-    expect(shipStep(ws('done', half), clean)).toEqual({ kind: 'pr', pr: pr('open', 5) });
+    expect(shipStep(ws('done', half), clean)).toEqual({
+      kind: 'pr',
+      prs: [{ projectId: 'api', pr: pr('open', 5) }],
+    });
   });
 });
 
 describe('shipStep', () => {
   it('offers Commit, then Push, then View PR', () => {
     const open = ws('done', { repos: [repo('web', true, { pr: pr('draft') })] });
-    expect(shipStep(open, { uncommitted: 2, unpushed: 1 })).toEqual({ kind: 'commit', files: 2 });
+    expect(shipStep(open, { uncommitted: 2, unpushed: 1, withoutPr: 1 })).toEqual({
+      kind: 'commit',
+      files: 2,
+    });
     expect(shipStep(open, ahead)).toEqual({ kind: 'push', commits: 3 });
-    expect(shipStep(open, clean)).toEqual({ kind: 'pr', pr: pr('draft') });
+    expect(shipStep(open, clean)).toEqual({
+      kind: 'pr',
+      prs: [{ projectId: 'web', pr: pr('draft') }],
+    });
     expect(shipStep(ws('done'), clean)).toBeNull();
+  });
+
+  it('offers Create PR after Push, before an open PR (§6.7)', () => {
+    const waiting = { ...clean, withoutPr: 2 };
+    expect(shipStep(ws('done'), { ...ahead, withoutPr: 1 })).toEqual({ kind: 'push', commits: 3 });
+    expect(shipStep(ws('done'), waiting)).toEqual({ kind: 'create', repos: 2 });
+    const open = ws('done', { repos: [repo('web', true, { pr: pr('open') })] });
+    expect(shipStep(open, waiting)).toEqual({ kind: 'create', repos: 2 });
+    expect(homeSection(ws('done'), waiting)).toBe('ship');
+  });
+});
+
+describe('waitsForPr', () => {
+  const facts = { usesPrs: true, hasRemote: true, hasOwnCommits: true, pr: null };
+  it('waits only where PR commands are set, with commits of its own and no PR', () => {
+    expect(waitsForPr(facts)).toBe(true);
+    // Without a create or status command, some merge locally: not waiting.
+    expect(waitsForPr({ ...facts, usesPrs: false })).toBe(false);
+    expect(waitsForPr({ ...facts, hasRemote: false })).toBe(false);
+    expect(waitsForPr({ ...facts, hasOwnCommits: false })).toBe(false);
+    expect(waitsForPr({ ...facts, pr: pr('open') })).toBe(false);
+    expect(waitsForPr({ ...facts, pr: pr('closed') })).toBe(false);
+  });
+});
+
+describe('openPrs and their text', () => {
+  it('lists every open or draft PR, the main repository first', () => {
+    const w = ws('done', {
+      repos: [
+        repo('api', false, { pr: pr('draft', 5) }),
+        repo('web', true, { pr: pr('open', 7) }),
+        repo('lib', false, { pr: pr('merged', 9) }),
+      ],
+    });
+    expect(openPrs(w)).toEqual([
+      { projectId: 'web', pr: pr('open', 7) },
+      { projectId: 'api', pr: pr('draft', 5) },
+    ]);
+    expect(openPrs(ws('done'))).toEqual([]);
+  });
+
+  it('says one PR as prText and counts several', () => {
+    const one = (state: PrStatus['state'], n: number, projectId = 'web') => ({
+      projectId,
+      pr: pr(state, n),
+    });
+    expect(openPrsText([one('open', 12)])).toBe('PR #12 open');
+    expect(openPrsText([one('open', 1), one('open', 2, 'api')])).toBe('2 PRs open');
+    expect(openPrsText([one('draft', 1), one('draft', 2, 'api')])).toBe('2 draft PRs');
+    expect(openPrsText([one('open', 1), one('open', 2, 'api'), one('draft', 3, 'lib')])).toBe(
+      '3 PRs: 2 open, 1 draft',
+    );
+    expect(withoutPrText(1, false)).toBe('Pushed, no PR yet');
+    expect(withoutPrText(1, true)).toBe('1 repository without a PR');
+    expect(withoutPrText(2, true)).toBe('2 repositories without a PR');
   });
 });
 

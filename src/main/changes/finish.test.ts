@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { envVar } from '@shared/brand';
 import type { Workspace } from '@shared/workspaces';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ConfigStore } from '../config/store';
@@ -10,12 +11,15 @@ import type { TerminalService } from '../services/terminals';
 import { createFixture, type Fixture } from '../test-support/git-fixtures';
 import { SEED_CONFIG } from '../test-support/seed-config';
 import {
+  allPrsPrompt,
   commitMessage,
   FinishService,
   fillTemplate,
   parsePrOutput,
   parsePrStatus,
+  planPrs,
   pushProblem,
+  type RepoPrFacts,
 } from './finish';
 
 describe('finish helpers', () => {
@@ -290,5 +294,220 @@ describe('Ask Claude to write it in a linked workspace (spec §21.5)', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Create PRs in a linked workspace (spec §21.5)', () => {
+  const facts = (name: string, more: Partial<RepoPrFacts> = {}): RepoPrFacts => ({
+    projectId: name,
+    name,
+    hasRemote: true,
+    hasOwnCommits: true,
+    pr: null,
+    uncommitted: 0,
+    pushed: true,
+    unpushed: 0,
+    ...more,
+  });
+
+  it('opens one where there are commits of its own and no PR, and skips the rest', () => {
+    const plan = planPrs([
+      facts('web'),
+      facts('api', { pushed: false, unpushed: 2 }),
+      facts('docs', { hasOwnCommits: false }),
+      facts('lib', { pr: { state: 'open', url: 'https://x/pr/3', source: 'command' } }),
+      facts('local', { hasRemote: false }),
+    ]);
+    expect(plan.create.map((f) => f.name)).toEqual(['web', 'api']);
+    expect(plan.skipped).toEqual([
+      { name: 'docs', reason: 'no commits of its own' },
+      { name: 'lib', reason: 'has a pull request' },
+      { name: 'local', reason: 'no remote' },
+    ]);
+  });
+
+  it('asks Claude once for all of them, with each worktree, and to link them', () => {
+    const prompt = allPrsPrompt({
+      branch: 'PROJ-8-cart',
+      repos: [
+        {
+          name: 'web',
+          worktreePath: '/w/web',
+          prompt: 'Open a pull request into main.',
+          existed: false,
+        },
+        {
+          name: 'api',
+          worktreePath: '/w/api',
+          prompt: 'Open a pull request into dev.',
+          existed: true,
+        },
+      ],
+      known: [{ name: 'lib', url: 'https://x/pr/3' }],
+    });
+    expect(prompt).toContain('all on the branch PROJ-8-cart');
+    expect(prompt).toContain('each of these 2');
+    expect(prompt).toContain(
+      '1. In the web repository, whose worktree is /w/web: Open a pull request into main. 2. In the api repository, whose worktree is /w/api: Open a pull request into dev. This branch existed there before',
+    );
+    expect(prompt).toContain('open already: lib https://x/pr/3.');
+    expect(prompt).toContain('link the pull requests to each other');
+  });
+
+  describe('with local bare remotes and PR commands', () => {
+    let fx: Fixture;
+    let records: WorkspaceRecords;
+    let finish: FinishService;
+    let trees: Record<'web' | 'api' | 'docs', string>;
+    let origins: Record<'web' | 'api' | 'docs', string>;
+    const id = 'ws_all';
+    const branch = 'PROJ-8-cart';
+    const bases = { web: 'main', api: 'dev', docs: 'main' } as const;
+
+    beforeAll(() => {
+      fx = createFixture();
+      const names = ['web', 'api', 'docs'] as const;
+      origins = {} as typeof origins;
+      trees = {} as typeof trees;
+      const projects = names.map((name) => {
+        const { origin, clone } = fx.cloneWithRemote(name, bases[name]);
+        origins[name] = origin;
+        trees[name] = path.join(fx.root, 'wt', name);
+        fx.git(
+          clone,
+          'worktree',
+          'add',
+          '-q',
+          '--no-track',
+          '-b',
+          branch,
+          trees[name],
+          `origin/${bases[name]}`,
+        );
+        return {
+          id: name,
+          profileId: 'work',
+          name,
+          repoPath: clone,
+          remote: 'origin',
+          baseBranch: bases[name],
+        };
+      });
+      // The create command records what it was given; the status command
+      // answers per repository once its PR was "created".
+      const made = path.join(fx.root, 'made');
+      fs.mkdirSync(made);
+      const file = path.join(fx.root, 'config', 'config.json');
+      fs.mkdirSync(path.dirname(file));
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          ...SEED_CONFIG,
+          profiles: SEED_CONFIG.profiles.map((p) =>
+            p.id === 'work'
+              ? {
+                  ...p,
+                  pr: {
+                    createCommand: `n=$(basename "$PWD"); printf '%s %s' "$${envVar('BASE_BRANCH')}" "$${envVar('WORKTREE_PATH')}" > "${made}/$n"; echo "created $n"`,
+                    statusCommand: `n=$(basename "$PWD"); if [ -f "${made}/$n" ]; then printf '{"state":"open","url":"https://example.com/%s/pull/1"}' "$n"; fi`,
+                  },
+                }
+              : p,
+          ),
+          projects,
+        }),
+      );
+      const config = new ConfigStore(file);
+      config.load();
+      records = new WorkspaceRecords(openStateDb(':memory:'));
+      records.insert({
+        id,
+        profileId: 'work',
+        projectId: 'web',
+        name: 'PROJ-8 Cart',
+        task: { id: 'PROJ-8', title: 'Cart', url: null },
+        branch,
+        baseBranch: 'main',
+        worktreePath: trees.web,
+        state: 'done',
+        unread: false,
+        stateMessage: null,
+        background: 0,
+        stateSince: null,
+        claudeSessionId: null,
+        ports: null,
+        pr: null,
+        createdAt: new Date().toISOString(),
+        lastActivityAt: null,
+        repos: [
+          { projectId: 'api', worktreePath: trees.api, baseBranch: 'dev' },
+          { projectId: 'docs', worktreePath: trees.docs, baseBranch: 'main' },
+        ],
+      });
+      for (const name of names) {
+        records.setStartCommit(
+          id,
+          fx.git(trees[name], 'rev-parse', 'HEAD').trim(),
+          name === 'web' ? null : name,
+        );
+      }
+      // As in the app: the workspace's variables describe the main repository.
+      const terminals = {
+        workspaceCommandEnv: async () => ({
+          shell: '/bin/sh',
+          env: {
+            ...fx.env,
+            [envVar('BASE_BRANCH')]: 'main',
+            [envVar('WORKTREE_PATH')]: trees.web,
+          },
+        }),
+        host: { list: () => [] },
+      } as unknown as TerminalService;
+      finish = new FinishService(config, records, terminals);
+    });
+    afterAll(() => fx.cleanup());
+
+    it('refuses uncommitted files, then pushes and creates in each, skipping one without commits', async () => {
+      for (const name of ['web', 'api'] as const) {
+        fs.writeFileSync(path.join(trees[name], `${name}.txt`), `${name}\n`);
+        fx.git(trees[name], 'add', '.');
+        fx.git(trees[name], 'commit', '-qm', `PROJ-8: ${name}`);
+      }
+      expect(await finish.state(id, 'docs')).toMatchObject({ hasOwnCommits: false, usesPrs: true });
+      expect(await finish.state(id, 'api')).toMatchObject({ hasOwnCommits: true, pushed: false });
+      fs.writeFileSync(path.join(trees.api, 'more.txt'), 'more\n');
+      await expect(finish.createAllPrs(id)).rejects.toThrow('Commit first in api');
+      fx.git(trees.api, 'add', '.');
+      fx.git(trees.api, 'commit', '-qm', 'PROJ-8: more');
+
+      const result = await finish.createAllPrs(id);
+      expect(result.pushed).toEqual(['web', 'api']);
+      expect(result.commands.map((c) => [c.name, c.result.ok])).toEqual([
+        ['web', true],
+        ['api', true],
+      ]);
+      expect(result.claude).toEqual([]);
+      expect(result.skipped).toEqual([{ name: 'docs', reason: 'no commits of its own' }]);
+      for (const name of ['web', 'api'] as const) {
+        expect(fx.git(origins[name], 'rev-parse', branch).trim()).toBe(
+          fx.git(trees[name], 'rev-parse', 'HEAD').trim(),
+        );
+        // Each command got its own repository's base and worktree.
+        expect(fs.readFileSync(path.join(fx.root, 'made', name), 'utf8')).toBe(
+          `${bases[name]} ${trees[name]}`,
+        );
+      }
+      expect(fs.existsSync(path.join(fx.root, 'made', 'docs'))).toBe(false);
+
+      // Each repository has its own PR, with its own link.
+      await finish.refreshPr(id);
+      const repos = records.get(id)?.repos ?? [];
+      expect(repos.map((r) => [r.projectId, r.pr?.url ?? null])).toEqual([
+        ['web', 'https://example.com/web/pull/1'],
+        ['api', 'https://example.com/api/pull/1'],
+        ['docs', null],
+      ]);
+      await expect(finish.createAllPrs(id)).rejects.toThrow('No repository needs a pull request');
+    });
   });
 });

@@ -350,8 +350,9 @@ exec sleep 600
     fs.mkdirSync(path.join(fx.root, '.claude-personal'));
     fs.writeFileSync(path.join(fx.root, '.claude-personal', '.claude.json'), '{}');
     const fakePrCommands = {
-      createCommand: `echo "$${envVar('BRANCH')} into $${envVar('BASE_BRANCH')}" > "$HOME/pr-created.txt"; echo created`,
-      statusCommand: `if [ -f "$HOME/pr-merged" ]; then printf '{"state":"merged","url":"https://example.com/pr/7"}'; elif [ -f "$HOME/pr-created.txt" ]; then printf '{"state":"open","url":"https://example.com/pr/7"}'; fi`,
+      // Per repository (the project's folder above the worktree), so each has its own PR.
+      createCommand: `p=$(basename "$(dirname "$PWD")"); echo "$${envVar('BRANCH')} into $${envVar('BASE_BRANCH')}" | tee "$HOME/pr-created.txt" > "$HOME/pr-created-$p.txt"; echo "created in $p"`,
+      statusCommand: `p=$(basename "$(dirname "$PWD")"); if [ -f "$HOME/pr-merged" ]; then printf '{"state":"merged","url":"https://example.com/pr/7"}'; elif [ -f "$HOME/pr-created-$p.txt" ]; then printf '{"state":"open","url":"https://example.com/%s/pull/7"}' "$p"; fi`,
     };
     const claudeRun = (n: number) => waitForFile(path.join(fx.root, `claude-run-${n}.txt`));
     // Fake editors (spec §6.13) that record their arguments, first on the Work
@@ -2525,7 +2526,9 @@ exec sleep 600
     // bare remotes, link and unlink cartweb, then delete.
     fs.rmSync(path.join(fx.root, 'pr-merged'));
     fs.rmSync(path.join(fx.root, 'pr-created.txt'));
-    const { origin: apiOrigin, clone: cartapi } = fx.cloneWithRemote('cartapi', 'main');
+    fs.rmSync(path.join(fx.root, 'pr-created-shop.txt'));
+    // cartapi's base is dev: Create PRs gives each command its own (spec §12.4).
+    const { origin: apiOrigin, clone: cartapi } = fx.cloneWithRemote('cartapi', 'dev');
     const cartweb = fx.localRepo('cartweb');
     assert.equal(outside(cartapi, '--profile', 'work').status, 0);
     assert.equal(outside(cartweb, '--profile', 'work').status, 0);
@@ -2606,6 +2609,8 @@ exec sleep 600
       await sleep(300);
       await clickButtonText(page, 'Commit 1', section(id));
       await page.waitFor(hasButton('Push ↑1', section(id)), `${id} Push`, 20_000);
+      // cartapi is left for Create PRs to push.
+      if (id === 'cartapi') continue;
       await page.waitFor(
         `![...${section(id)}.querySelectorAll('button')].find((b) => b.textContent.startsWith('Push ↑1')).disabled`,
         `${id} Push enabled`,
@@ -2620,25 +2625,53 @@ exec sleep 600
     assert.equal(fx.git(apiTree, 'log', '-1', '--format=%s').trim(), 'PROJ-8: cartapi part');
     assert.equal(fx.git(linkedTree, 'log', '-1', '--format=%s').trim(), 'PROJ-8: shop part');
     assert.equal(
-      fx.git(apiOrigin, 'rev-parse', 'PROJ-8-linked-cart').trim(),
-      fx.git(apiTree, 'rev-parse', 'HEAD').trim(),
-      'cartapi pushed to its bare remote',
-    );
-    assert.equal(
       fx.git(shopOrigin, 'rev-parse', 'PROJ-8-linked-cart').trim(),
       fx.git(linkedTree, 'rev-parse', 'HEAD').trim(),
       'shop pushed to its bare remote',
     );
+    // Create PRs (spec §21.5): cartapi pushed first, then a PR in each, each
+    // command with its own repository's base.
+    const createAll = `document.querySelector('[data-create-all-prs]')`;
     await page.waitFor(
-      `[...${section('cartapi')}.querySelectorAll('button')].some((b) => b.textContent === 'Create PR' && !b.disabled)`,
-      'Create PR enabled',
+      `${createAll}?.textContent === 'Create 2 PRs' && !${createAll}.disabled`,
+      'Create 2 PRs',
       20_000,
     );
-    await clickButtonText(page, 'Create PR', section('cartapi'));
+    await page.eval(`${createAll}.click()`);
     assert.equal(
-      await waitForFile(path.join(fx.root, 'pr-created.txt')),
+      await waitForFile(path.join(fx.root, 'pr-created-cartapi.txt')),
+      'PROJ-8-linked-cart into dev',
+    );
+    assert.equal(
+      await waitForFile(path.join(fx.root, 'pr-created-shop.txt')),
       'PROJ-8-linked-cart into main',
     );
+    await page.waitFor(`!!document.querySelector('[data-create-all-note]')`, 'the outcome', 20_000);
+    assert.equal(
+      fx.git(apiOrigin, 'rev-parse', 'PROJ-8-linked-cart').trim(),
+      fx.git(apiTree, 'rev-parse', 'HEAD').trim(),
+      'cartapi pushed to its bare remote by Create PRs',
+    );
+    const note = await page.eval<string>(
+      `document.querySelector('[data-create-all-note]').innerText`,
+    );
+    assert.match(note, /Pushed cartapi\./, note);
+    assert.match(note, /shop: created in shop/, note);
+    assert.match(note, /cartapi: created in cartapi/, note);
+    // Each repository's own PR: both chips' marks, each section's View PR.
+    for (const id of ['shop', 'cartapi']) {
+      await page.waitFor(
+        `!!document.querySelector('[data-repo-chip="${id}"] [data-chip-mark="pr-open"]')`,
+        `${id}'s PR mark`,
+        20_000,
+      );
+      await page.waitFor(hasButton('View PR #7', section(id)), `${id}'s View PR`, 20_000);
+    }
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-repo-chip="shop"]').title`),
+      /PR open · https:\/\/example\.com\/shop\/pull\/7/,
+    );
+    await page.waitFor(`!${createAll}`, 'no Create PRs once both have one');
     await pressKey(page, 'KeyD', CMD | MOD.shift);
 
     // Link cartweb and restart Claude: the conversation resumes with both folders.
@@ -3836,7 +3869,9 @@ exec sleep 600
     const tooltip = await page.eval<string>(
       `document.querySelector('[data-repo-tooltip="${firstLinked}"]')?.innerText ?? ''`,
     );
-    assert.match(tooltip, /^PROJ-9-many-repos ← main\n/, tooltip);
+    // Each repository's own base: cartapi's is dev.
+    const ownBase = firstLinked === 'cartapi' ? 'dev' : 'main';
+    assert.match(tooltip, new RegExp(`^PROJ-9-many-repos ← ${ownBase}\\n`), tooltip);
     assert.ok(tooltip.includes(firstLinked) && tooltip.includes('PROJ-9-many-repos'), tooltip);
     assert.match(tooltip, /Setup (passed or not needed|failed \(exit 3\))\nNo PR known$/, tooltip);
     // The chip's menu: New shell in it, Reveal, Show in Changes, Unlink.

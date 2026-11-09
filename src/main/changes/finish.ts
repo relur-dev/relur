@@ -1,3 +1,4 @@
+import { envVar } from '@shared/brand';
 import {
   type BaseConflicts,
   type ChangeGroup,
@@ -49,6 +50,10 @@ export interface FinishState {
   pr: PrStatus | null;
   /** Create PR runs a command (true) or asks Claude (false). */
   createsWithCommand: boolean;
+  /** A PR create or status command is set: the repository uses pull requests (spec §6.7). */
+  usesPrs: boolean;
+  /** The branch has commits of its own (spec §14.2): Create PR has something to open. */
+  hasOwnCommits: boolean;
   /** What the branch is compared with: `<remote>/<base>`, or the local base (spec §6.4). */
   baseRef: string;
   /** Commits of the base the branch doesn't have yet. */
@@ -118,6 +123,116 @@ export function linkedPrContext(
   };
 }
 
+/** A repository's createPrompt filled in with its own base (spec §14.1). */
+function createPrompt(workspace: Workspace, repo: WorkspaceRepo, settings: PrSettings): string {
+  return fillTemplate(settings.createPrompt ?? DEFAULT_CREATE_PR_PROMPT, {
+    base: repo.baseBranch,
+    branch: workspace.branch,
+    id: workspace.task.id ?? '',
+    title: workspace.task.title || workspace.name,
+    url: workspace.task.url ?? '',
+  });
+}
+
+/** Spec §7.6: a branch that existed before may have its pull request already. */
+const existedNote = (repo: WorkspaceRepo) =>
+  (repo.branchOrigin ?? 'new') === 'new'
+    ? ''
+    : " This branch existed before the workspace: if it already has a pull request, don't open another; tell me its URL.";
+
+/** What Create PRs needs to know about one repository (spec §21.5). */
+export interface RepoPrFacts {
+  projectId: string;
+  name: string;
+  hasRemote: boolean;
+  hasOwnCommits: boolean;
+  pr: PrStatus | null;
+  uncommitted: number;
+  pushed: boolean;
+  unpushed: number;
+}
+
+/** What Create PRs did (spec §21.5). */
+export interface CreateAllResult {
+  /** The repositories pushed first, by name. */
+  pushed: string[];
+  /** Each create command's result, by repository. */
+  commands: { projectId: string; name: string; result: CommandResult }[];
+  /** The repositories Claude was asked to open a pull request in. */
+  claude: string[];
+  /** The repositories left out, with why. */
+  skipped: { name: string; reason: string }[];
+}
+
+/**
+ * Which repositories Create PRs opens a pull request in (spec §21.5): those
+ * with a remote, commits of their own and no known PR; the others are skipped.
+ */
+export function planPrs(repos: RepoPrFacts[]): {
+  create: RepoPrFacts[];
+  skipped: { name: string; reason: string }[];
+} {
+  const create: RepoPrFacts[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+  for (const r of repos) {
+    if (!r.hasRemote) skipped.push({ name: r.name, reason: 'no remote' });
+    else if (r.pr) skipped.push({ name: r.name, reason: 'has a pull request' });
+    else if (!r.hasOwnCommits) skipped.push({ name: r.name, reason: 'no commits of its own' });
+    else create.push(r);
+  }
+  return { create, skipped };
+}
+
+/**
+ * Create PRs' one prompt to Claude (spec §21.5): each repository's own
+ * create prompt with its name and worktree, the pull requests already
+ * known, and to link them all to each other.
+ */
+export function allPrsPrompt({
+  branch,
+  repos,
+  known,
+}: {
+  branch: string;
+  repos: { name: string; worktreePath: string; prompt: string; existed: boolean }[];
+  known: { name: string; url: string }[];
+}): string {
+  const each = repos
+    .map(
+      (r, i) =>
+        `${i + 1}. In the ${r.name} repository, whose worktree is ${r.worktreePath}: ${r.prompt}${
+          r.existed
+            ? " This branch existed there before the workspace: if it already has a pull request, don't open another; use that one."
+            : ''
+        }`,
+    )
+    .join(' ');
+  const already =
+    known.length > 0
+      ? ` These pull requests of the task are open already: ${known.map((k) => `${k.name} ${k.url}`).join('; ')}.`
+      : '';
+  const one = repos.length === 1;
+  return `This task changes several repositories, all on the branch ${branch}. Open a pull request in ${
+    one ? 'this one' : `each of these ${repos.length}`
+  }, each from its own worktree: ${each}${already} Then link the pull requests to each other: add the URLs of the task's other pull requests to each one's description, so every pull request points to all the others. Tell me their URLs.`;
+}
+
+/** Whether the branch was pushed (it has an upstream), and its commits not on the remote. */
+async function pushState(
+  git: Git,
+  workspace: Workspace,
+  project: Project,
+  dir: string,
+): Promise<{ pushed: boolean; unpushed: number }> {
+  if (!project.remote) return { pushed: false, unpushed: 0 };
+  const upstream = await git.revParse(dir, `refs/remotes/${project.remote}/${workspace.branch}`);
+  const pushed = Boolean(await git.tryRun(dir, ['config', `branch.${workspace.branch}.remote`]));
+  const out = upstream
+    ? await git.run(dir, ['rev-list', '--count', `${upstream}..HEAD`])
+    : await git.run(dir, ['rev-list', '--count', 'HEAD', '--not', '--remotes']);
+  return { pushed, unpushed: Number(out.trim()) };
+}
+
 /** A push failure in words the user can act on (missing credentials can't be asked for). */
 export function pushProblem(remote: string, stderr: string): string {
   const detail = stderr.trim();
@@ -179,20 +294,9 @@ export class FinishService {
     // Home reads this every 15 s: a local merge moves the workspace to Clean up (§6.7, §14.2).
     await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});
     const uncommitted = (await git.status(dir)).length;
-    const upstream = project.remote
-      ? await git.revParse(dir, `refs/remotes/${project.remote}/${workspace.branch}`)
-      : null;
-    const pushed = Boolean(
-      project.remote && (await git.tryRun(dir, ['config', `branch.${workspace.branch}.remote`])),
-    );
-    let unpushed = 0;
-    if (project.remote) {
-      const out = upstream
-        ? await git.run(dir, ['rev-list', '--count', `${upstream}..HEAD`])
-        : await git.run(dir, ['rev-list', '--count', 'HEAD', '--not', '--remotes']);
-      unpushed = Number(out.trim());
-    }
+    const { pushed, unpushed } = await pushState(git, workspace, project, dir);
     const tracks = await git.upstream(dir, workspace.branch);
+    const settings = prSettings(profile, project);
     return {
       ...(await this.baseStatus(git, project, repo)),
       upstream: tracks ? `${tracks.remote}/${tracks.branch}` : null,
@@ -203,8 +307,40 @@ export class FinishService {
       pushed,
       commitMessage: commitMessage(workspace),
       pr: project.remote ? repo.pr : null,
-      createsWithCommand: Boolean(prSettings(profile, project).createCommand),
+      createsWithCommand: Boolean(settings.createCommand),
+      usesPrs: Boolean(settings.createCommand || settings.statusCommand),
+      hasOwnCommits: await this.hasOwnCommits(git, workspace, repo, project),
     };
+  }
+
+  /** Whether a repository's branch has commits of its own (spec §14.2): its tip isn't its own start. */
+  private async hasOwnCommits(
+    git: Git,
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+    project: Project,
+  ): Promise<boolean> {
+    const dir = repo.worktreePath;
+    const head = await git.revParse(dir, 'HEAD');
+    const start = await git.ownStart(dir, {
+      branch: workspace.branch,
+      start: this.records.startCommit(workspace.id, repo.projectId),
+      base: repo.baseBranch,
+      remote: project.remote,
+    });
+    return head !== null && start !== null && head !== start;
+  }
+
+  /**
+   * A PR command's shell and environment (spec §12.4, §21.5): the
+   * workspace's, with the base branch and worktree of the repository it runs
+   * for, since a linked repository's differ from the main one's.
+   */
+  private async prCommandEnv(workspace: Workspace, repo: WorkspaceRepo) {
+    const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, repo.projectId);
+    env[envVar('BASE_BRANCH')] = repo.baseBranch;
+    env[envVar('WORKTREE_PATH')] = repo.worktreePath;
+    return { shell, env };
   }
 
   /** Commits everything in one worktree (`git add -A`, then `git commit`). */
@@ -321,6 +457,12 @@ export class FinishService {
    * `git push -u <remote> <branch>`; then the PR status is checked again.
    */
   async push(workspaceId: string, projectId: string | null = null): Promise<void> {
+    await this.pushOnly(workspaceId, projectId);
+    void this.refreshPr(workspaceId).catch(() => {});
+  }
+
+  /** Push without checking the PR status after it (Create PRs checks once at the end). */
+  private async pushOnly(workspaceId: string, projectId: string | null): Promise<void> {
     const { workspace, repo, project, git } = await this.context(workspaceId, projectId);
     if (!project.remote) throw new Error('This project has no remote');
     const dir = repo.worktreePath;
@@ -338,7 +480,6 @@ export class FinishService {
       const stderr = error instanceof GitError ? error.stderr : String(error);
       throw new Error(pushProblem(remote, stderr));
     }
-    void this.refreshPr(workspaceId).catch(() => {});
   }
 
   /**
@@ -379,16 +520,8 @@ export class FinishService {
     if (!project.remote) throw new Error('This project has no remote');
     const settings = prSettings(profile, project);
     if (settings.createCommand) {
-      const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, repo.projectId);
-      const result = await runCommands({
-        shell,
-        commands: [settings.createCommand],
-        cwd: repo.worktreePath,
-        env,
-        timeoutSec: settings.timeoutSec ?? DEFAULT_COMMAND_TIMEOUT_SEC,
-        label: 'Create PR',
-      });
-      void this.refreshPr(workspaceId).catch(() => {});
+      const result = await this.runCreateCommand(workspace, repo, settings);
+      void this.refreshAfter(workspaceId).catch(() => {});
       return { via: 'command', result };
     }
     const linked = linkedPrContext(
@@ -401,20 +534,109 @@ export class FinishService {
           prUrl: r.pr?.url ?? null,
         })),
     );
-    // Spec §7.6: a branch that existed before may have its pull request already.
-    const existing =
-      (repo.branchOrigin ?? 'new') === 'new'
-        ? ''
-        : " This branch existed before the workspace: if it already has a pull request, don't open another; tell me its URL.";
-    const filled = fillTemplate(settings.createPrompt ?? DEFAULT_CREATE_PR_PROMPT, {
-      base: repo.baseBranch,
-      branch: workspace.branch,
-      id: workspace.task.id ?? '',
-      title: workspace.task.title || workspace.name,
-      url: workspace.task.url ?? '',
-    });
-    await this.sendToClaude(workspace, `${linked.before}${filled}${linked.after}${existing}`);
+    const filled = createPrompt(workspace, repo, settings);
+    await this.sendToClaude(
+      workspace,
+      `${linked.before}${filled}${linked.after}${existedNote(repo)}`,
+    );
     return { via: 'claude' };
+  }
+
+  private runCreateCommand(
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+    settings: PrSettings,
+  ): Promise<CommandResult> {
+    return this.prCommandEnv(workspace, repo).then(({ shell, env }) =>
+      runCommands({
+        shell,
+        commands: [settings.createCommand ?? ''],
+        cwd: repo.worktreePath,
+        env,
+        timeoutSec: settings.timeoutSec ?? DEFAULT_COMMAND_TIMEOUT_SEC,
+        label: 'Create PR',
+      }),
+    );
+  }
+
+  /**
+   * Create PRs (spec §21.5): a pull request in every repository of the
+   * workspace with commits of its own and none known yet, the others
+   * skipped. Uncommitted files refuse it; unpushed commits are pushed first,
+   * stopping at the first push that fails. Repositories with a create
+   * command run it, one after another; the rest go to Claude in one prompt
+   * that also asks it to link the pull requests to each other.
+   */
+  async createAllPrs(workspaceId: string): Promise<CreateAllResult> {
+    const workspace = this.workspace(workspaceId);
+    const facts: RepoPrFacts[] = [];
+    for (const r of workspace.repos) {
+      const { repo, project, git } = await this.context(workspaceId, r.projectId);
+      const dir = repo.worktreePath;
+      facts.push({
+        projectId: repo.projectId,
+        name: project.name,
+        hasRemote: project.remote !== null,
+        hasOwnCommits: await this.hasOwnCommits(git, workspace, repo, project),
+        pr: project.remote ? repo.pr : null,
+        uncommitted: (await git.status(dir)).length,
+        ...(await pushState(git, workspace, project, dir)),
+      });
+    }
+    const { create, skipped } = planPrs(facts);
+    if (create.length === 0) throw new Error('No repository needs a pull request');
+    const dirty = create.filter((f) => f.uncommitted > 0).map((f) => f.name);
+    if (dirty.length > 0) throw new Error(`Commit first in ${dirty.join(', ')}`);
+    const pushed: string[] = [];
+    for (const f of create.filter((f) => !f.pushed || f.unpushed > 0)) {
+      try {
+        await this.pushOnly(workspaceId, f.projectId);
+      } catch (error) {
+        const done = pushed.length > 0 ? ` (${pushed.join(', ')} pushed)` : '';
+        throw new Error(
+          `Push failed in ${f.name}${done}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+      pushed.push(f.name);
+    }
+    const commands: CreateAllResult['commands'] = [];
+    const viaClaude: { repo: WorkspaceRepo; settings: PrSettings; name: string }[] = [];
+    for (const f of create) {
+      const { repo, profile, project } = await this.context(workspaceId, f.projectId);
+      const settings = prSettings(profile, project);
+      if (settings.createCommand) {
+        const result = await this.runCreateCommand(workspace, repo, settings);
+        commands.push({ projectId: f.projectId, name: f.name, result });
+      } else viaClaude.push({ repo, settings, name: f.name });
+    }
+    if (viaClaude.length > 0) {
+      // The PRs the commands just opened are known by then, for Claude to link.
+      if (commands.length > 0) await this.refreshAfter(workspaceId).catch(() => {});
+      const now = this.workspace(workspaceId);
+      const asked = new Set(viaClaude.map((v) => v.repo.projectId));
+      await this.sendToClaude(
+        now,
+        allPrsPrompt({
+          branch: now.branch,
+          repos: viaClaude.map((v) => ({
+            name: v.name,
+            worktreePath: v.repo.worktreePath,
+            prompt: createPrompt(now, v.repo, v.settings),
+            existed: (v.repo.branchOrigin ?? 'new') !== 'new',
+          })),
+          known: now.repos
+            .filter((r) => !asked.has(r.projectId) && r.pr?.url)
+            .map((r) => ({ name: this.projectName(r.projectId), url: r.pr?.url ?? '' })),
+        }),
+      );
+    } else void this.refreshAfter(workspaceId).catch(() => {});
+    return { pushed, commands, claude: viaClaude.map((v) => v.name), skipped };
+  }
+
+  /** A PR check that starts after any running one, so it sees what was just done. */
+  private async refreshAfter(workspaceId: string): Promise<PrStatus | null> {
+    await this.checking.get(workspaceId)?.catch(() => {});
+    return this.refreshPr(workspaceId);
   }
 
   /** "Ask Claude to write it" (spec §14.1): Claude writes the message and commits. */
@@ -495,7 +717,7 @@ export class FinishService {
     const dir = repo.worktreePath;
     let pr: PrStatus | null;
     if (settings.statusCommand) {
-      const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, projectId);
+      const { shell, env } = await this.prCommandEnv(workspace, repo);
       const out = await runJsonCommand(
         shell,
         settings.statusCommand,
@@ -507,14 +729,7 @@ export class FinishService {
     } else {
       pr = await this.gitPrStatus(git, project.remote, workspace, repo);
     }
-    const head = await git.revParse(dir, 'HEAD');
-    const start = await git.ownStart(dir, {
-      branch: workspace.branch,
-      start: this.records.startCommit(workspace.id, projectId),
-      base: repo.baseBranch,
-      remote: project.remote,
-    });
-    const hasCommits = head !== null && start !== null && head !== start;
+    const hasCommits = await this.hasOwnCommits(git, workspace, repo, project);
     // After the PR check's fetch, so `<remote>/<base>` is fresh (§14.2); before
     // the PR is stored, so a check joined once the badge changes is a new one.
     await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});

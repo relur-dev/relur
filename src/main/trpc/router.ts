@@ -1130,6 +1130,10 @@ export function createAppRouter({
       createPr: publicProcedure
         .input(workspaceId.extend(repo))
         .mutation(({ input }) => finish.createPr(input.workspaceId, input.projectId ?? null)),
+      /** Create PRs (spec §21.5): one in every repository with commits of its own and none yet. */
+      createAllPrs: publicProcedure
+        .input(workspaceId)
+        .mutation(({ input }) => finish.createAllPrs(input.workspaceId)),
       /**
        * Emits `changed` soon after files change in the workspace's worktrees,
        * for the repositories given (spec §6.4); only the shown workspace

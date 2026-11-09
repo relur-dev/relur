@@ -73,7 +73,16 @@ To change your mind for one workspace, use **Let Claude Add Repositories** in it
 
 ## Finishing
 
-The [Changes panel](finishing-work) has a section per repository, each with its own commit message (it starts as `ID: title`; edit it as you like), its own **Commit → Push → Create PR** and its own PR badge. **Ask Claude to write it** in a section asks Claude to write the message and commit in that repository only. When Claude opens a pull request, it's told about the other repositories and their PRs, so each PR mentions the others.
+The [Changes panel](finishing-work) has a section per repository, each with its own commit message (it starts as `ID: title`; edit it as you like), its own **Commit → Push → Create PR** and its own PR badge. **Ask Claude to write it** in a section asks Claude to write the message and commit in that repository only. When Claude opens a pull request, it's told about the other repositories and their PRs, so each PR mentions the others. A section whose branch has no commits of its own says **No commits of its own** instead of Create PR.
+
+To open them all at once, use **Create n PRs** at the top of the panel. It opens a pull request in every repository with commits of its own and no pull request yet, and skips the others:
+
+- Commit first: while one of them has uncommitted files, the button says where.
+- It pushes the ones with unpushed commits first. If a push fails, it stops there and says which were pushed.
+- Repositories with a [PR create command](finishing-work#pr-commands) run it, each in its own worktree, with its own base branch in `${{env:BASE_BRANCH}}`.
+- The rest go to Claude in one message: each repository with its folder and base, and the pull requests that are already open. Claude opens them and links them to each other, so each pull request lists the others.
+
+A line under the panel's header says what was pushed, each command's output, what Claude was asked and what was skipped. Each repository's PR then shows on its chip in the header (the primary's too), in its section of the panel with its own **View PR**, and on [Home](home), where **View PRs** lists them all.
 
 The workspace counts as merged once every repository with commits is merged; then it offers to delete itself.
 

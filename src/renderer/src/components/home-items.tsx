@@ -1,12 +1,16 @@
 import {
   type HomeSection,
   mergedLabel,
+  openPrsText,
   permissionTool,
   prNumber,
   prText,
+  type RepoPr,
   type ShipState,
   shipCandidates,
   shipStep,
+  waitsForPr,
+  withoutPrText,
   workingFor,
 } from '@shared/home';
 import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
@@ -193,8 +197,9 @@ export function useShipStates(workspaces: Workspace[]) {
       (sum, s) => ({
         uncommitted: sum.uncommitted + (s?.data?.uncommitted ?? 0),
         unpushed: sum.unpushed + (s?.data?.unpushed ?? 0),
+        withoutPr: sum.withoutPr + (s?.data && waitsForPr(s.data) ? 1 : 0),
       }),
-      { uncommitted: 0, unpushed: 0 },
+      { uncommitted: 0, unpushed: 0, withoutPr: 0 },
     );
   };
 }
@@ -218,6 +223,7 @@ export function useNow(): number {
  */
 export function useHomeItems({
   profile,
+  projects,
   sessions,
   memory,
   actions,
@@ -225,6 +231,7 @@ export function useHomeItems({
   now,
 }: {
   profile: Profile;
+  projects: Project[];
   sessions: SessionInfo[];
   memory: MemorySnapshot | null;
   actions: HomeActions;
@@ -240,6 +247,22 @@ export function useHomeItems({
   const dismiss = useMutation(trpc.unfinished.dismiss.mutationOptions());
   const refresh = () => void queryClient.invalidateQueries({ queryKey: trpc.changes.pathKey() });
   const push = useMutation(trpc.changes.push.mutationOptions({ onSettled: refresh }));
+  const createPr = useMutation(trpc.changes.createPr.mutationOptions({ onSettled: refresh }));
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+  // View PR with several (spec §6.7, §21.5): a menu with each repository's.
+  const viewPrs = async (prs: RepoPr[]) => {
+    const urls = prs.filter((p) => p.pr.url);
+    const only = urls.length === 1 ? urls[0]?.pr.url : null;
+    if (only) return void trpcClient.shell.openExternal.mutate({ url: only });
+    const choice = await trpcClient.ui.contextMenu.mutate({
+      items: urls.map((p) => ({
+        id: p.projectId,
+        label: `${projectName(p.projectId)} · ${prText(p.pr)} ↗`,
+      })),
+    });
+    const url = urls.find((p) => p.projectId === choice)?.pr.url;
+    if (url) void trpcClient.shell.openExternal.mutate({ url });
+  };
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const setError = (id: string) => (message: string | null) =>
     setErrors((e) => (e[id] === message ? e : { ...e, [id]: message }));
@@ -253,7 +276,15 @@ export function useHomeItems({
     let meta: HomeItem['meta'] = null;
     let title: HomeItem['title'] = null;
     const error =
-      errors[w.id] ?? (push.variables?.workspaceId === w.id ? push.error?.message : null) ?? null;
+      errors[w.id] ??
+      (push.variables?.workspaceId === w.id ? push.error?.message : null) ??
+      (createPr.variables?.workspaceId === w.id ? createPr.error?.message : null) ??
+      (createPr.variables?.workspaceId === w.id &&
+      createPr.data?.via === 'command' &&
+      !createPr.data.result.ok
+        ? createPr.data.result.message
+        : null) ??
+      null;
     const open = (
       <Action
         key="open"
@@ -405,20 +436,50 @@ export function useHomeItems({
             {pushing ? 'Pushing…' : 'Push'}
           </Action>,
         );
+      } else if (step?.kind === 'create') {
+        // Spec §6.7: only where a PR command is set; a linked workspace goes to Changes (§21.5).
+        const linked = w.repos.length > 1;
+        const creating = createPr.isPending && createPr.variables?.workspaceId === w.id;
+        parts.push({ text: withoutPrText(step.repos, linked) });
+        buttons.push(
+          <Action
+            key="create-pr"
+            kind="secondary"
+            size={size}
+            data="create-pr"
+            disabled={creating}
+            title={
+              linked
+                ? 'Create PRs in the Changes panel, one in every repository with commits'
+                : `Open a pull request for ${w.branch}`
+            }
+            onClick={() =>
+              linked ? actions.openChanges(w) : createPr.mutate({ workspaceId: w.id })
+            }
+          >
+            {creating ? 'Creating…' : linked ? 'Create PRs…' : 'Create PR'}
+          </Action>,
+        );
       } else if (step?.kind === 'pr') {
-        parts.push({ text: prText(step.pr) });
-        const url = step.pr.url;
-        if (url) {
+        parts.push({ text: openPrsText(step.prs) });
+        const withUrl = step.prs.filter((p) => p.pr.url);
+        const [first] = withUrl;
+        if (first) {
+          const several = withUrl.length > 1;
           buttons.push(
             <Action
               key="pr"
               kind="secondary"
               size={size}
               data="pr"
-              title={`Open ${prNumber(step.pr) ? `PR ${prNumber(step.pr)}` : 'the pull request'} in the browser`}
-              onClick={() => void trpcClient.shell.openExternal.mutate({ url })}
+              title={
+                several
+                  ? `Choose one of ${withUrl.length} pull requests to open in the browser`
+                  : `Open ${prNumber(first.pr) ? `PR ${prNumber(first.pr)}` : 'the pull request'} in the browser`
+              }
+              onClick={() => void viewPrs(step.prs)}
             >
-              View PR <span aria-hidden>↗</span>
+              View PR{several ? 's' : ''} <span aria-hidden>{several ? '▾' : '↗'}</span>
             </Action>,
           );
         }

@@ -19,7 +19,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { trpcClient, useTRPC } from '../trpc';
+import { type AppRouterOutputs, trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, inputClass, isMac, keyHint } from '../ui/controls';
 import { takeRequest } from '../ui/open-requests';
 import { remember } from '../ui/remember';
@@ -657,6 +657,11 @@ function RepoControls({
               >
                 View {prLabel(pr).split(' · ')[0]}
               </button>
+            ) : !pr && !s.hasOwnCommits ? (
+              // Create PRs skips it too (spec §21.5).
+              <span data-no-own-commits className="text-sm text-fg-subtle">
+                No commits of its own
+              </span>
             ) : (
               <button
                 type="button"
@@ -687,6 +692,116 @@ function RepoControls({
           ✕ {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/** What Create PRs did, or why it failed (spec §21.5). */
+type CreateAllOutcome =
+  | { ok: true; result: AppRouterOutputs['changes']['createAllPrs'] }
+  | { ok: false; message: string };
+
+/**
+ * Create n PRs in a linked panel's header (spec §21.5): one pull request in
+ * every repository with a remote, commits of its own and no PR known; shown
+ * while there is one. Uncommitted files there disable it.
+ */
+function CreateAllButton({
+  workspaceId,
+  states,
+  onResult,
+}: {
+  workspaceId: string;
+  states: {
+    name: string;
+    state:
+      | { hasRemote: boolean; hasOwnCommits: boolean; pr: PrStatus | null; uncommitted: number }
+      | undefined;
+  }[];
+  onResult: (outcome: CreateAllOutcome) => void;
+}) {
+  const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const create = useMutation(
+    trpc.changes.createAllPrs.mutationOptions({
+      onSuccess: (result) => onResult({ ok: true, result }),
+      onError: (error) => onResult({ ok: false, message: error.message }),
+      onSettled: () => void queryClient.invalidateQueries({ queryKey: trpc.changes.pathKey() }),
+    }),
+  );
+  const wanted = states.filter((r) => r.state?.hasRemote && r.state.hasOwnCommits && !r.state.pr);
+  if (wanted.length === 0) return null;
+  const dirty = wanted.filter((r) => (r.state?.uncommitted ?? 0) > 0).map((r) => r.name);
+  const n = wanted.length;
+  return (
+    <button
+      type="button"
+      data-create-all-prs={n}
+      className={button('secondary', 'sm')}
+      disabled={create.isPending || dirty.length > 0}
+      title={
+        dirty.length > 0
+          ? `Commit first in ${dirty.join(', ')}`
+          : `Pushes where needed, then opens a pull request in ${wanted.map((r) => r.name).join(', ')}`
+      }
+      onClick={() => create.mutate({ workspaceId })}
+    >
+      {create.isPending ? 'Creating…' : `Create ${n} ${n === 1 ? 'PR' : 'PRs'}`}
+    </button>
+  );
+}
+
+/** Create PRs' outcome under the linked panel's header: what was pushed, run, sent and skipped. */
+function CreateAllNote({
+  result: outcome,
+  onDismiss,
+}: {
+  result: CreateAllOutcome;
+  onDismiss: () => void;
+}) {
+  const lines: { text: string; error?: boolean }[] = [];
+  if (!outcome.ok) lines.push({ text: outcome.message, error: true });
+  else {
+    const r = outcome.result;
+    if (r.pushed.length > 0) lines.push({ text: `Pushed ${r.pushed.join(', ')}.` });
+    for (const c of r.commands) {
+      lines.push(
+        c.result.ok
+          ? { text: `${c.name}: ${commandOutput(c.result.output) || 'Create PR finished.'}` }
+          : { text: `${c.name}: ${c.result.message}\n${c.result.output}`, error: true },
+      );
+    }
+    if (r.claude.length > 0) {
+      lines.push({
+        text: `Sent to Claude: it opens the pull request${r.claude.length === 1 ? '' : 's'} in ${r.claude.join(', ')} and links them to each other.`,
+      });
+    }
+    if (r.skipped.length > 0) {
+      lines.push({
+        text: `Skipped ${r.skipped.map((k) => `${k.name} (${k.reason})`).join(', ')}.`,
+      });
+    }
+  }
+  return (
+    <div
+      data-create-all-note
+      className="flex shrink-0 items-start gap-2 border-b border-line bg-surface px-3.5 py-1.5"
+    >
+      <div className="min-w-0 flex-1 space-y-0.5">
+        {lines.map((l) => (
+          <p
+            key={l.text}
+            role={l.error ? 'alert' : undefined}
+            className={`text-sm whitespace-pre-wrap select-text ${l.error ? 'text-st-error' : 'text-fg-muted'}`}
+          >
+            {l.error ? '✕ ' : ''}
+            {l.text}
+          </p>
+        ))}
+      </div>
+      <button type="button" className={iconButton} aria-label="Dismiss" onClick={onDismiss}>
+        ×
+      </button>
     </div>
   );
 }
@@ -1311,6 +1426,7 @@ function LinkedChangesPanel({
     ),
   });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [allResult, setAllResult] = useState<CreateAllOutcome | null>(null);
   // Show in Changes (a repository chip, spec §21.4): that section expanded, scrolled to.
   useEffect(() => {
     if (!focus) return;
@@ -1397,6 +1513,11 @@ function LinkedChangesPanel({
         <span className="text-md font-semibold">Changes</span>
         <span className="truncate text-xs text-fg-subtle">· {repos.length} repositories</span>
         <span className="flex-1" />
+        <CreateAllButton
+          workspaceId={workspace.id}
+          states={repos.map((r, i) => ({ name: name(r.projectId), state: states[i]?.data }))}
+          onResult={setAllResult}
+        />
         <span className="font-mono text-xs font-medium text-diff-add">+{added}</span>
         <span className="font-mono text-xs font-medium text-diff-del">−{removed}</span>
         <FullViewButton full={full} onToggle={onToggleFull} />
@@ -1410,6 +1531,7 @@ function LinkedChangesPanel({
           ×
         </button>
       </div>
+      {allResult ? <CreateAllNote result={allResult} onDismiss={() => setAllResult(null)} /> : null}
       <FilesAndDiff
         full={full}
         linked

@@ -51,7 +51,7 @@ export function HomeOverview({
   const suspended = useSuspended();
   const ship = useShipStates(workspaces);
   const now = useNow();
-  const item = useHomeItems({ profile, sessions, memory, actions, ship, now });
+  const item = useHomeItems({ profile, projects, sessions, memory, actions, ship, now });
 
   const sections = homeSections(workspaces, ship);
   const total = HOME_SECTIONS.reduce((n, s) => n + sections[s].length, 0);

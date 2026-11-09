@@ -31,35 +31,79 @@ export const HOME_SECTION_LIMIT = 5;
 export interface ShipState {
   uncommitted: number;
   unpushed: number;
+  /** Repositories that use pull requests, with commits of their own and no PR known (§6.7). */
+  withoutPr: number;
 }
 
 /** What a Ready to ship row offers: the first of these that applies (spec §6.7). */
 export type ShipStep =
   | { kind: 'commit'; files: number }
   | { kind: 'push'; commits: number }
-  | { kind: 'pr'; pr: PrStatus };
+  | { kind: 'create'; repos: number }
+  | { kind: 'pr'; prs: RepoPr[] };
 
-/** The main repository's open or draft PR, else the first linked one's. */
-export function openPr(w: Pick<Workspace, 'repos' | 'pr'>): PrStatus | null {
-  const open = (pr: PrStatus | null | undefined) =>
-    pr && (pr.state === 'open' || pr.state === 'draft') ? pr : null;
-  return (
-    open(w.repos.find((r) => r.primary)?.pr ?? w.pr) ??
-    w.repos.map((r) => open(r.pr)).find(Boolean) ??
-    null
-  );
+/** A repository's pull request, by its project. */
+export interface RepoPr {
+  projectId: string;
+  pr: PrStatus;
 }
 
-/** Uncommitted files first, then unpushed commits, then an open pull request. */
+/**
+ * Whether a repository is waiting for its pull request (spec §6.7): its
+ * project uses pull requests (a PR create or status command is set), and its
+ * branch has commits of its own but no PR is known. Without the commands it
+ * isn't, since some merge locally instead.
+ */
+export const waitsForPr = (s: {
+  usesPrs: boolean;
+  hasRemote: boolean;
+  hasOwnCommits: boolean;
+  pr: PrStatus | null;
+}) => s.usesPrs && s.hasRemote && s.hasOwnCommits && !s.pr;
+
+/** Every open or draft pull request of the workspace, the main repository's first. */
+export function openPrs(w: Pick<Workspace, 'repos' | 'pr'>): RepoPr[] {
+  const open = (pr: PrStatus | null | undefined): pr is PrStatus =>
+    !!pr && (pr.state === 'open' || pr.state === 'draft');
+  const repos = [...w.repos].sort((a, b) => Number(b.primary) - Number(a.primary));
+  return repos.flatMap((r) => {
+    const pr = r.primary ? (r.pr ?? w.pr) : r.pr;
+    return open(pr) ? [{ projectId: r.projectId, pr }] : [];
+  });
+}
+
+/** Uncommitted files first, then unpushed commits, then repositories without a PR, then open PRs. */
 export function shipStep(
   w: Pick<Workspace, 'repos' | 'pr'>,
   state: ShipState | null,
 ): ShipStep | null {
   if (state && state.uncommitted > 0) return { kind: 'commit', files: state.uncommitted };
   if (state && state.unpushed > 0) return { kind: 'push', commits: state.unpushed };
-  const pr = openPr(w);
-  return pr ? { kind: 'pr', pr } : null;
+  if (state && state.withoutPr > 0) return { kind: 'create', repos: state.withoutPr };
+  const prs = openPrs(w);
+  return prs.length > 0 ? { kind: 'pr', prs } : null;
 }
+
+/**
+ * The open pull requests' text (spec §6.7): one as prText ("PR #212 open"),
+ * several counted ("2 PRs open", "3 PRs: 2 open, 1 draft").
+ */
+export function openPrsText(prs: RepoPr[]): string {
+  const [first] = prs;
+  if (!first) return '';
+  if (prs.length === 1) return prText(first.pr);
+  const drafts = prs.filter((p) => p.pr.state === 'draft').length;
+  const open = prs.length - drafts;
+  if (drafts === 0) return `${prs.length} PRs open`;
+  if (open === 0) return `${prs.length} draft PRs`;
+  return `${prs.length} PRs: ${open} open, ${drafts} draft`;
+}
+
+/** "Pushed, no PR yet", or "2 repositories without a PR" in a linked workspace (spec §6.7). */
+export const withoutPrText = (repos: number, linked: boolean) =>
+  linked
+    ? `${repos} ${repos === 1 ? 'repository' : 'repositories'} without a PR`
+    : 'Pushed, no PR yet';
 
 /** When the workspace began needing you: its state's start, or when Claude was cut off. */
 export const needsSince = (w: Pick<Workspace, 'state' | 'stateSince' | 'unfinished'>) =>

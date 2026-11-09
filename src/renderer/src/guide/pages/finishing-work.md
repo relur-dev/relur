@@ -39,7 +39,7 @@ The panel's bottom shows one step at a time:
 
 Then the panel shows the PR badge. Projects without a remote show only Commit, with a note on adding one: `git remote add origin <url>` in a Shell tab, which {{app}} picks up by itself. See [A new repository](add-project#a-new-repository).
 
-A workspace across several repositories has a section per repository, each with its own commit message, **Ask Claude to write it** (for that repository only), **Commit → Push → Create PR** row and PR badge; see [Tasks across repositories](tasks-across-repositories#finishing).
+A workspace across several repositories has a section per repository, each with its own commit message, **Ask Claude to write it** (for that repository only), **Commit → Push → Create PR** row and PR badge, and **Create n PRs** at the top opens them in every repository with commits at once; see [Tasks across repositories](tasks-across-repositories#finishing).
 
 ## The PR badge
 
@@ -64,10 +64,10 @@ By default {{app}} needs no setup for pull requests: Claude opens them, and git 
 }
 ```
 
-- `createCommand` runs in the worktree with the workspace's environment, and the panel shows its output.
+- `createCommand` runs in the worktree with the workspace's environment, and the panel shows its output. In a workspace across several repositories, each repository's command gets that repository's own base branch and worktree in `${{env:BASE_BRANCH}}` and `${{env:WORKTREE_PATH}}`.
 - `statusCommand` prints one JSON object, `{ "state": "open", "url": "…" }`, with `open`, `draft`, `merged` or `closed`, or nothing when the branch has no pull request. It may add `"title"`: New workspace then names the task after the pull request when you pick an [existing branch](new-workspace#from-an-existing-branch). With `gh`, add `title` to `--json` and to the `jq` object.
 
-A project's `pr` fields override the profile's.
+A project's `pr` fields override the profile's. With either command set, [Home](home) also lists a pushed workspace without a pull request under Ready to ship, with **Create PR**; without them it doesn't, since you may merge locally instead.
 
 ## Commit identity
 

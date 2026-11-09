@@ -10,11 +10,18 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - A branch that's already checked out says where: in a workspace (**Open workspace**), in a worktree (**Open as workspace**), or in your main checkout (**Open project**; Relur never switches your main checkout's branch).
 - With **Also in**, each other project uses the same branch where it has it, and gets it as a new branch from its own base where it doesn't.
 - **Behind and conflicts**: the Changes panel shows how far each workspace's branch is behind its base and whether merging the base would conflict, with **Ask Claude to merge**, which merges and resolves the conflicts without rebasing or force-pushing. While there are conflicts, the workspace's header says **Conflicts with <base>**.
+- **Pull requests in every repository of a task.** In a workspace across several repositories, **Create n PRs** at the top of the Changes panel opens a pull request in each repository with commits of its own, skipping the others: it pushes first where needed, runs your PR create command in each repository, or asks Claude once for all of them, linking each pull request to the others. Each repository's PR shows on its chip in the header (the primary's too), and on Home "2 PRs open" with **View PRs**, which lists them by repository.
+- **Create PR on Home.** When your profile or project has a PR create or status command, a pushed workspace without a pull request stays under **Ready to ship** with **Create PR** (**Create PRs…** across several repositories). Without the commands it goes to Idle as before, for when you merge locally.
 
 ### Changed
 
 - **Push** goes to the branch the workspace's branch tracks, when it tracks one. When the remote refuses because someone else pushed, the Changes panel offers **Ask Claude to merge** that branch.
 - **Delete workspace** says the branch on the remote stays for a workspace made from an existing branch, and when that branch has commits by someone else, names them before deleting your local copy. A local branch that was there before the workspace is kept unless you tick **Also delete the local branch**.
+
+### Fixed
+
+- **PR commands in a linked repository get that repository's base branch.** Your PR create and status commands ran in a linked repository's worktree but with the primary repository's `RELUR_BASE_BRANCH` and `RELUR_WORKTREE_PATH`, so `gh pr create --base "$RELUR_BASE_BRANCH"` could target the wrong base when the repositories' bases differ. They now get the repository's own.
+- **The PR badge after Create PR shows the new pull request at once.** A PR check that was still running from the push no longer stands in for the one after Create PR.
 
 ## [0.6.1] - 2026-11-09
 
