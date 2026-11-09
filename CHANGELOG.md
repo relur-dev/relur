@@ -4,9 +4,20 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-09
+
+### Highlights
+
+A new, softer **light theme**, and **View › Appearance** to choose **System**, **Light** or **Dark**. The Board's **columns can be reordered and hidden**, for each profile, and the Board can be **grouped by project**. Profiles have **twelve colors** to choose from instead of six. And Relur **reopens exactly where you left off**: the same profile, view, tab and panels. A project's **+** for a new workspace is **always shown** in the sidebar. Claude can **add other repositories** to a workspace when its task needs changes there. And the Board's quick reply **shows what Claude asked**, with its question's options as buttons to answer in one click.
+
 ### Added
 
+- **View › Appearance**: **System** (the default) follows your system's light or dark appearance, **Light** and **Dark** keep that theme whatever the system uses. The choice applies at once to the whole window, every terminal and the Guide's screenshots, and is remembered across restarts (`"appearance"` in `config.json`).
+- **Arrange the Board's columns**, for each profile: drag a column's header to move it, or use the **⋯** in its header (or a right click) for **Move Left**, **Move Right** and **Hide Column**. **Columns**, next to **List | Board**, lists every column with a checkbox to show or hide it, and **Reset to default**. One column always stays shown, and the layout is kept across restarts. A hidden column's workspaces are still in the List and the sidebar; if **Needs you** is hidden while something needs you, **Columns** shows a small dot in its color.
+- **Group the Board by project**: **Group**, next to **List | Board**, puts each project's workspaces in a band of their own under the Board's columns. A band's header shows the project, its workspaces and how many other projects' workspaces are linked into it; click it to collapse the band to a count per column (the Needs you count in color), or use **Expand all** and **Collapse all**. The column headers and project names stay in view while the Board scrolls, the arrow keys move through the bands, and the grouping and collapsed bands are remembered for each profile, with your column order and hidden columns applied to every band.
 - **A + on each band of the grouped Board.** With the Board grouped by project, each band's header has the same **+**, for a new workspace in that project.
+- **Twelve profile colors**: six more to choose from, **Indigo**, **Slate**, **Petrol**, **Pine**, **Plum** and **Charcoal**, in one row with the first six in New profile and Edit profile, scrolling sideways when the dialog is narrow. Hover a color for its name and which profiles use it, or move through them with the arrow keys. The new colors stay clear of the amber and pink that mean a session needs you, and read well in both themes. Existing profiles keep their colors. New profile's preview shows the new tab next to your other profiles' tabs.
+- **Relur reopens where you left off**: the profile you were in (or the Guide, if it was open), and in it Home on its Overview or Terminal tab, a project on its tab, or a workspace on its tab with its Changes and Responses panels open or closed as they were. A shell tab comes back as a new shell in the same folder. If something is gone by then, it steps back: a deleted workspace opens its project, a removed project the profile's Home. This holds after every kind of quit, after **Restart now** for an update, and when interrupted work is continued at start.
 - **Let Claude add others when needed**, under **Also in** in New workspace and on unless you untick it (remembered for each project). Claude is told at start which other projects of the profile it could link, with their folders and base branches, and links one with `relur link` only when the task needs changes there; the workspace's own repository stays its main one. Change it for a workspace with **Let Claude Add Repositories** in its **⋯** menu. With it off, Claude isn't told and its `relur link` is refused.
 - A repository Claude linked says **Added by Claude** in its chip's tooltip, and a line in the workspace's header says **Claude added <repo>** while you're looking at the workspace; elsewhere the window's notice says so, as before.
 - **See what you're replying to** on the Board: above a card's quick reply, a line shows Claude's last words: the question it asked, what it said at a workflow gate (or the gate's hint), or the end of its last message, two lines at most. Click it to open the workspace's **Responses** panel at that answer. It is always shown on **Needs you** cards and unfolds with the field elsewhere.
@@ -14,35 +25,15 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ### Changed
 
+- **A new light theme.** Light is now dim rather than bright: warm putty grays, about as bright as a paper notebook under room light, with the cards and dialogs as the brightest surface. All text, status and diff colors read at 4.5:1 or more on every surface. The light terminal has its own ANSI colors, so colored output (and "white" text from command line tools) stays readable on its background, and the diff viewer's syntax colors are darkened to match. While **Needs you** on the Board has cards, its column also gets a top edge in the color of its most urgent card. The dark theme is unchanged.
 - **New workspace is always one click away.** The **+** on each project's row in the sidebar no longer waits for the pointer: it's always shown, at the row's right end, so every project's **+** lines up. Hover it for "New workspace in <project>" and its shortcut.
 - Claude can link only the profile's projects: `relur link <path>` run by Claude no longer adds a repository that isn't a project yet. From a terminal it still does.
 
 ### Fixed
 
+- A branch that only caught up with main no longer counts as merged. A new workspace whose branch was fast-forwarded or rebased onto a newer main before it had commits of its own, for example by Claude at the start of a task, showed as **Merged** on Home and in Delete workspace. Only the branch's own commits count now, so it stays where it belongs until its own work is merged.
 - A card dragged on the Board no longer carries on behind a dialog. If a dialog opened during the drag, for example the list of unfinished work at start, dropping the card on **Drop to delete** opened Delete workspace on top of it. A dialog that opens now cancels the drag.
 - The Board offered its quick reply while Claude waited on its question menu, where the text would have been taken as your answer. It shows the question's options there instead.
-
-## [0.6.0] - 2026-11-08
-
-### Highlights
-
-A new, softer **light theme**, and **View › Appearance** to choose **System**, **Light** or **Dark**. The Board's **columns can be reordered and hidden**, for each profile, and the Board can be **grouped by project**. Profiles have **twelve colors** to choose from instead of six. And Relur **reopens exactly where you left off**: the same profile, view, tab and panels.
-
-### Added
-
-- **View › Appearance**: **System** (the default) follows your system's light or dark appearance, **Light** and **Dark** keep that theme whatever the system uses. The choice applies at once to the whole window, every terminal and the Guide's screenshots, and is remembered across restarts (`"appearance"` in `config.json`).
-- **Arrange the Board's columns**, for each profile: drag a column's header to move it, or use the **⋯** in its header (or a right click) for **Move Left**, **Move Right** and **Hide Column**. **Columns**, next to **List | Board**, lists every column with a checkbox to show or hide it, and **Reset to default**. One column always stays shown, and the layout is kept across restarts. A hidden column's workspaces are still in the List and the sidebar; if **Needs you** is hidden while something needs you, **Columns** shows a small dot in its color.
-- **Group the Board by project**: **Group**, next to **List | Board**, puts each project's workspaces in a band of their own under the Board's columns. A band's header shows the project, its workspaces and how many other projects' workspaces are linked into it; click it to collapse the band to a count per column (the Needs you count in color), or use **Expand all** and **Collapse all**. The column headers and project names stay in view while the Board scrolls, the arrow keys move through the bands, and the grouping and collapsed bands are remembered for each profile, with your column order and hidden columns applied to every band.
-- **Twelve profile colors**: six more to choose from, **Indigo**, **Slate**, **Petrol**, **Pine**, **Plum** and **Charcoal**, in one row with the first six in New profile and Edit profile, scrolling sideways when the dialog is narrow. Hover a color for its name and which profiles use it, or move through them with the arrow keys. The new colors stay clear of the amber and pink that mean a session needs you, and read well in both themes. Existing profiles keep their colors. New profile's preview shows the new tab next to your other profiles' tabs.
-- **Relur reopens where you left off**: the profile you were in (or the Guide, if it was open), and in it Home on its Overview or Terminal tab, a project on its tab, or a workspace on its tab with its Changes and Responses panels open or closed as they were. A shell tab comes back as a new shell in the same folder. If something is gone by then, it steps back: a deleted workspace opens its project, a removed project the profile's Home. This holds after every kind of quit, after **Restart now** for an update, and when interrupted work is continued at start.
-
-### Changed
-
-- **A new light theme.** Light is now dim rather than bright: warm putty grays, about as bright as a paper notebook under room light, with the cards and dialogs as the brightest surface. All text, status and diff colors read at 4.5:1 or more on every surface. The light terminal has its own ANSI colors, so colored output (and "white" text from command line tools) stays readable on its background, and the diff viewer's syntax colors are darkened to match. While **Needs you** on the Board has cards, its column also gets a top edge in the color of its most urgent card. The dark theme is unchanged.
-
-### Fixed
-
-- A branch that only caught up with main no longer counts as merged. A new workspace whose branch was fast-forwarded or rebased onto a newer main before it had commits of its own, for example by Claude at the start of a task, showed as **Merged** on Home and in Delete workspace. Only the branch's own commits count now, so it stays where it belongs until its own work is merged.
 
 ## [0.5.0] - 2026-11-06
 
