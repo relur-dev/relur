@@ -18,7 +18,8 @@ vi.mock('electron', () => ({ app: { getLocale: () => 'en-US', getVersion: () => 
  * Deleting worktrees with submodules (spec §14.2, §21.6): real repositories,
  * each with a submodule `lib` from its own bare origin.
  */
-describe('deleting worktrees with submodules (spec §14.2)', () => {
+// Each test runs dozens of git commands: 5 s is too tight under x64 emulation (linux-check.sh).
+describe('deleting worktrees with submodules (spec §14.2)', { timeout: 20_000 }, () => {
   let fx: Fixture;
   let host: SessionHost;
   let records: WorkspaceRecords;

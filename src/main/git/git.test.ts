@@ -13,7 +13,8 @@ beforeAll(() => {
 });
 afterAll(() => fx.cleanup());
 
-describe('Git', () => {
+// Each test runs dozens of git commands: 5 s is too tight under x64 emulation (linux-check.sh).
+describe('Git', { timeout: 20_000 }, () => {
   it('finds the main checkout from the root, a subfolder and a linked worktree', async () => {
     const { clone } = fx.cloneWithRemote('main-checkout');
     fs.mkdirSync(path.join(clone, 'src', 'deep'), { recursive: true });

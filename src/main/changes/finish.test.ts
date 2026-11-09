@@ -354,7 +354,8 @@ describe('Create PRs in a linked workspace (spec §21.5)', () => {
     expect(prompt).toContain('link the pull requests to each other');
   });
 
-  describe('with local bare remotes and PR commands', () => {
+  // Each test runs dozens of git commands: 5 s is too tight under x64 emulation (linux-check.sh).
+  describe('with local bare remotes and PR commands', { timeout: 20_000 }, () => {
     let fx: Fixture;
     let records: WorkspaceRecords;
     let finish: FinishService;
