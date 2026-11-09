@@ -16,8 +16,7 @@ import { WorkspaceService } from './workspaces';
 
 vi.mock('electron', () => ({ app: { getLocale: () => 'en-US', getVersion: () => '0.0.0' } }));
 
-// Each test runs dozens of git commands: 5 s is too tight under x64 emulation (linux-check.sh).
-describe('a workspace from an existing branch (spec §7.6)', { timeout: 20_000 }, () => {
+describe('a workspace from an existing branch (spec §7.6)', () => {
   let fx: Fixture;
   let host: SessionHost;
   let records: WorkspaceRecords;
