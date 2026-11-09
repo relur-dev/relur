@@ -569,7 +569,7 @@ export function HomeBoard({
         <button
           type="button"
           data-quick-reply-context={words.kind}
-          title={`${words.lead} ${words.text}\n\n${words.entry === null ? 'Open the workspace' : 'Click to read it in Responses'}`}
+          title={`${words.lead ? `${words.lead} ` : ''}${words.text}\n\n${words.entry === null ? 'Open the workspace' : 'Click to read it in Responses'}`}
           className="mt-[3px] line-clamp-2 rounded-[3px] text-left text-sm break-words text-fg-muted outline-none hover:text-fg focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)]"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
@@ -578,7 +578,12 @@ export function HomeBoard({
             else actions.responses(w, words.entry);
           }}
         >
-          <span className="font-medium text-fg-subtle">{words.lead}</span> {words.text}
+          {words.lead ? (
+            <>
+              <span className="font-medium text-fg-subtle">{words.lead}</span>{' '}
+            </>
+          ) : null}
+          {words.text}
         </button>
       ) : null;
     const text = replies[w.id] ?? '';

@@ -48,7 +48,7 @@ describe('chooseLastWords', () => {
     expect(chooseLastWords([entry('Done.')], { pending: color, gate })?.kind).toBe('question');
   });
 
-  it("at a gate, the end of Claude's last message, else the gate's hint", () => {
+  it("at a gate, the end of Claude's last message, else the gate's hint alone", () => {
     const gate = { label: 'Spec review', hint: 'Review and approve the spec' };
     expect(
       chooseLastWords([entry('Wrote the spec.\n\nPlease review `spec.md` and approve.')], {
@@ -64,7 +64,8 @@ describe('chooseLastWords', () => {
     });
     expect(chooseLastWords([], { pending: null, gate })).toEqual({
       kind: 'gate',
-      lead: 'At Spec review:',
+      // The status already names the gate: no "At Spec review:" before the hint.
+      lead: '',
       text: 'Review and approve the spec',
       entry: null,
       question: null,

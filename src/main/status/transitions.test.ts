@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isIdleNotification, runningBackgroundTasks, transition } from './transitions';
+import { asking, isIdleNotification, runningBackgroundTasks, transition } from './transitions';
 
 /** A Stop payload as Claude Code sends it (checked live). */
 const stop = (...tasks: { type: string; status: string }[]) => ({
@@ -44,6 +44,26 @@ describe('transition', () => {
     expect(
       isIdleNotification({ notification_type: 'permission_prompt', message: 'waiting for input' }),
     ).toBe(false);
+  });
+
+  it("shows Claude's question menu as a question, not a permission request", () => {
+    // Claude Code 2.1.319 reports the menu as a permission prompt naming no tool.
+    const notice = {
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission',
+    };
+    expect(transition('working', 'Notification', notice, { asking: true })).toEqual({
+      state: 'needs-answer',
+      message: null,
+      background: 0,
+    });
+    expect(transition('working', 'Notification', notice)?.state).toBe('needs-permission');
+    // The idle notice stays Waiting for input.
+    const idle = { notification_type: 'idle_prompt', message: 'Claude is waiting for your input' };
+    expect(transition('working', 'Notification', idle, { asking: true })?.state).toBe(
+      'needs-input',
+    );
+    expect(transition('needs-answer', 'PostToolUse', {})?.state).toBe('working');
   });
 
   it('stays Working at Stop while background agents run, counting all running tasks', () => {
@@ -105,5 +125,28 @@ describe('transition', () => {
       'needs-input',
     );
     expect(transition('working', 'SessionEnd', {}, { background: 2 })?.background).toBe(0);
+  });
+});
+
+describe('asking', () => {
+  const question = { tool_name: 'AskUserQuestion' };
+  const bash = { tool_name: 'Bash' };
+
+  it("is on from the question tool's PreToolUse until its PostToolUse", () => {
+    expect(asking(false, 'PreToolUse', question)).toBe(true);
+    expect(asking(true, 'Notification', { message: 'Claude needs your permission' })).toBe(true);
+    expect(asking(true, 'PostToolUse', question)).toBe(false);
+  });
+
+  it("ignores other tools' events, which may be a background agent's", () => {
+    expect(asking(false, 'PreToolUse', bash)).toBe(false);
+    expect(asking(true, 'PreToolUse', bash)).toBe(true);
+    expect(asking(true, 'PostToolUse', bash)).toBe(true);
+  });
+
+  it('ends with a new prompt, Stop or the end of the session', () => {
+    for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd']) {
+      expect(asking(true, event, {})).toBe(false);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { needsYou, type WorkspaceState } from './status';
+import { atMenu, needsYou, type WorkspaceState } from './status';
 import {
   mergedText,
   type PrStatus,
@@ -255,7 +255,7 @@ export function quickReply(
 ): QuickReply {
   if (column === 'merged') return 'none';
   if (facts.question && facts.claude?.status === 'running') return 'question';
-  if (w.state === 'needs-permission' || w.unfinished?.kind === 'permission') return 'open';
+  if (atMenu(w.state) || w.unfinished?.kind === 'permission') return 'open';
   const { claude } = facts;
   if (!claude || claude.status === 'exited') return 'none';
   const ready =

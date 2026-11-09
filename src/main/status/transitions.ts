@@ -1,3 +1,4 @@
+import { QUESTION_TOOL } from '@shared/question';
 import type { WorkspaceState } from '@shared/status';
 import { looksLikeDevServer } from '../memory/measure';
 
@@ -20,6 +21,8 @@ export interface Current {
   background?: number;
   /** Claude's turn has ended while it waits for background work (spec §10.2). */
   waiting?: boolean;
+  /** Claude's question tool has been called and has no result yet (`asking`). */
+  asking?: boolean;
 }
 
 const record = (v: unknown): Record<string, unknown> =>
@@ -36,6 +39,29 @@ export function isIdleNotification(payload: unknown): boolean {
   if (type === 'idle_prompt') return true;
   if (type === 'permission_prompt') return false;
   return typeof message === 'string' && /waiting for (your )?input/i.test(message);
+}
+
+/**
+ * Whether Claude's question tool waits after this hook event (spec §10.2):
+ * from its PreToolUse until its PostToolUse, a new prompt, Stop or the end.
+ * Claude Code reports its menu as a permission request, naming no tool, so
+ * this tells the two apart. Other tools' events change nothing: they may be
+ * a background agent's.
+ */
+export function asking(before: boolean, event: string, payload: unknown): boolean {
+  const tool = record(payload).tool_name;
+  switch (event) {
+    case 'PreToolUse':
+      return tool === QUESTION_TOOL || before;
+    case 'PostToolUse':
+      return tool === QUESTION_TOOL ? false : before;
+    case 'UserPromptSubmit':
+    case 'Stop':
+    case 'SessionEnd':
+      return false;
+    default:
+      return before;
+  }
 }
 
 /** One of Claude's background tasks, as the Stop hook lists them in `background_tasks`. */
@@ -86,7 +112,7 @@ export function transition(
   current: WorkspaceState,
   event: string,
   payload: unknown,
-  { background = 0, waiting = false }: Current = {},
+  { background = 0, waiting = false, asking = false }: Current = {},
 ): Transition | null {
   switch (event) {
     case 'UserPromptSubmit':
@@ -103,6 +129,8 @@ export function transition(
         if (current === 'done' || (current === 'working' && waiting)) return null;
         return { state: 'needs-input', message: text, background: 0 };
       }
+      // Claude's question menu comes as a permission request (spec §10.2).
+      if (asking) return { state: 'needs-answer', message: null, background: 0 };
       return { state: 'needs-permission', message: text, background: 0 };
     }
     case 'Stop': {

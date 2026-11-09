@@ -123,6 +123,28 @@ describe('StatusService', () => {
     expect(notified.map((a) => a.state)).toEqual(['needs-permission', 'done']);
   });
 
+  it("shows Claude's question as Asked a question, counted and alerted as such", () => {
+    hook('UserPromptSubmit');
+    hook('PreToolUse', { tool_name: 'AskUserQuestion' });
+    expect(state()).toBe('working');
+    hook('Notification', {
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission',
+    });
+    expect(state()).toBe('needs-answer');
+    expect(records.get('ws_1')?.stateMessage).toBeNull();
+    expect(badge).toBe(1);
+    expect(notified.map((a) => [a.state, a.title])).toEqual([
+      ['needs-answer', '[Work] PROJ-1 asked a question'],
+    ]);
+    hook('PostToolUse', { tool_name: 'AskUserQuestion' });
+    expect(state()).toBe('working');
+    // A real permission request afterwards stays one.
+    hook('PreToolUse', { tool_name: 'Bash' });
+    hook('Notification', { message: 'Claude needs your permission to use Bash' });
+    expect(state()).toBe('needs-permission');
+  });
+
   it('stays quiet while the Claude tab is in focus or the profile is on Do Not Disturb', () => {
     visible = true;
     hook('Stop');

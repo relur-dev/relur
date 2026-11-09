@@ -29,11 +29,12 @@ const rowState = (selected: boolean) =>
   selected ? 'bg-selected font-medium text-fg' : 'text-fg hover:bg-raised';
 
 /** The glyphs a collapsed project shows, most urgent first (spec §6.1). */
-const URGENCY: Glyph[] = ['permission', 'input', 'approval', 'error', 'working'];
+const URGENCY: Glyph[] = ['permission', 'input', 'question', 'approval', 'error', 'working'];
 
 const LABEL_COLOR: Partial<Record<Workspace['state'], string>> = {
   'needs-permission': 'text-st-permission',
   'needs-input': 'text-st-input',
+  'needs-answer': 'text-st-input',
   'awaiting-approval': 'text-st-approval',
   error: 'text-st-error',
 };

@@ -58,4 +58,4 @@ Each shows only when it isn't 0; hover one for what it counts. Workspaces of oth
 
 ## A collapsed project still tells you
 
-When a workspace of a collapsed project needs you, has failed or is working, its [status glyph](status-glyphs) sits next to the counts: the most urgent among the project's workspaces and the ones linked into it, in this order: Needs permission, Waiting for input, Awaiting approval, Error, then Working. Hover it for the workspace's name; click it to open that workspace.
+When a workspace of a collapsed project needs you, has failed or is working, its [status glyph](status-glyphs) sits next to the counts: the most urgent among the project's workspaces and the ones linked into it, in this order: Needs permission, Waiting for input, Asked a question, Awaiting approval, Error, then Working. Hover it for the workspace's name; click it to open that workspace.

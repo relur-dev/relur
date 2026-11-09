@@ -7,7 +7,10 @@ import type { PendingQuestion } from './question';
 export interface LastWords {
   /** A question Claude waits on, Claude's words at a gate (or its hint), or its last message. */
   kind: 'question' | 'gate' | 'said';
-  /** The lead-in: "Claude asked:", "At Spec review, Claude:", "Claude:". */
+  /**
+   * The lead-in: "Claude asked:", "At Spec review, Claude:", "Claude:"; empty
+   * for a gate's hint, as the status already names the gate.
+   */
   lead: string;
   /** Plain text, one paragraph; the card shows two lines of it. */
   text: string;
@@ -63,7 +66,7 @@ export function lastParagraph(markdown: string): string {
 
 /**
  * What the card shows (spec §6.7): the question Claude waits on; at a gate,
- * the end of Claude's last message, else the gate's hint; otherwise the end of
+ * the end of Claude's last message, else the gate's hint alone; otherwise the end of
  * Claude's last message ("Claude asked:" when it ends with a question mark).
  * Null when there is nothing yet (a fresh session).
  */
@@ -100,7 +103,7 @@ export function chooseLastWords(
     if (gate.hint) {
       return {
         kind: 'gate',
-        lead: `At ${gate.label}:`,
+        lead: '',
         text: gate.hint,
         entry: null,
         question: null,

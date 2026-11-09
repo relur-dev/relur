@@ -5,10 +5,10 @@ import type { UsageSnapshot } from './usage';
 /**
  * Why Claude didn't finish when the app stopped (spec §9.7): it was working
  * (also while waiting for its own background agents), the user had pressed
- * Esc, it was asking for permission, or it was Done while commands it
- * started in the background still ran, which the stop ended.
+ * Esc, it was asking for permission or asking a question, or it was Done
+ * while commands it started in the background still ran, which the stop ended.
  */
-export type UnfinishedKind = 'working' | 'interrupted' | 'permission' | 'commands';
+export type UnfinishedKind = 'working' | 'interrupted' | 'permission' | 'question' | 'commands';
 
 /** A workspace's Unfinished marker (spec §9.7). */
 export interface Unfinished {
@@ -33,6 +33,8 @@ export function unfinishedKind(state: WorkspaceState, background = 0): Unfinishe
       return 'interrupted';
     case 'needs-permission':
       return 'permission';
+    case 'needs-answer':
+      return 'question';
     case 'done':
       return background > 0 ? 'commands' : null;
     default:
@@ -59,6 +61,8 @@ export function unfinishedReason(u: Pick<Unfinished, 'kind' | 'stopped'>): strin
       return 'Interrupted with Esc';
     case 'permission':
       return 'Was asking for permission';
+    case 'question':
+      return 'Was asking a question';
     case 'commands':
       return stoppedNote(u.stopped);
   }
@@ -70,8 +74,9 @@ export const unfinishedTooltip = (u: Pick<Unfinished, 'kind' | 'stopped'> | null
 
 /**
  * Only Working is continued without the user choosing it; Esc-interrupted
- * work and stopped background commands (dev servers, or commands past the
- * hold's fallback, §10.2: Claude may not have waited for them) are offered unticked; a permission has to be
+ * work, a question it asked (it asks again) and stopped background commands
+ * (dev servers, or commands past the hold's fallback, §10.2: Claude may not
+ * have waited for them) are offered unticked; a permission has to be
  * given again in the session, so it can't be continued at all (spec §9.7).
  */
 export const continuesAtStart = (kind: UnfinishedKind) => kind === 'working';

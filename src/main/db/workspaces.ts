@@ -101,6 +101,7 @@ const STATES: readonly string[] = [
   'working',
   'needs-permission',
   'needs-input',
+  'needs-answer',
   'awaiting-approval',
   'done',
   'interrupted',
@@ -112,6 +113,7 @@ const UNFINISHED_KINDS: readonly string[] = [
   'working',
   'interrupted',
   'permission',
+  'question',
   'commands',
 ] satisfies UnfinishedKind[];
 

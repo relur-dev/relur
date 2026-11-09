@@ -1,6 +1,6 @@
 import type { Profile, Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
-import { glyphFor } from '@shared/status';
+import { atMenu, glyphFor } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import {
   canContinue,
@@ -804,7 +804,7 @@ export function WorkspaceView({
             aids={aids}
             alternate={alternate}
             narrow={narrow}
-            running={workspace.state === 'working' || workspace.state === 'needs-permission'}
+            running={workspace.state === 'working' || atMenu(workspace.state)}
             full={responsesFull}
             onToggleFull={() => {
               setResponsesFull((full) => !full);
@@ -866,6 +866,8 @@ function unfinishedBarText({ kind, stopped }: Unfinished): string {
       return 'you had interrupted it with Esc.';
     case 'permission':
       return 'it was asking for permission. Give it again in the Claude tab.';
+    case 'question':
+      return 'it was asking you a question.';
     case 'commands':
       return `${stoppedNote(stopped)}.`;
   }

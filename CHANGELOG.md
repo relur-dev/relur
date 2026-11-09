@@ -4,6 +4,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- **A question from Claude no longer reads as a permission request.** When Claude asks you to choose in its question menu, Claude Code reports it like a permission request, so its workspace said **Needs permission**. It now says **Asked a question**, with a pink **?**, in the sidebar, on Home's list and on the Board, and counts toward **Needs you**'s color as waiting for input. Its notification says "asked a question" and plays the **Waiting for input** sound. A real permission request is unchanged.
+- **A Board card at a workflow gate no longer names the gate twice.** When Claude wrote nothing there, the line above the quick reply showed "At Spec review: Review and approve the spec" under a status that already said "At Spec review"; it now shows only the gate's hint.
+
 ## [0.6.0] - 2026-11-09
 
 ### Highlights

@@ -12,7 +12,7 @@ Right-click a profile tab and choose **Edit profile…**. It has four tabs: **Ge
 | Terminal shortcut | For a profile with its own account folder: an `alias claude-<id>` line that runs Claude Code with this profile's account in any terminal, with Copy and **Add to <file>…**, the same as at the end of New profile |
 | Commit identity | Optional name and email for commits made in this profile. See [Commit identity](finishing-work#commit-identity) |
 | Pull request commands | Optional **Create PR** and **PR status** commands; left empty, Claude opens pull requests and git tells when they're merged. See [PR commands](finishing-work#pr-commands) |
-| Sounds | A checkbox per event: Needs permission, Waiting for input, Awaiting approval, Done, Error. All off to begin with; ticking one plays it. See [Sounds](notifications#sounds) |
+| Sounds | A checkbox per event: Needs permission, Waiting for input (also when Claude asks a question), Awaiting approval, Done, Error. All off to begin with; ticking one plays it. See [Sounds](notifications#sounds) |
 | Alerts | **Do Not Disturb**: no notifications and no sounds for this profile |
 | When {{app}} starts | **Continue interrupted work when {{app}} starts**, off at first, and the continue prompt it sends. See [Continuing it](resume#continuing-it) |
 | Suspend idle sessions | After 10 minutes at first, or after 5 or 30 minutes, or Off: stops Claude in workspaces you aren't looking at once it has waited that long, to save memory, and resumes it when you open them. See [Suspending idle sessions](suspend) |

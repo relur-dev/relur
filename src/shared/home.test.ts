@@ -338,6 +338,8 @@ describe('quickReply', () => {
 
   it('never on a permission request: Open instead', () => {
     expect(quickReply(ws('needs-permission'), 'needs', facts(running))).toBe('open');
+    // Nor at a question whose options the transcript doesn't have yet.
+    expect(quickReply(ws('needs-answer'), 'needs', facts(running))).toBe('open');
     const cut = { kind: 'permission' as const, since: '2026-11-01T10:00:00.000Z', stopped: 0 };
     expect(quickReply(ws('interrupted', { unfinished: cut }), 'needs', facts(running))).toBe(
       'open',
@@ -359,6 +361,7 @@ describe('quickReply', () => {
     for (const [state, column] of [
       ['working', 'working'],
       ['needs-permission', 'needs'],
+      ['needs-answer', 'needs'],
     ] as const) {
       expect(quickReply(ws(state), column, facts(running, false, true))).toBe('question');
       expect(quickReply(ws(state), column, facts(running, true, true))).toBe('question');

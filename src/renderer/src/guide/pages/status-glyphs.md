@@ -24,6 +24,8 @@ Quitting Claude ends its background work too. Quitting {{app}} while Claude work
 
 Answering a permission question in the Claude tab moves the workspace on at once: to Working after **Yes**, and to Waiting for input after **No** or <kbd>Esc</kbd>, since Claude then waits for you to say what to do instead.
 
+When Claude asks you to choose (its question menu, with options to pick from), Claude Code reports it like a permission request. {{app}} tells the two apart and shows **Asked a question** with the pink **?**, in the sidebar, on Home and on the Board, not Needs permission. Picking an answer in the Claude tab moves it on to Working the same way.
+
 ## Needs you
 
-Needs permission, Waiting for input and Awaiting approval (your skills wait at a [workflow gate](workflows#when-the-skills-wait-for-you)) count as needing you: the profile tab shows a badge with their number, the status bar says how many (**1 needs you**, next to **2 working** while Claude works in others), Home lists them under **Needs you** with the oldest first (with [unfinished](resume#the-unfinished-marker) workspaces, which don't count toward the badges), and <kbd>{{key:nextNeedingYou}}</kbd> jumps to the next one.
+Needs permission, Waiting for input, Asked a question and Awaiting approval (your skills wait at a [workflow gate](workflows#when-the-skills-wait-for-you)) count as needing you: the profile tab shows a badge with their number, the status bar says how many (**1 needs you**, next to **2 working** while Claude works in others), Home lists them under **Needs you** with the oldest first (with [unfinished](resume#the-unfinished-marker) workspaces, which don't count toward the badges), and <kbd>{{key:nextNeedingYou}}</kbd> jumps to the next one.

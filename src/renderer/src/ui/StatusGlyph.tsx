@@ -23,6 +23,7 @@ const SHAPES: Record<Glyph, React.ReactNode> = {
     <span className="h-[10px] w-[11px] bg-st-permission [clip-path:polygon(50%_0,100%_100%,0_100%)]" />
   ),
   input: <span className="box-border size-[10px] rounded-full border-2 border-st-input" />,
+  question: <span className="font-mono text-[12px] leading-none font-bold text-st-input">?</span>,
   approval: <span className="size-[7.5px] rotate-45 bg-st-approval" />,
   done: <span className="size-2 rounded-full bg-fg" />,
   exited: <span className="box-border size-2 border-[1.5px] border-fg-subtle" />,

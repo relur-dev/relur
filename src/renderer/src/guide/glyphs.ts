@@ -10,11 +10,12 @@ export const GLYPHS: [Glyph, string, string, string][] = [
     'Amber triangle',
     'Claude wants to run a command or edit a file and waits for your OK.',
   ],
+  ['input', 'Waiting for input', 'Pink ring', 'Claude finished its turn and waits for your reply.'],
   [
-    'input',
-    'Waiting for input',
-    'Pink ring',
-    'Claude asked you something and waits for your answer.',
+    'question',
+    'Asked a question',
+    'Pink ?',
+    'Claude asks you to choose in its question menu. On the Board, its card shows the options.',
   ],
   [
     'approval',

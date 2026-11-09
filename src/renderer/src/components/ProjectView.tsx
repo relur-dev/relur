@@ -33,6 +33,7 @@ import { ProjectWorkflowEditor } from './WorkflowViews';
 const STATE_TEXT: Partial<Record<Workspace['state'], string>> = {
   'needs-permission': 'text-st-permission',
   'needs-input': 'text-st-input',
+  'needs-answer': 'text-st-input',
   'awaiting-approval': 'text-st-approval',
   error: 'text-st-error',
 };

@@ -276,6 +276,10 @@ export function useHomeItems({
         parts.push({ text: 'Waiting for input', tone: 'input' });
         if (w.stateMessage && !card) parts.push({ text: w.stateMessage });
         buttons.push(open);
+      } else if (w.state === 'needs-answer') {
+        // Claude Code's notice names no tool, so nothing follows (spec §10.2).
+        parts.push({ text: 'Asked a question', tone: 'input' });
+        buttons.push(open);
       } else if (w.state === 'awaiting-approval') {
         parts.push({ text: 'At' }, { text: w.workflow?.label ?? 'a gate', tone: 'appr' });
         const answers = !!w.workflow?.statuses[w.workflow.index]?.answer;

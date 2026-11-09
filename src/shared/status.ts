@@ -4,6 +4,7 @@ export type WorkspaceState =
   | 'working'
   | 'needs-permission'
   | 'needs-input'
+  | 'needs-answer'
   | 'awaiting-approval'
   | 'done'
   | 'interrupted'
@@ -19,6 +20,7 @@ export type StatusGlyph =
   | 'working'
   | 'permission'
   | 'input'
+  | 'question'
   | 'approval'
   | 'done'
   | 'exited'
@@ -29,6 +31,7 @@ export const GLYPH_LABEL: Record<StatusGlyph, string> = {
   working: 'Working',
   permission: 'Needs permission',
   input: 'Waiting for input',
+  question: 'Asked a question',
   approval: 'Awaiting approval',
   done: 'Done (unread)',
   exited: 'Exited',
@@ -42,6 +45,7 @@ export const STATE_LABEL: Record<WorkspaceState, string> = {
   working: 'Working',
   'needs-permission': 'Needs permission',
   'needs-input': 'Waiting for input',
+  'needs-answer': 'Asked a question',
   'awaiting-approval': 'Awaiting approval',
   done: 'Done',
   interrupted: 'Interrupted',
@@ -54,6 +58,7 @@ export const GLYPH_ROW_LABEL: Record<StatusGlyph, string> = {
   working: 'Working',
   permission: 'Permission',
   input: 'Input',
+  question: 'Question',
   approval: 'Approve',
   done: 'Done',
   exited: 'Exited',
@@ -80,6 +85,8 @@ export function glyphFor(
       return 'permission';
     case 'needs-input':
       return 'input';
+    case 'needs-answer':
+      return 'question';
     case 'awaiting-approval':
       return 'approval';
     case 'done':
@@ -93,10 +100,22 @@ export function glyphFor(
   }
 }
 
-/** Whether a state counts toward profile tab and Dock badges (permission, input, approval). */
+/** Whether a state counts toward profile tab and Dock badges (permission, input, question, approval). */
 export function needsYou(state: WorkspaceState): boolean {
-  return state === 'needs-permission' || state === 'needs-input' || state === 'awaiting-approval';
+  return (
+    state === 'needs-permission' ||
+    state === 'needs-input' ||
+    state === 'needs-answer' ||
+    state === 'awaiting-approval'
+  );
 }
+
+/**
+ * Whether Claude shows a menu that keys answer (spec §10.2): its permission
+ * menu, or its question tool's. Typed text there isn't a prompt.
+ */
+export const atMenu = (state: WorkspaceState | undefined): boolean =>
+  state === 'needs-permission' || state === 'needs-answer';
 
 /**
  * The events a profile can play a sound for (spec §10.3), in Edit profile's
@@ -122,8 +141,12 @@ export const SOUND_EVENTS = [
 
 export type SoundKey = (typeof SOUND_EVENTS)[number]['key'];
 
-/** The sound setting for a state, or null when it has no sound. */
+/**
+ * The sound setting for a state, or null when it has no sound. A question
+ * Claude asked plays Waiting for input's (spec §10.3).
+ */
 export function soundKey(state: WorkspaceState): SoundKey | null {
+  if (state === 'needs-answer') return 'needsInput';
   return SOUND_EVENTS.find((e) => e.state === state)?.key ?? null;
 }
 

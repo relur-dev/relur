@@ -14,9 +14,10 @@
  * workspace and to a working
  * one, resumed first for a suspended one, refused on a permission request
  * (Open instead) and over a draft; above it what Claude last said (its
- * question, its words at a gate, none for a fresh session), the line opening
- * the Responses panel at that entry, and Claude's question tool answered from
- * its card's options. Runs with a throwaway HOME and a fake
+ * question, its words at a gate or the gate's hint alone, none for a fresh
+ * session), the line opening the Responses panel at that entry, and Claude's
+ * question tool shown as Asked a question (card, List, sidebar, Needs you in
+ * the input color) and answered from its card's options. Runs with a throwaway HOME and a fake
  * `claude`.
  *
  *   tsx scripts/e2e-board.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
@@ -1086,11 +1087,28 @@ exec sleep 600
     await typeInTerminal(page, 'said');
     await typeInTerminal(page, 'stop');
     await waitState('gate', 'Awaiting approval');
+    // At a gate without Claude's words: the gate's hint alone, as the status names the gate.
+    await create('hint', 'api', 'ABC-10 Refund spec');
+    const hintSpec = path.join(ws.hint?.tree as string, 'docs', 'specs', 'refund', 'spec.md');
+    fs.mkdirSync(path.dirname(hintSpec), { recursive: true });
+    fs.writeFileSync(hintSpec, `---\nbranch: ${ws.hint?.branch}\nstatus: review\n---\n# Refund\n`);
+    await typeInTerminal(page, 'prompt');
+    await typeInTerminal(page, 'stop');
+    await waitState('hint', 'Awaiting approval');
     // Claude's question tool: its options in place of the field.
     await create('asker', 'api', 'ABC-9 Brand color');
     await typeInTerminal(page, 'prompt');
     await typeInTerminal(page, 'ask');
-    await waitState('asker', 'Needs permission');
+    // Claude Code reports its menu as a permission request: shown as a question (spec §10.2).
+    await waitState('asker', 'Asked a question');
+    const askerRow = `document.querySelector('nav [data-nav-key="w:${id('asker')}"]')`;
+    assert.deepEqual(
+      await page.eval(
+        `[...${askerRow}.querySelectorAll('.text-st-input')].map((e) => e.textContent)`,
+      ),
+      ['?', 'Question'],
+      "the sidebar row's glyph and label in the input color",
+    );
     await pressKey(page, 'Digit0', CMD);
     await page.waitFor(`!!${context('gate')}`, "the gate card's line");
     assert.equal(await page.eval(`${context('gate')}.dataset.quickReplyContext`), 'gate');
@@ -1101,6 +1119,16 @@ exec sleep 600
     assert.equal(
       await page.eval(`!!${card(id('gate'))}.querySelector('[data-quick-reply]')`),
       true,
+    );
+    await page.waitFor(`!!${context('hint')}`, "the hint card's line");
+    assert.equal(
+      await page.eval<string>(`${context('hint')}.textContent`),
+      'Review and approve the spec',
+    );
+    assert.match(await page.eval<string>(`${card(id('hint'))}.innerText`), /At\s*Spec review/);
+    assert.doesNotMatch(
+      await page.eval<string>(`${card(id('hint'))}.innerText`),
+      /Spec review: Review/,
     );
     await page.waitFor(
       `!!${card(id('asker'))}.querySelector('[data-quick-reply-question]')`,
@@ -1117,8 +1145,32 @@ exec sleep 600
       ),
       ['Red', 'Blue', 'Green', 'Other…'],
     );
-    // Its notice names no tool: the status line says only "Needs permission".
-    assert.doesNotMatch(await page.eval<string>(`${card(id('asker'))}.innerText`), /Claude needs/);
+    // Its status: Asked a question in the input color, not Needs permission, nor the notice.
+    const askerText = await page.eval<string>(`${card(id('asker'))}.innerText`);
+    assert.match(askerText, /Asked a question/);
+    assert.doesNotMatch(askerText, /Needs permission|Claude needs/);
+    const inInput = (root: string) =>
+      `[...${root}.querySelectorAll('.text-st-input')].some((e) => e.textContent === 'Asked a question')`;
+    assert.equal(await page.eval(inInput(card(id('asker')))), true, 'the status in st-input');
+    assert.equal(
+      await page.eval(
+        `${card(id('asker'))}.querySelector('[role=img]')?.getAttribute('aria-label')`,
+      ),
+      'Asked a question',
+    );
+    // Needs you in the input color: a question counts as input, the gate too.
+    assert.equal(await page.eval(tone('needs')), 'input');
+    // The List says the same.
+    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
+    await page.waitFor(
+      `!!document.querySelector('[data-home-row="${id('asker')}"]')`,
+      "the question's row in the List",
+    );
+    const askerListRow = `document.querySelector('[data-home-row="${id('asker')}"]')`;
+    assert.match(await page.eval<string>(`${askerListRow}.innerText`), /Asked a question/);
+    assert.equal(await page.eval(inInput(askerListRow)), true, 'the List row in st-input');
+    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
+    await page.waitFor(`!!${context('asker')}`, 'the Board again');
     // Typed text would answer the menu: no field, and not Open's permission note.
     assert.equal(
       await page.eval(`!!${card(id('asker'))}.querySelector('[data-quick-reply]')`),

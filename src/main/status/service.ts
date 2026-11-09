@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { backgroundNote, needsYou, type WorkspaceState } from '@shared/status';
+import { atMenu, backgroundNote, needsYou, type WorkspaceState } from '@shared/status';
 import { atGate, type WorkflowInfo } from '@shared/workflow';
 import type { Workspace } from '@shared/workspaces';
 import type { HookMessage } from '../bridge/server';
@@ -9,12 +9,13 @@ import { descendants, type ProcessTree, processTree } from '../memory/measure';
 import type { ProcessEntry } from '../memory/processes';
 import type { SessionHost } from '../sessions/host';
 import { checkHold, HOLD_MINUTES, type Hold, runsCommand, startHold } from './hold';
-import { type Transition, transition, waitedCommands } from './transitions';
+import { asking, type Transition, transition, waitedCommands } from './transitions';
 
 /** States that alert: a notification and a sound (spec §10.3). */
 const ALERT_STATES: readonly WorkspaceState[] = [
   'needs-permission',
   'needs-input',
+  'needs-answer',
   'awaiting-approval',
   'done',
 ];
@@ -54,6 +55,7 @@ export interface StatusPlatform {
 const ALERT_TEXT: Partial<Record<WorkspaceState, string>> = {
   'needs-permission': 'needs permission',
   'needs-input': 'is waiting for input',
+  'needs-answer': 'asked a question',
   'awaiting-approval': 'awaits approval',
   done: 'is done',
 };
@@ -117,6 +119,9 @@ export class StatusService {
    */
   private readonly waiting = new Set<string>();
 
+  /** Workspaces whose Claude waits on its question tool (spec §10.2). */
+  private readonly asking = new Set<string>();
+
   /** Each workspace whose Done is held for background commands (spec §10.2). */
   private readonly holds = new Map<string, Hold>();
   /** Looks at the process table while any Done is held. */
@@ -147,6 +152,7 @@ export class StatusService {
       if (info.kind !== 'claude' || !info.workspaceId) return;
       if (!this.quitting) records.setClaudeRunning(info.workspaceId, false);
       this.waiting.delete(info.workspaceId);
+      this.asking.delete(info.workspaceId);
       this.clearHold(info.workspaceId);
       const workspace = records.get(info.workspaceId);
       if (workspace && workspace.state !== 'exited') records.setState(workspace.id, 'exited');
@@ -159,8 +165,8 @@ export class StatusService {
       // only its background work goes on.
       if (current === 'working' && data === '\x1b' && !this.waiting.has(info.workspaceId)) {
         records.setState(info.workspaceId, 'interrupted');
-      } else if (current === 'needs-permission' && answersPermission(data)) {
-        this.permissionAnswered(info.workspaceId);
+      } else if (atMenu(current) && answersPermission(data)) {
+        this.permissionAnswered(info.workspaceId, current === 'needs-answer');
       }
     });
     for (const w of records.list()) this.lastStates.set(w.id, w.state);
@@ -215,9 +221,13 @@ export class StatusService {
       } satisfies ConversationEvent);
     }
     if (REREAD_EVENTS.includes(message.event)) this.workflow?.refresh(workspace.id);
+    const wasAsking = this.asking.has(workspace.id);
+    if (asking(wasAsking, message.event, message.payload)) this.asking.add(workspace.id);
+    else this.asking.delete(workspace.id);
     const next = transition(workspace.state, message.event, message.payload, {
       background: workspace.background,
       waiting: this.waiting.has(workspace.id),
+      asking: this.asking.has(workspace.id),
     });
     if (!next) return;
     // Tool events may come from a background agent; any other event ends the
@@ -345,12 +355,13 @@ export class StatusService {
   }
 
   /**
-   * The permission prompt was answered in the Claude tab (spec §10.2). Yes
-   * goes on with the tool, so Working; Claude Code sends no hook event for
-   * No, so the transcript tells: ending in its interrupt note, Claude waits
-   * for input. Any hook event before the checks decides instead.
+   * The permission prompt, or Claude's question, was answered in the Claude
+   * tab (spec §10.2). Yes goes on with the tool, so Working; Claude Code
+   * sends no hook event for No (or a question declined with Esc), so the
+   * transcript tells: ending in its interrupt note, Claude waits for input.
+   * Any hook event before the checks decides instead.
    */
-  private permissionAnswered(workspaceId: string): void {
+  private permissionAnswered(workspaceId: string, question = false): void {
     this.clearAnswered(workspaceId);
     this.records.setState(workspaceId, 'working', { message: null });
     const check = () => {
@@ -359,7 +370,9 @@ export class StatusService {
       this.clearAnswered(workspaceId);
       if (this.records.get(workspaceId)?.state !== 'working') return;
       this.records.setState(workspaceId, 'needs-input', {
-        message: 'Permission denied. What should Claude do instead?',
+        message: question
+          ? 'Question declined. What should Claude do instead?'
+          : 'Permission denied. What should Claude do instead?',
       });
     };
     this.answered.set(

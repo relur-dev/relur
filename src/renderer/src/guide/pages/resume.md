@@ -35,6 +35,7 @@ Quitting, logging out, an update (**Restart now**, or `install.sh`) or a crash s
 - **Working**, including while it waited for its own background agents or commands;
 - **interrupted with <kbd>Esc</kbd>** by you, just before the stop: it's never continued unless you choose so;
 - **asking for permission**: never continued by itself; give the permission again in the workspace;
+- **asking a question** (its menu of options): never continued unless you choose so; continued, Claude asks again;
 - **Done, with commands still running in the background** (the sidebar showed **1 running**: dev servers, or commands still running when {{app}} stopped waiting for them): quitting stops them. Claude may not have been waiting for them, so it's up to you: such a workspace is marked "1 background command was stopped" and never continued unless you choose it. Continuing tells Claude its commands were stopped, so it can run again what it needs.
 
 Done without background commands, and Waiting for input, don't count. After a crash, a workspace that was still Working counts the same.

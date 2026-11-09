@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { WorkspaceState } from '@shared/status';
+import { atMenu, type WorkspaceState } from '@shared/status';
 import {
   BLOCKER_TEXT,
   draftAfter,
@@ -16,7 +16,7 @@ import type { HookMessage, StatusLineMessage } from '../bridge/server';
 import { isBackgroundHandBack } from '../claude/transcript';
 import type { SessionHost } from '../sessions/host';
 import { answersPermission } from '../status/service';
-import { transition } from '../status/transitions';
+import { asking, transition } from '../status/transitions';
 
 /** How long after SessionStart a resumed Claude takes to show its prompt (as spec §9.7). */
 export const SETTLE_MS = 2000;
@@ -85,7 +85,7 @@ interface Facts {
   /** What the last check found, for app.log; undefined before the first. */
   blocker?: SuspendBlocker | null;
   /** A main checkout's Claude: its state, kept here only (spec §9.8). */
-  main: { state: WorkspaceState; background: number; waiting: boolean } | null;
+  main: { state: WorkspaceState; background: number; waiting: boolean; asking: boolean } | null;
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
@@ -129,7 +129,9 @@ export class SuspendService {
           transcript: null,
           saved: false,
           eligibleSince: null,
-          main: info.workspaceId ? null : { state: 'starting', background: 0, waiting: false },
+          main: info.workspaceId
+            ? null
+            : { state: 'starting', background: 0, waiting: false, asking: false },
         });
       }),
       host.onResume((info) => {
@@ -424,9 +426,11 @@ export class SuspendService {
     if (claudeId) this.deps.followMainClaude(info.id, claudeId);
     // Its end while suspended or resuming changes nothing.
     if (message.event === 'SessionEnd' && (info.status === 'suspended' || info.resuming)) return;
+    main.asking = asking(main.asking, message.event, message.payload);
     const next = transition(main.state, message.event, message.payload, {
       background: main.background,
       waiting: main.waiting,
+      asking: main.asking,
     });
     if (!next) return;
     if (message.event === 'Stop') main.waiting = next.state === 'working';
@@ -445,12 +449,12 @@ export class SuspendService {
     const state = info.workspaceId
       ? this.deps.workspace(info.workspaceId)?.state
       : facts.main?.state;
-    // Keys that answer a permission prompt aren't a draft (spec §10.2).
-    if (state !== 'needs-permission') facts.draft = draftAfter(facts.draft, data);
+    // Keys that answer a permission prompt or a question aren't a draft (spec §10.2).
+    if (!atMenu(state)) facts.draft = draftAfter(facts.draft, data);
     const main = facts.main;
     if (!main) return;
     if (main.state === 'working' && data === '\x1b' && !main.waiting) main.state = 'interrupted';
-    else if (main.state === 'needs-permission' && answersPermission(data)) main.state = 'working';
+    else if (atMenu(main.state) && answersPermission(data)) main.state = 'working';
   }
 
   private sessionOf(
@@ -480,7 +484,9 @@ export class SuspendService {
         transcript: null,
         saved: false,
         eligibleSince: null,
-        main: info.workspaceId ? null : { state: 'starting', background: 0, waiting: false },
+        main: info.workspaceId
+          ? null
+          : { state: 'starting', background: 0, waiting: false, asking: false },
       };
       this.facts.set(info.id, facts);
     }

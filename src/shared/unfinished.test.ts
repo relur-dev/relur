@@ -19,6 +19,11 @@ describe('unfinishedKind (spec §9.7)', () => {
     expect(unfinishedKind('working')).toBe('working');
     expect(unfinishedKind('interrupted')).toBe('interrupted');
     expect(unfinishedKind('needs-permission')).toBe('permission');
+    expect(unfinishedKind('needs-answer')).toBe('question');
+    expect(unfinishedReason({ kind: 'question', stopped: 0 })).toBe('Was asking a question');
+    // Continued, Claude asks again; offered unticked.
+    expect(canContinue('question')).toBe(true);
+    expect(tickedByDefault('question')).toBe(false);
   });
 
   it('does not count Done, waiting for input or any other state', () => {
