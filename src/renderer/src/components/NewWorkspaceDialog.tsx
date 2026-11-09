@@ -175,6 +175,8 @@ export function NewWorkspaceDialog({
   // while typing, its outcome kept for ↵.
   const lookupKey = project && lookup && taskId && !title ? `${project.id}\n${taskId}` : null;
   const run = useRef<LookupRun | null>(null);
+  /** The key Stop or Create now stopped: only ↵ looks it up again (spec §13.7). */
+  const stopped = useRef<string | null>(null);
   const [lookupState, setLookupState] = useState<{
     key: string;
     outcome: LookupOutcome | null;
@@ -222,6 +224,7 @@ export function NewWorkspaceDialog({
     setLookupState(null);
   };
   const stopLookup = () => {
+    stopped.current = run.current?.key ?? null;
     waitingFor.current = null;
     setLookingUp(null);
     dropLookup();
@@ -230,12 +233,14 @@ export function NewWorkspaceDialog({
   // biome-ignore lint/correctness/useExhaustiveDependencies: on a new key only
   useEffect(() => {
     if (run.current && run.current.key !== lookupKey) dropLookup();
+    if (stopped.current !== lookupKey) stopped.current = null;
   }, [lookupKey]);
   // An id alone is looked up 600 ms after it was typed (spec §13.7).
   const settledKey = useDebounced(lookupKey, 600);
   // biome-ignore lint/correctness/useExhaustiveDependencies: on a settled key only
   useEffect(() => {
     if (!settledKey || settledKey !== lookupKey || run.current?.key === settledKey) return;
+    if (stopped.current === settledKey) return;
     if (project && taskId && !lookingUp) startLookup(project.id, taskId);
   }, [settledKey]);
   // Closing the dialog stops a lookup still running.

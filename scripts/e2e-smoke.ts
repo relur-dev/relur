@@ -3816,6 +3816,25 @@ exec sleep 600
       2,
       'the lookup stopped',
     );
+    // Stop (spec §13.7): ↵ before the 600 ms looks the key up; after Stop it
+    // isn't looked up again when the 600 ms end. Each run logs its total once.
+    const slowRuns = () =>
+      fs.readFileSync(appLogFile, 'utf8').match(/ lookup SLOW-9 \(\S+\): total /gm)?.length ?? 0;
+    const runsBeforeStop = slowRuns();
+    await clickLabel(page, 'New workspace in shop');
+    await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'the dialog for Stop');
+    await typeInField(page, '#ws-task', 'SLOW-9');
+    await page.waitFor(
+      `document.querySelector('dialog[open] [data-lookup-running]')?.textContent.includes('Looking up SLOW-9')`,
+      'Looking up SLOW-9 for Stop',
+    );
+    await clickButtonText(page, 'Stop', 'document.querySelector("dialog[open]")');
+    for (let i = 0; i < 50 && slowRuns() < runsBeforeStop + 1; i++) await sleep(100);
+    await sleep(1500);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog #ws-task')`, 'the dialog gone after Stop');
+    await sleep(500);
+    assert.equal(slowRuns(), runsBeforeStop + 1, 'no lookup again after Stop');
 
     // Many linked repositories (spec §21.4): the primary chip in full, the
     // linked ones by name on one line, the rest under "+n more"; a tooltip
