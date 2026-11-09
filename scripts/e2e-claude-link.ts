@@ -253,6 +253,11 @@ exec sleep 600
     assert.equal(await page.eval(chips), 3);
 
     // 8. Delete workspace: a card per repository, Claude's included; every worktree goes.
+    // cartapi's worktree was switched to another branch with a commit (spec §14.2).
+    fx.git(treeOf('cartapi'), 'switch', '-q', '-c', 'side-work');
+    fs.writeFileSync(path.join(treeOf('cartapi'), 'side.txt'), 'x\n');
+    fx.git(treeOf('cartapi'), 'add', 'side.txt');
+    fx.git(treeOf('cartapi'), 'commit', '-q', '-m', 'Side work');
     await chooseFromNextContextMenu(mainProcess, 'Delete workspace…');
     await clickLabel(page, 'Workspace menu');
     await page.waitFor(
@@ -260,6 +265,11 @@ exec sleep 600
       'a card per repository',
       30_000,
     );
+    await page.waitFor(
+      `/cartapi is on side-work, not .*\\n1 commit on side-work isn't on origin; that branch is kept/.test(document.querySelector('dialog[open] [data-repo-card=cartapi] [data-checked-out]')?.innerText ?? '')`,
+      "cartapi's other branch",
+    );
+    assert.equal(await page.eval<boolean>(hasButton('Delete anyway')), true);
     assert.equal(
       await page.eval(`!!document.querySelector('dialog[open] [data-repo-card=cartapi]')`),
       true,

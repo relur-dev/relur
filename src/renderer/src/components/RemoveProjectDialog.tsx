@@ -4,6 +4,7 @@ import type { Profile, Project } from '@shared/schemas';
 import { glyphFor } from '@shared/status';
 import {
   branchChoice,
+  hasWork,
   needsForce,
   type RepoDeleteCheck,
   type WorkspaceDeleteCheck,
@@ -14,6 +15,7 @@ import { useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import {
+  CheckedOutWarning,
   plural,
   RepoCard,
   repoChoice,
@@ -66,8 +68,8 @@ export function RemoveProjectDialog({
   const name = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const remoteOf = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
   const warnings =
-    workspaces.some(({ check: c }) => c.repos.some((r) => needsForce(r) || r.unpushed > 0)) ||
-    linked.some(({ check: c }) => needsForce(c) || c.unpushed > 0) ||
+    workspaces.some(({ check: c }) => c.repos.some(hasWork)) ||
+    linked.some(({ check: c }) => hasWork(c)) ||
     (data?.runningSessions ?? 0) > 0 ||
     refused;
   const error = check.error ?? remove.error;
@@ -157,7 +159,7 @@ export function RemoveProjectDialog({
                       </div>
                     ) : null}
                   </div>
-                  {needsForce(c) || c.unpushed > 0 ? (
+                  {hasWork(c) || c.checkedOut ? (
                     <div className="divide-y divide-st-permission/30 border-t border-st-permission/40 bg-st-permission/8">
                       {c.uncommitted.length > 0 ? (
                         <Warning title={plural(c.uncommitted.length, 'uncommitted change')}>
@@ -175,6 +177,12 @@ export function RemoveProjectDialog({
                         </Warning>
                       ) : null}
                       <SubmoduleWarnings submodules={c.submodules} />
+                      <CheckedOutWarning
+                        name={project.name}
+                        checkedOut={c.checkedOut}
+                        branch={workspace.branch}
+                        remote={project.remote}
+                      />
                     </div>
                   ) : null}
                   <TrackedBranch check={main} branch={workspace.branch} className="m-2" />
@@ -260,6 +268,16 @@ export function RemoveProjectDialog({
                   <div className="truncate font-mono text-xs text-fg-muted">
                     Deleted {c.worktreePath}
                   </div>
+                  {c.checkedOut ? (
+                    <div className="mt-1.5 rounded-md border border-st-permission/50 bg-st-permission/8">
+                      <CheckedOutWarning
+                        name={project.name}
+                        checkedOut={c.checkedOut}
+                        branch={workspace.branch}
+                        remote={project.remote}
+                      />
+                    </div>
+                  ) : null}
                   {branchChoice(c).shown ? (
                     <label className="mt-1.5 flex items-center gap-2 text-md">
                       <input

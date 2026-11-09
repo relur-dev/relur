@@ -396,13 +396,7 @@ export class Git {
       return lines.length > 0 && lines.every((l) => l.startsWith('-'));
     };
     // Its changes are there although its commits aren't: a squash merge.
-    const changesIn = async (ref: string) => {
-      if (!(await this.hasMergeTreeWriteTree()) || !(await this.revParse(repo, ref))) return false;
-      const merged = (await this.tryRun(repo, ['merge-tree', '--write-tree', ref, head]))
-        ?.split('\n')[0]
-        ?.trim();
-      return Boolean(merged) && merged === (await this.revParse(repo, `${ref}^{tree}`));
-    };
+    const changesIn = (ref: string) => this.changesAlreadyIn(repo, ref, head);
     const remoteBase = remote ? `refs/remotes/${remote}/${base}` : null;
     const localBase = `refs/heads/${base}`;
     if (remoteBase && (await contains(remoteBase))) return 'base';
@@ -410,6 +404,19 @@ export class Git {
     if (remoteBase && (await changesIn(remoteBase))) return 'squash';
     if (await changesIn(localBase)) return remote ? 'squash-local' : 'squash';
     return null;
+  }
+
+  /**
+   * Whether merging `rev` into `ref` would change nothing (spec §14.2):
+   * `git merge-tree --write-tree` gives `ref`'s own tree. False without
+   * `ref`, on a conflict, and on git before 2.38.
+   */
+  async changesAlreadyIn(repo: string, ref: string, rev: string): Promise<boolean> {
+    if (!(await this.hasMergeTreeWriteTree()) || !(await this.revParse(repo, ref))) return false;
+    const merged = (await this.tryRun(repo, ['merge-tree', '--write-tree', ref, rev]))
+      ?.split('\n')[0]
+      ?.trim();
+    return Boolean(merged) && merged === (await this.revParse(repo, `${ref}^{tree}`));
   }
 
   private writeTree: Promise<boolean> | null = null;

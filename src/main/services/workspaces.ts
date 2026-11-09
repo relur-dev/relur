@@ -35,6 +35,7 @@ import {
   type WorkspaceDeleteCheck,
   type WorkspaceRepo,
   type WorkspaceTask,
+  type WorktreeCheckout,
   workspaceRepo,
 } from '@shared/workspaces';
 import { type AppLog, PhaseTimer } from '../app-log';
@@ -1669,6 +1670,7 @@ export class WorkspaceService {
       uncommitted: main.uncommitted,
       unpushed: main.unpushed,
       submodules: main.submodules,
+      checkedOut: main.checkedOut,
       running: this.terminals.host
         .list()
         .filter((s) => s.workspaceId === workspaceId && s.status === 'running').length,
@@ -1715,6 +1717,7 @@ export class WorkspaceService {
           : 0,
       // Their git folders are inside the worktree's: their work goes with it.
       submodules: worktreeMissing ? [] : await git.submoduleWork(repo.worktreePath),
+      checkedOut: worktreeMissing ? null : await this.checkedOut(git, workspace, repo, project),
       worktreeMissing,
       prOpen: repo.pr?.state === 'open' || repo.pr?.state === 'draft',
       merged,
@@ -1722,6 +1725,45 @@ export class WorkspaceService {
       upstream: upstreamRef,
       otherAuthors,
     };
+  }
+
+  /**
+   * What a worktree has checked out when it isn't the workspace's branch
+   * (spec §14.2): another branch, with its own unpushed commits (none when
+   * its changes are already in the base), or a detached HEAD, with its
+   * commits on no branch. Null on the workspace's branch.
+   */
+  private async checkedOut(
+    git: Git,
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+    project: Project,
+  ): Promise<WorktreeCheckout | null> {
+    const branch = await git.currentBranch(repo.worktreePath);
+    if (branch === workspace.branch) return null;
+    if (branch === null) {
+      const out = await git.tryRun(repo.worktreePath, [
+        'rev-list',
+        '--count',
+        'HEAD',
+        '--not',
+        '--branches',
+        '--remotes',
+      ]);
+      return { branch: null, unpushed: Number(out?.trim() ?? 0) };
+    }
+    const repoPath = expandHome(project.repoPath);
+    const unpushed = await git.unpushedCount(repoPath, branch, project.remote !== null);
+    if (unpushed === 0) return { branch, unpushed };
+    const head = `refs/heads/${branch}`;
+    for (const base of [
+      project.remote ? `refs/remotes/${project.remote}/${repo.baseBranch}` : null,
+      `refs/heads/${repo.baseBranch}`,
+    ]) {
+      if (base && (await git.changesAlreadyIn(repoPath, base, head)))
+        return { branch, unpushed: 0 };
+    }
+    return { branch, unpushed };
   }
 
   /**
@@ -1746,12 +1788,18 @@ export class WorkspaceService {
     const of = workspace.repos.length > 1 ? ` of ${project.name}` : '';
     const uncommitted = await git.status(repo.worktreePath);
     const submodules = await git.submoduleWork(repo.worktreePath);
+    const checkedOut = await this.checkedOut(git, workspace, repo, project);
+    const detached =
+      checkedOut?.branch === null && checkedOut.unpushed > 0
+        ? `its detached HEAD has ${plural(checkedOut.unpushed, 'commit')} on no branch`
+        : null;
     const locked = (await git.listWorktrees(repoPath)).some(
       (w) => w.locked && realpathOr(w.path) === realpathOr(repo.worktreePath),
     );
     const problems = [
       uncommitted.length > 0 ? `it has ${plural(uncommitted.length, 'uncommitted change')}` : null,
       ...submodules.map(submoduleText),
+      detached,
       locked ? 'it is locked (git worktree lock)' : null,
     ].filter(Boolean);
     if (problems.length > 0) {

@@ -1,11 +1,13 @@
 import type { Project } from '@shared/schemas';
 import {
   branchChoice,
+  hasWork,
   mergedText,
   needsForce,
   type RepoDeleteCheck,
   type SubmoduleWork,
   type Workspace,
+  type WorktreeCheckout,
 } from '@shared/workspaces';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -60,6 +62,41 @@ export function SubmoduleWarnings({ submodules }: { submodules: SubmoduleWork[] 
         );
       })}
     </>
+  );
+}
+
+/**
+ * The worktree is on another branch than the workspace's (spec §14.2):
+ * "frontend is on fix-x, not task-1", with that branch's unpushed commits,
+ * or a detached HEAD's commits on no branch.
+ */
+export function CheckedOutWarning({
+  name,
+  checkedOut,
+  branch,
+  remote,
+}: {
+  name: string;
+  checkedOut: WorktreeCheckout | null;
+  /** The workspace's branch. */
+  branch: string;
+  remote: string | null;
+}) {
+  if (!checkedOut) return null;
+  const { branch: other, unpushed } = checkedOut;
+  const commits = plural(unpushed, 'commit');
+  return (
+    <div data-checked-out={other ?? ''}>
+      <Warning title={`${name} is on ${other ?? 'a detached HEAD'}, not ${branch}`}>
+        {unpushed === 0
+          ? 'Nothing on it is unpushed'
+          : other === null
+            ? `${commits} on no branch go with the worktree`
+            : `${commits} on ${other} ${unpushed === 1 ? "isn't" : "aren't"} on ${
+                remote ?? 'any other branch'
+              }; that branch is kept`}
+      </Warning>
+    </div>
   );
 }
 
@@ -162,7 +199,8 @@ export function RepoCard({
     check.uncommitted.length === 0 &&
     check.unpushed === 0 &&
     !check.prOpen &&
-    check.submodules.length === 0;
+    check.submodules.length === 0 &&
+    check.checkedOut === null;
   return (
     <div
       data-repo-card={check.projectId}
@@ -203,6 +241,12 @@ export function RepoCard({
             </Warning>
           ) : null}
           <SubmoduleWarnings submodules={check.submodules} />
+          <CheckedOutWarning
+            name={name}
+            checkedOut={check.checkedOut}
+            branch={branch}
+            remote={remote}
+          />
           {check.prOpen ? <Warning title="Its pull request isn't merged" /> : null}
         </div>
       )}
@@ -366,10 +410,11 @@ export function DeleteWorkspaceDialog({
   const data = check.data;
   const main = data?.repos.find((r) => r.primary) ?? null;
   const warnings = data
-    ? needsForce(data) || data.unpushed > 0 || data.running > 0 || data.prOpen
+    ? hasWork(data) || data.checkedOut !== null || data.running > 0 || data.prOpen
     : false;
   const force = (data ? needsForce(data) : false) || refused;
-  const danger = warnings || refused;
+  // Another branch checked out with nothing unpushed is only said.
+  const danger = (data ? hasWork(data) || data.running > 0 || data.prOpen : false) || refused;
   const branchBox = main ? branchChoice(main) : { shown: false, ticked: true };
   const deleteBranch = main ? repoChoice(main, alsoDeleteBranch, false).deleteBranch : true;
 
@@ -381,11 +426,9 @@ export function DeleteWorkspaceDialog({
   );
   const repoName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
   const repoRemote = (id: string) => projects.find((p) => p.id === id)?.remote ?? null;
-  const dirty = (data?.repos ?? []).some((r) => needsForce(r) || r.unpushed > 0);
+  const dirty = (data?.repos ?? []).some(hasWork);
   const linkedDanger =
-    (data?.repos ?? []).some((r) => needsForce(r) || r.unpushed > 0 || r.prOpen) ||
-    (data?.running ?? 0) > 0 ||
-    refused;
+    (data?.repos ?? []).some((r) => hasWork(r) || r.prOpen) || (data?.running ?? 0) > 0 || refused;
 
   if (linked) {
     return (
@@ -516,6 +559,12 @@ export function DeleteWorkspaceDialog({
               </Warning>
             ) : null}
             <SubmoduleWarnings submodules={data.submodules} />
+            <CheckedOutWarning
+              name={repoName(workspace.projectId)}
+              checkedOut={data.checkedOut}
+              branch={workspace.branch}
+              remote={remote}
+            />
             {data.prOpen ? (
               <Warning title="Its pull request isn't merged">
                 The last check found it {workspace.pr?.state === 'draft' ? 'a draft' : 'open'}
@@ -567,7 +616,7 @@ export function DeleteWorkspaceDialog({
           >
             Cancel <Kbd>Esc</Kbd>
           </button>
-          {data && (needsForce(data) || data.unpushed > 0) ? (
+          {data && hasWork(data) ? (
             <button type="button" className={button('secondary', 'lg')} onClick={onCommitFirst}>
               {remote ? 'Commit and push first' : 'Commit first'}
             </button>

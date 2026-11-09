@@ -189,11 +189,33 @@ export interface SubmoduleWork {
 }
 
 /**
- * Whether removing the worktree needs `--force` after "Delete anyway": it
- * has uncommitted changes, or a submodule has work of its own (spec §14.2).
+ * The branch checked out in a worktree when it isn't the workspace's
+ * (spec §14.2): switched in a shell, or a detached HEAD (`branch` null).
  */
-export const needsForce = (c: Pick<RepoDeleteCheck, 'uncommitted' | 'submodules'>) =>
-  c.uncommitted.length > 0 || c.submodules.length > 0;
+export interface WorktreeCheckout {
+  branch: string | null;
+  /**
+   * On a branch: its commits on no remote branch (or, without remotes, on no
+   * other branch), 0 when its changes are already in the base. Detached:
+   * commits on no branch, which go with the worktree.
+   */
+  unpushed: number;
+}
+
+/**
+ * Whether removing the worktree needs `--force` after "Delete anyway": it
+ * has uncommitted changes, a submodule has work of its own, or a detached
+ * HEAD has commits on no branch (spec §14.2).
+ */
+export const needsForce = (c: Pick<RepoDeleteCheck, 'uncommitted' | 'submodules' | 'checkedOut'>) =>
+  c.uncommitted.length > 0 ||
+  c.submodules.length > 0 ||
+  (c.checkedOut !== null && c.checkedOut.branch === null && c.checkedOut.unpushed > 0);
+
+/** Whether the check found work that would be lost or isn't pushed: Delete anyway. */
+export const hasWork = (
+  c: Pick<RepoDeleteCheck, 'uncommitted' | 'submodules' | 'checkedOut' | 'unpushed'>,
+) => needsForce(c) || c.unpushed > 0 || (c.checkedOut?.unpushed ?? 0) > 0;
 
 export interface RepoDeleteCheck {
   projectId: string;
@@ -205,6 +227,8 @@ export interface RepoDeleteCheck {
   unpushed: number;
   /** Its checked-out submodules with work that removing the worktree would lose (spec §14.2). */
   submodules: SubmoduleWork[];
+  /** What its worktree has checked out, when that isn't the workspace's branch; else null. */
+  checkedOut: WorktreeCheckout | null;
   /** The worktree folder is gone (deleted outside the app). */
   worktreeMissing: boolean;
   /** Its pull request is known to be open or a draft. */
@@ -248,6 +272,8 @@ export interface WorkspaceDeleteCheck {
   unpushed: number;
   /** The main worktree's submodules with work that would be lost. */
   submodules: SubmoduleWork[];
+  /** The main worktree's other branch, when it isn't on the workspace's. */
+  checkedOut: WorktreeCheckout | null;
   /** Running sessions of the workspace. */
   running: number;
   /** The worktree folder is gone (deleted outside the app). */

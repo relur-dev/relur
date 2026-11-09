@@ -519,6 +519,47 @@ exec sleep 30
     expect((await workspaces.deleteCheck(workspace.id)).repos[1]?.merged).toBe('base');
   });
 
+  it("checks the branch each worktree has checked out, not only the workspace's (§14.2)", async () => {
+    const { workspace } = await create('recorded', ['web']);
+    const [api, web] = workspace.repos as [WorkspaceRepo, WorkspaceRepo];
+    // In web's worktree, someone switched to another branch and committed there.
+    fx.git(web.worktreePath, 'switch', '-q', '-c', 'elsewhere');
+    fs.writeFileSync(path.join(web.worktreePath, 'other.txt'), 'x');
+    fx.git(web.worktreePath, 'add', 'other.txt');
+    fx.git(web.worktreePath, 'commit', '-q', '-m', 'Work on another branch');
+    const check = await workspaces.deleteCheck(workspace.id);
+    expect(check.repos.map((r) => [r.projectId, r.unpushed, r.checkedOut])).toEqual([
+      ['api', 0, null],
+      ['web', 0, { branch: 'elsewhere', unpushed: 1 }],
+    ]);
+    expect((await workspaces.unlinkCheck(workspace.id, 'web')).checkedOut).toEqual({
+      branch: 'elsewhere',
+      unpushed: 1,
+    });
+    expect((await workspaces.projectRemovalCheck('web')).linked[0]?.check.checkedOut).toEqual({
+      branch: 'elsewhere',
+      unpushed: 1,
+    });
+
+    // A detached HEAD's commits are on no branch: they go with the worktree, so Delete refuses.
+    fx.git(api.worktreePath, 'switch', '-q', '--detach');
+    fx.git(api.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'Detached work');
+    expect((await workspaces.deleteCheck(workspace.id)).checkedOut).toEqual({
+      branch: null,
+      unpushed: 1,
+    });
+    await expect(
+      workspaces.delete(workspace.id, { force: false, deleteBranch: true }),
+    ).rejects.toThrow('its detached HEAD has 1 commit on no branch');
+    expect(fs.existsSync(api.worktreePath)).toBe(true);
+
+    // Delete anyway: the worktrees go; the other branch, with its commit, is kept.
+    await workspaces.delete(workspace.id, { force: true, deleteBranch: true });
+    expect(fs.existsSync(web.worktreePath)).toBe(false);
+    const webRepo = projects.find((p) => p.id === 'web')?.repoPath as string;
+    expect(fx.git(webRepo, 'branch', '--list', 'elsewhere').trim()).toBe('elsewhere');
+  });
+
   describe('squash merges (spec §14.2)', () => {
     const repoOf = (id: string) => projects.find((p) => p.id === id)?.repoPath as string;
     /** Commits on the branch in a worktree, on no remote branch. */
