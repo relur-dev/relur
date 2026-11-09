@@ -24,6 +24,7 @@ import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
 import { SEED_CONFIG } from '../src/main/test-support/seed-config';
 import { envVar } from '../src/shared/brand';
+import { hint } from '../src/shared/shortcuts';
 import {
   type Cdp,
   CMD,
@@ -343,7 +344,11 @@ exec sleep 600
         `[${laneNew(project)}.getAttribute('aria-label'), ${laneNew(project)}.title]`,
       );
       assert.equal(label, `New workspace in ${project}`);
-      assert.match(title, new RegExp(`^New workspace in ${project} \\((⌘|Ctrl\\+)N\\)$`));
+      // Its shortcut as shown on this platform: ⌘N on macOS, Ctrl+Shift+N elsewhere.
+      assert.equal(
+        title,
+        `New workspace in ${project} (${hint('newWorkspace', process.platform === 'darwin')})`,
+      );
     }
     await page.eval(`${laneNew('api')}.click()`);
     await page.waitFor(`!!document.querySelector('dialog[open] #ws-task')`, 'New workspace');
