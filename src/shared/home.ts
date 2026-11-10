@@ -337,14 +337,20 @@ export function permissionTool(message: string | null): string | null {
   return /permission to use (.+)$/i.exec(message)?.[1]?.trim() ?? message;
 }
 
+/** One line of a card's details, its kind for the popover's styling and the tests. */
+export interface CardDetail {
+  kind: 'linked' | 'branch' | 'state' | 'workflow' | 'memory' | 'active' | 'suspend';
+  text: string;
+}
+
 /**
- * A card's tooltip (spec §6.7): its task, then what its card leaves out: where
- * it is linked in from (on a project's Board), its branch (on Home; a
- * project's Board shows it on the card), the whole of its state's message,
- * its workflow status (§13.5), memory (§6.14), last activity, and why its
- * Claude is or isn't suspended (§9.8).
+ * A card's details, behind its ⓘ (spec §6.7): its task, then what its card
+ * leaves out: where it is linked in from (on a project's Board), its branch (on
+ * Home; a project's Board shows it on the card), the whole of its state's
+ * message, its workflow status (§13.5), memory (§6.14), last activity, and why
+ * its Claude is or isn't suspended (§9.8).
  */
-export function cardTooltip(
+export function cardDetails(
   w: Workspace,
   o: {
     linkedFrom: string | null;
@@ -357,19 +363,19 @@ export function cardTooltip(
     /** `suspendClockNote`'s text, while it isn't suspended. */
     suspendNote: string | null;
   },
-): string {
-  const lines = [`${w.task.id ? `${w.task.id} ` : ''}${w.task.title || w.name}`];
-  if (o.linkedFrom) lines.push(`Linked in from ${o.linkedFrom}`);
-  if (o.branch) lines.push(`Branch: ${w.branch}`);
-  if (w.state === 'needs-permission' && w.stateMessage) lines.push(w.stateMessage);
-  else if (w.state === 'needs-input' && w.stateMessage) lines.push(w.stateMessage);
-  else if (w.unfinished) lines.push(unfinishedTooltip(w.unfinished));
+): { title: string; lines: CardDetail[] } {
+  const lines: CardDetail[] = [];
+  const add = (kind: CardDetail['kind'], text: string) => lines.push({ kind, text });
+  if (o.linkedFrom) add('linked', `Linked in from ${o.linkedFrom}`);
+  if (o.branch) add('branch', `Branch: ${w.branch}`);
+  if (w.state === 'needs-permission' && w.stateMessage) add('state', w.stateMessage);
+  else if (w.state === 'needs-input' && w.stateMessage) add('state', w.stateMessage);
+  else if (w.unfinished) add('state', unfinishedTooltip(w.unfinished));
   const workflow = w.workflow?.label ?? w.workflow?.problem;
-  if (workflow) lines.push(`Workflow: ${workflow}`);
-  if (o.memory) lines.push(`Memory: ${o.memory}`);
-  if (o.active) lines.push(o.active === 'now' ? 'Active just now' : `Active ${o.active} ago`);
-  if (o.suspended) lines.push(SUSPENDED_TOOLTIP);
-  else if (o.suspendNote) lines.push(o.suspendNote);
-  lines.push('Click to open, drag to delete');
-  return lines.join('\n');
+  if (workflow) add('workflow', `Workflow: ${workflow}`);
+  if (o.memory) add('memory', `Memory: ${o.memory}`);
+  if (o.active) add('active', o.active === 'now' ? 'Active just now' : `Active ${o.active} ago`);
+  if (o.suspended) add('suspend', SUSPENDED_TOOLTIP);
+  else if (o.suspendNote) add('suspend', o.suspendNote);
+  return { title: `${w.task.id ? `${w.task.id} ` : ''}${w.task.title || w.name}`, lines };
 }

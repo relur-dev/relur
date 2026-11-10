@@ -61,7 +61,7 @@ For Claude started with **Start Claude here**, right-click its tab in the projec
 
 ## Why one isn't suspended
 
-Hover a workspace's card on the Board, on Home or in the project view. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.
+Point at the **ⓘ** on a workspace's card on the Board, on Home or in the project view, or click it. While its Claude runs, its details say why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.
 
 {{app}}'s log, `app.log` in its settings folder, has a line each time a session's clock starts, starts again (with the reason), and when it is suspended or resumed.
 

@@ -31,6 +31,7 @@ import {
   pressKey,
   pressShortcut,
   type RunningApp,
+  readCardDetails,
   sleep,
   submitDialog,
   typeInField,
@@ -323,7 +324,7 @@ exec sleep 600
       true,
     );
     assert.match(
-      await page.eval<string>(`${homeDelta}.title`),
+      await readCardDetails(page, homeDelta),
       new RegExp(`\\nClaude didn't finish when ${BRAND.displayName} closed`),
     );
     await page.eval(`${homeDelta}.querySelector('[data-home-action=dismiss]').click()`);

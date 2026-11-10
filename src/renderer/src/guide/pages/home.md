@@ -8,7 +8,7 @@ The Overview shows the profile's workspaces on a Board: five columns, **Working*
 
 At the top, always, are **New workspace** <kbd>{{key:newWorkspace}}</kbd> and **Add project** <kbd>{{key:addProject}}</kbd>.
 
-![Home's Board: New workspace and Add project at the top. Working holds one workspace with its memory and the notes mark for its 3 unsent notes, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with what Claude said there above its quick reply field, and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Columns and Group None are at the top right.](images/home-board.webp)
+![Home's Board: New workspace and Add project at the top. Working holds one workspace with its memory and the notes mark for its 3 unsent notes, Idle an interrupted and a suspended workspace, Needs you, tinted, a Spec review gate with what Claude said there above its quick reply field, and a permission request with Open, Ready to ship two workspaces with a file not committed and a commit not pushed, and Merged two workspaces whose pull requests are merged, with Delete 2 merged. Each card has a small ⓘ at its top right. Columns and Group None are at the top right.](images/home-board.webp)
 
 - **Needs you:** workspaces that need permission (**Open** takes you to the Claude tab), are waiting for input, have asked a question (**Asked a question**, with its options as buttons), or wait at a [workflow gate](workflows#when-the-skills-wait-for-you), with **Review**, which opens the spec, and the gate's answer button, such as **Approve spec**. Workspaces Claude didn't [finish](resume#the-unfinished-marker) are here too, with **Continue** and **Dismiss**. The oldest is first, in the order <kbd>{{key:nextNeedingYou}}</kbd> jumps through them. While something needs you, the column is tinted and its count takes the color of its most urgent card, as in the sidebar.
 - **Working:** where Claude is working, for how long, how much of its work runs in the background, and how much [memory](memory) its sessions use.
@@ -20,9 +20,9 @@ A workspace is in one column only. While Claude [waits for work in the backgroun
 
 ## Cards
 
-A card shows the workspace's status, task and title, and its project at the top right. Click it to open the workspace. Hover over it, or give it the focus, for its buttons (such as **Open**, **Approve spec** or **Push**) and **Delete**. Cards move between the columns by themselves as Claude works; you can't drag them from one column to another.
+A card shows the workspace's status, task and title, and its project at the top right, next to a small **ⓘ**. Click it to open the workspace. Hover over it, or give it the focus, for its buttons (such as **Open**, **Approve spec** or **Push**) and **Delete**. Cards move between the columns by themselves as Claude works; you can't drag them from one column to another.
 
-Hover over a card for what it doesn't show: its branch, the whole message Claude is waiting with, its [workflow](workflows) status, its [memory](memory), how long ago it was last active, and whether its Claude will be [suspended](suspend#why-one-isn-t-suspended) ("Not suspended: a draft in the prompt", "Suspended in 3 min if it stays idle").
+The **ⓘ** has what the card doesn't show: its branch, the whole message Claude is waiting with, its [workflow](workflows) status, its [memory](memory), how long ago it was last active, and whether its Claude will be [suspended](suspend#why-one-isn-t-suspended) ("Not suspended: a draft in the prompt", "Suspended in 3 min if it stays idle"). Rest the pointer on it to see them; click it to keep them open until you click elsewhere or press <kbd>Esc</kbd>. Clicking the **ⓘ** doesn't open the workspace.
 
 In a narrow window the Board scrolls sideways, and each column scrolls on its own (grouped by project, the whole Board scrolls instead, as below).
 
@@ -68,7 +68,7 @@ There is no field where a message could answer something by accident:
 
 ## Keyboard on the Board
 
-<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column, in the order the Board shows them. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace. <kbd>Tab</kbd> from the Board reaches a column's **⋯** first; <kbd>↵</kbd> opens its menu.
+<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column, in the order the Board shows them. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's **ⓘ** (<kbd>↵</kbd> or <kbd>Space</kbd> shows its details, <kbd>Esc</kbd> closes them), then its field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace. <kbd>Tab</kbd> from the Board reaches a column's **⋯** first; <kbd>↵</kbd> opens its menu.
 
 ## Terminal
 

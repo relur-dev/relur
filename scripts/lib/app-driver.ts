@@ -696,3 +696,36 @@ export const chooseFromNextContextMenu = (main: Cdp, label: string) =>
 export const openContextMenu = (page: Cdp, selector: string) =>
   page.eval(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(
     new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`);
+
+/**
+ * A Board card's details (spec §6.7): opens them with the card's ⓘ, reads them
+ * ("<title>\n<line>\n…\n<hint>") and closes them with Esc. `card` is an
+ * expression for the card's element.
+ */
+export async function readCardDetails(page: Cdp, card: string): Promise<string> {
+  await page.eval(`(${card}).querySelector('[data-card-info]').click()`);
+  await page.waitFor(`!!document.querySelector('[data-card-details]')`, 'the card details');
+  const text = await page.eval<string>(`document.querySelector('[data-card-details]').innerText`);
+  await pressKey(page, 'Escape');
+  await page.waitFor(`!document.querySelector('[data-card-details]')`, 'the card details closed');
+  // The ⓘ has focus again: give it up, so the card folds back.
+  await page.eval(`document.activeElement?.blur()`);
+  return text;
+}
+
+/** Reads a card's details until they match, as their lines change while shown. */
+export async function waitForCardDetails(
+  page: Cdp,
+  card: string,
+  pattern: RegExp,
+  what: string,
+  timeoutMs = 10_000,
+): Promise<string> {
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    const text = await readCardDetails(page, card);
+    if (pattern.test(text)) return text;
+    if (Date.now() > end) throw new Error(`Timed out waiting for ${what}: ${text}`);
+    await sleep(500);
+  }
+}

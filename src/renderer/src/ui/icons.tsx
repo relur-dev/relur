@@ -55,3 +55,11 @@ export const TrashIcon = () => (
     <path d="M2.5 4.5h11M6.5 4.5v-2h3v2M4 4.5l.7 8.6a.5.5 0 0 0 .5.4h5.6a.5.5 0 0 0 .5-.4l.7-8.6M6.7 7v4M9.3 7v4" />
   </Icon>
 );
+
+/** Details: an i in a circle (a Board card's ⓘ). */
+export const InfoIcon = () => (
+  <Icon>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="M8 7.25v4M8 4.75v.01" />
+  </Icon>
+);

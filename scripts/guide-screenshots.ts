@@ -843,7 +843,7 @@ async function main() {
     }
     await pressKey(page, 'Digit0', CMD);
     for (const id of Object.keys(merged)) {
-      const push = `[...document.querySelectorAll('[data-board-card]')].find((r) => r.title.startsWith('${id}'))?.querySelector('[data-home-action=push]')`;
+      const push = `[...document.querySelectorAll('[data-board-card]')].find((r) => r.querySelector('[data-card-info]')?.getAttribute('aria-label').startsWith('Details for ${id}'))?.querySelector('[data-home-action=push]')`;
       await page.waitFor(`!!${push}`, `Push on ${id}`, 30_000);
       await page.eval(`${push}.click()`);
     }

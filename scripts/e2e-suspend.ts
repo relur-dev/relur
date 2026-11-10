@@ -33,6 +33,7 @@ import {
   pressKey,
   ptyRecords,
   type RunningApp,
+  readCardDetails,
   recordPtys,
   sleep,
   submitDialog,
@@ -173,7 +174,7 @@ done
       const log = path.join(path.dirname(configFile), 'app.log');
       return fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
     };
-    /** A card's line on suspension in its tooltip, in the project view's Board (spec §9.8). */
+    /** A card's line on suspension in its details, in the project view's Board (spec §9.8). */
     const suspendNote = (name: string) =>
       page.eval<string | null>(
         `document.querySelector('main [data-board-card="${ids[name]}"]')?.dataset.suspendNote ?? null`,
@@ -350,10 +351,10 @@ done
       `!!document.querySelector('main [data-board-card="${ids.Alpha}"] [data-suspended]')`,
       "Suspended on the project's Board",
     );
-    // A card's tooltip says why each running one isn't suspended, or when it will be.
+    // A card's details say why each running one isn't suspended, or when it will be.
     await page.waitFor(
       `!!document.querySelector('main [data-board-card="${ids.Golf}"]')?.dataset.suspendNote`,
-      'the tooltips',
+      'the notes',
     );
     assert.equal(await suspendNote('Golf'), 'Not suspended: a draft in the prompt');
     assert.equal(await suspendNote('Charlie'), 'Not suspended: background work running');
@@ -368,14 +369,13 @@ done
     );
     assert.equal(await suspendNote('Alpha'), null, 'none on a suspended one');
     assert.match(
-      await page.eval<string>(
-        `document.querySelector('main [data-board-card="${ids.Golf}"]').title`,
-      ),
+      await readCardDetails(page, `document.querySelector('main [data-board-card="${ids.Golf}"]')`),
       /\nNot suspended: a draft in the prompt\n/,
     );
     assert.match(
-      await page.eval<string>(
-        `document.querySelector('main [data-board-card="${ids.Alpha}"]').title`,
+      await readCardDetails(
+        page,
+        `document.querySelector('main [data-board-card="${ids.Alpha}"]')`,
       ),
       new RegExp(`\\n${SUSPENDED_TOOLTIP}\\n`),
     );

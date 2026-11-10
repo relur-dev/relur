@@ -41,6 +41,7 @@ import {
   pressKey,
   pressShortcut,
   type RunningApp,
+  readCardDetails,
   reloadPage,
   screenshot,
   showHomeTerminal,
@@ -1468,13 +1469,16 @@ exec sleep 600
       'no table and no Group',
     );
     // Memory (spec §6.14), measured from the fake claude's processes: in the
-    // cards' tooltips with its split, the project's total and the status bar's.
+    // cards' details with its split, the project's total and the status bar's.
     const size = String.raw`\d+(\.\d)? (MB|GB)`;
-    await page.waitFor(
-      `${projectCards}.some((c) => new RegExp(${JSON.stringify(`\nMemory: ${size} · Claude ${size}, other ${size}`)}).test(c.title))`,
-      "the memory in a card's tooltip",
-      15_000,
-    );
+    const memoryLine = new RegExp(`\nMemory: ${size} · Claude ${size}, other ${size}\n`);
+    const memoryEnd = Date.now() + 15_000;
+    for (let found = false; !found; ) {
+      for (const i of [0, 1])
+        if (memoryLine.test(await readCardDetails(page, `${projectCards}[${i}]`))) found = true;
+      if (!found && Date.now() > memoryEnd) throw new Error("No memory in a card's details");
+      if (!found) await sleep(500);
+    }
     assert.match(
       await page.eval<string>(`document.querySelector('[data-detail=Memory] dd').textContent`),
       new RegExp(`^${size} · \\d+ sessions?$`),
@@ -1570,17 +1574,19 @@ exec sleep 600
       await page.eval(`/\\d (MB|GB)\\b/.test(document.querySelector('nav').innerText)`),
       false,
     );
-    // Its cards name their branch (e2e-project-board), not the project; the
-    // tooltip leaves the branch out.
-    for (const c of await page.eval<{ text: string; title: string }[]>(
-      `${projectCards}.map((c) => ({ text: c.innerText, title: c.title }))`,
-    )) {
-      assert.doesNotMatch(c.title, /\nBranch: /);
-      assert.doesNotMatch(c.text, /\bapi-service\b/, 'no project name on the card');
+    // Its cards name their branch (e2e-project-board), not the project; their
+    // details leave the branch out.
+    for (const i of [0, 1]) {
+      assert.doesNotMatch(await readCardDetails(page, `${projectCards}[${i}]`), /\nBranch: /);
+      assert.doesNotMatch(
+        await page.eval<string>(`${projectCards}[${i}].innerText`),
+        /\bapi-service\b/,
+        'no project name on the card',
+      );
     }
     // ↵ on a card opens it on its Claude tab, as on Home: Keep my commits, so
     // Fix login timeout keeps its Shell tab for the keys below.
-    const keepCard = `${projectCards}.find((c) => c.title.includes('Keep my commits'))`;
+    const keepCard = `${projectCards}.find((c) => c.innerText.includes('Keep my commits'))`;
     const secondRow = await page.eval<string>(`${keepCard}.dataset.boardCard`);
     await page.eval(`${keepCard}.focus()`);
     await pressEnter(page);

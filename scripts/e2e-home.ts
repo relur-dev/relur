@@ -29,11 +29,13 @@ import {
   pressKey,
   pressShortcut,
   type RunningApp,
+  readCardDetails,
   screenshot,
   sleep,
   submitDialog,
   typeInField,
   typeInTerminal,
+  waitForCardDetails,
   waitForFile,
   withDisplayEnv,
 } from './lib/app-driver';
@@ -406,16 +408,16 @@ exec sleep 600
       await page.eval<string>(`document.querySelector('[data-board-column=needs] h2').title`),
       /jumps to the next one that needs you/,
     );
-    // A card's tooltip: the whole permission message, the branch, the activity.
-    const permTip = await page.eval<string>(`${homeRow(ws.perm?.id as string)}.title`);
+    // A card's details behind its ⓘ: the whole permission message, the branch, the activity.
+    const permTip = await readCardDetails(page, homeRow(ws.perm?.id as string));
     assert.match(permTip, /^ABC-1 Fix the flaky test\n/);
     assert.match(permTip, /\nClaude needs your permission to use Bash\n/);
     assert.match(permTip, new RegExp(`\\nBranch: ${ws.perm?.branch}\\n`));
     assert.match(permTip, /\nActive (just now|\d+[smh] ago)\n/);
-    assert.match(permTip, /\nClick to open, drag to delete$/);
+    assert.match(permTip, /\nClick the card to open it, drag it to delete\.$/);
     // A card names its project at the top right.
     assert.match(await page.eval<string>(`${homeRow(ws.perm?.id as string)}.innerText`), /\bweb\b/);
-    // Working: all six, with how long and the memory, also in the tooltip.
+    // Working: all six, with how long and the memory, also in the details.
     assert.equal(await page.eval(`(${sectionIds('working')}).length`), 6);
     assert.match(
       await page.eval<string>(`document.querySelector('[data-board-column=working]').innerText`),
@@ -426,9 +428,11 @@ exec sleep 600
       'the memory of working workspaces',
       30_000,
     );
-    await page.waitFor(
-      `[...document.querySelectorAll('[data-board-column=working] [data-board-card]')].some((c) => /\\nMemory: \\d+(\\.\\d)? (MB|GB) · Claude /.test(c.title))`,
-      'the memory in a tooltip',
+    await waitForCardDetails(
+      page,
+      `[...document.querySelectorAll('[data-board-column=working] [data-board-card]')].find((c) => c.querySelector('[data-home-memory]'))`,
+      /\nMemory: \d+(\.\d)? (MB|GB) · Claude /,
+      'the memory in the details',
       30_000,
     );
     // Ready to ship: the merged ones too until they are pushed and their PR is known.

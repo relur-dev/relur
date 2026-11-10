@@ -429,8 +429,14 @@ exec sleep 600
     assert.equal(await page.eval(activeCard), id('idle'));
     await pressKey(page, 'ArrowLeft');
     assert.equal(await page.eval(activeCard), id('idle'), 'nothing further left in the band');
-    // Tab reaches the card's field; ↵ on a card opens its workspace.
+    // Tab reaches the card's ⓘ, then its field; ↵ on a card opens its workspace.
     await page.eval(`${card(id('wait'))}.focus()`);
+    await pressKey(page, 'Tab');
+    assert.equal(
+      await page.eval(`document.activeElement?.hasAttribute('data-card-info')`),
+      true,
+      'Tab to the ⓘ',
+    );
     await pressKey(page, 'Tab');
     assert.equal(
       await page.eval(`document.activeElement?.hasAttribute('data-quick-reply')`),

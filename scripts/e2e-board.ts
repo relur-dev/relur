@@ -31,6 +31,7 @@ import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
 import { SEED_CONFIG } from '../src/main/test-support/seed-config';
 import { envVar } from '../src/shared/brand';
+import { SUSPENDED_TOOLTIP } from '../src/shared/suspend';
 import {
   type Cdp,
   CMD,
@@ -701,6 +702,119 @@ exec sleep 600
     assert.deepEqual(await unfolds(), [], 'no transition with reduced motion');
     await page.send('Emulation.setEmulatedMedia', { features: [] });
 
+    // 6c. A card's details behind its ⓘ (spec §6.7): no tooltip on the card;
+    // hover shows them after a rest, a click pins them until a click outside
+    // or Esc, Tab reaches the ⓘ and ↵ or Space opens it; never the workspace
+    // or a drag.
+    const info = (cardId: string) => `${card(cardId)}.querySelector('[data-card-info]')`;
+    const details = `document.querySelector('[data-card-details]')`;
+    const detailsShown = `!!${details}`;
+    const noWorkspace = async (what: string) => {
+      await sleep(300);
+      assert.ok(await page.eval(`!!document.querySelector('[data-home-board]')`), what);
+      assert.ok(
+        await page.eval(`!document.querySelector('[data-board-float]')`),
+        `${what}: no drag`,
+      );
+    };
+    assert.equal(await page.eval(`${card(id('perm'))}.title`), '', 'no tooltip on the card');
+    assert.equal(
+      await page.eval(`${info(id('perm'))}.getAttribute('aria-label')`),
+      'Details for ABC-2',
+    );
+    // Hover: shown after a rest (not pinned), gone once the pointer leaves.
+    const hoverAt = await centre(page, info(id('perm')));
+    const hover = (x: number, y: number) =>
+      page.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x,
+        y,
+        button: 'none',
+        buttons: 0,
+      });
+    await hover(away.x, away.y);
+    await hover(hoverAt.x, hoverAt.y);
+    assert.equal(await page.eval(detailsShown), false, 'not at once');
+    await page.waitFor(detailsShown, 'the details on hover');
+    assert.equal(await page.eval(`${details}.dataset.cardDetailsPinned ?? null`), null);
+    await hover(away.x, away.y);
+    await page.waitFor(`!${detailsShown}`, 'the details gone with the pointer');
+    // A click pins them: the whole state message, the branch, the activity.
+    await mouse(page, 'mousePressed', hoverAt.x, hoverAt.y);
+    await mouse(page, 'mouseReleased', hoverAt.x, hoverAt.y);
+    await page.waitFor(`${details}?.dataset.cardDetailsPinned === 'true'`, 'the details pinned');
+    await noWorkspace('a click on the ⓘ opens no workspace');
+    assert.equal(await page.eval(`document.activeElement === ${details}`), true, 'focus in them');
+    assert.equal(await page.eval(`${info(id('perm'))}.getAttribute('aria-expanded')`), 'true');
+    const permDetails = await page.eval<string>(`${details}.innerText`);
+    assert.match(permDetails, /^ABC-2 Fix the flaky test\n/);
+    assert.match(permDetails, /\nClaude is waiting for your input\n/);
+    assert.match(permDetails, new RegExp(`\\nBranch: ${ws.perm?.branch}\\n`));
+    assert.match(permDetails, /\nActive (just now|\d+[smh] ago)\n/);
+    assert.match(permDetails, /\nClick the card to open it, drag it to delete\.$/);
+    // Inside the window, and above the cards.
+    assert.ok(
+      await page.eval(`(() => {
+        const r = ${details}.getBoundingClientRect();
+        return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+      })()`),
+      'inside the window',
+    );
+    await screenshot(page, screenshotDir, 'b3b-details.png');
+    await hover(away.x, away.y);
+    await sleep(400);
+    assert.equal(await page.eval(detailsShown), true, 'pinned: they stay');
+    // A click in them opens nothing either.
+    const inDetails = await centre(page, details);
+    await mouse(page, 'mousePressed', inDetails.x, inDetails.y);
+    await mouse(page, 'mouseReleased', inDetails.x, inDetails.y);
+    await noWorkspace('a click in the details opens no workspace');
+    assert.equal(await page.eval(detailsShown), true);
+    // A click outside closes them.
+    await mouse(page, 'mousePressed', away.x, away.y);
+    await mouse(page, 'mouseReleased', away.x, away.y);
+    await page.waitFor(`!${detailsShown}`, 'the details closed by a click outside');
+    await noWorkspace('a click outside opens nothing');
+    // The keyboard: Tab from the card to its ⓘ, ↵ opens, Esc closes and gives the ⓘ focus.
+    await page.eval(`${card(id('perm'))}.focus()`);
+    await pressKey(page, 'Tab');
+    assert.equal(
+      await page.eval(`document.activeElement === ${info(id('perm'))}`),
+      true,
+      'Tab reaches the ⓘ',
+    );
+    await pressEnterOn(page);
+    await page.waitFor(
+      `${details}?.dataset.cardDetailsPinned === 'true' && document.activeElement === ${details}`,
+      'the details by ↵',
+    );
+    await noWorkspace('↵ on the ⓘ opens no workspace');
+    assert.match(await page.eval<string>(`${details}.innerText`), /^ABC-2 Fix the flaky test\n/);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!${detailsShown}`, 'the details closed by Esc');
+    assert.equal(
+      await page.eval(`document.activeElement === ${info(id('perm'))}`),
+      true,
+      'focus back',
+    );
+    assert.equal(await page.eval(`${info(id('perm'))}.getAttribute('aria-expanded')`), 'false');
+    // Space opens them too; Tab leaves them, past the ⓘ.
+    const space = { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 };
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', ...space });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...space });
+    await page.waitFor(detailsShown, 'the details by Space');
+    await pressKey(page, 'Tab');
+    await page.waitFor(`!${detailsShown}`, 'the details closed by Tab');
+    assert.equal(
+      await page.eval(
+        `${card(id('perm'))}.contains(document.activeElement) && document.activeElement !== ${info(id('perm'))}`,
+      ),
+      true,
+      'on to what follows the ⓘ',
+    );
+    await page.eval(`document.activeElement?.blur()`);
+    await page.eval(`document.querySelector('[data-home-board]').focus()`);
+
     // 7. Delete n merged: one dialog for both.
     await page.eval(
       `document.querySelector('[data-board-column=merged] [data-home-action=delete-merged]').click()`,
@@ -1093,6 +1207,24 @@ exec sleep 600
       30_000,
     );
     assert.equal(await page.eval(columnOf(id('sleepy'))), 'idle');
+    // Its details say so, read from the keyboard.
+    await page.eval(`${card(id('sleepy'))}.focus()`);
+    await pressKey(page, 'Tab');
+    await pressEnterOn(page);
+    await page.waitFor(`!!document.querySelector('[data-card-details]')`, "sleepy's details");
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-card-details] [data-card-detail=suspend]')?.textContent`,
+      ),
+      SUSPENDED_TOOLTIP,
+    );
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-card-details]').innerText`),
+      /^ABC-7 Pagination\n/,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('[data-card-details]')`, 'closed');
+    await page.eval(`document.activeElement?.blur()`);
     const startsBefore = read(`starts-${id('sleepy')}.txt`)
       .trim()
       .split('\n').length;

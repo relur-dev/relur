@@ -12,7 +12,7 @@ import {
   BOARD_COLUMNS,
   type BoardColumn,
   boardColumns,
-  cardTooltip,
+  cardDetails,
   type HomeSection,
   QUICK_REPLY_REFUSAL,
   quickReply,
@@ -30,10 +30,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, Kbd, keyHint } from '../ui/controls';
+import { InfoIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
 import { ago } from '../ui/time';
+import { CardDetails } from './CardDetails';
 import {
   Action,
   actionClass,
@@ -158,7 +160,7 @@ export function Board({
   const columns = boardColumns(workspaces, ship);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '';
   // Why a running Claude isn't suspended, or when it will be (spec §9.8), for
-  // the cards' tooltips: read again as often as the app checks.
+  // the cards' details: read again as often as the app checks.
   const clocks = useQuery(
     trpc.sessions.suspendClocks.queryOptions(undefined, { refetchInterval: 15_000 }),
   );
@@ -166,10 +168,10 @@ export function Board({
     const clock = clocks.data?.find((c) => c.workspaceId === w.id);
     return clock ? suspendClockNote(clock, Date.now()) : null;
   };
-  /** A card's tooltip (spec §6.7): what the card itself leaves out. */
-  const tooltip = (w: Workspace) => {
+  /** A card's details behind its ⓘ (spec §6.7): what the card itself leaves out. */
+  const details = (w: Workspace) => {
     const used = workspaceMemory(memory, w.id);
-    return cardTooltip(w, {
+    const { title, lines } = cardDetails(w, {
       linkedFrom: linkedFrom(w),
       branch: !inProject,
       memory: used ? `${formatBytes(used.total)} · ${describeSplit(used)}` : null,
@@ -177,6 +179,7 @@ export function Board({
       suspended: suspended.has(w.id),
       suspendNote: clockNote(w),
     });
+    return <CardDetails label={cardLabel(w)} title={title} lines={lines} />;
   };
   /** On a project's Board, the project a linked-in workspace belongs to (spec §6.10). */
   const linkedFrom = (w: Workspace) =>
@@ -644,7 +647,6 @@ export function Board({
         data-board-lifted={lifted || undefined}
         data-board-linked={linkedFrom(w) ?? undefined}
         data-suspend-note={suspended.has(w.id) ? undefined : (clockNote(w) ?? undefined)}
-        title={tooltip(w)}
         className={`group flex flex-none cursor-default touch-none flex-col rounded-[7px] border py-[9px] pr-2.5 pl-[11px] outline-none select-none focus-visible:outline-none ${
           lifted
             ? 'border-dashed border-line-strong bg-transparent'
@@ -674,6 +676,7 @@ export function Board({
             linkedFrom={linkedFrom(w)}
             linkedIn={group === 'project' ? projectName : null}
             suspended={suspended.has(w.id) && column !== 'idle'}
+            details={details(w)}
           />
           {offer === 'question' && words?.question && !lifted && !wasSent ? (
             <div data-quick-reply-question className="flex flex-col gap-[5px]">
@@ -1221,6 +1224,7 @@ function CardBody({
   linkedFrom = null,
   linkedIn = null,
   suspended,
+  details = null,
 }: {
   w: Workspace;
   it: HomeItem;
@@ -1235,6 +1239,8 @@ function CardBody({
   linkedIn?: ((projectId: string) => string) | null;
   /** Its Claude is suspended (spec §9.8): said after the status, outside Idle. */
   suspended: boolean;
+  /** The ⓘ and its details (spec §6.7); a dragged copy shows the ⓘ alone. */
+  details?: ReactNode;
 }): ReactNode {
   return (
     <>
@@ -1267,6 +1273,11 @@ function CardBody({
             +{linkedRepos(w).length}
           </span>
         ) : null}
+        {details ?? (
+          <span className="-my-0.5 flex size-[18px] flex-none items-center justify-center text-fg-subtle">
+            <InfoIcon />
+          </span>
+        )}
       </div>
       <span
         className={`line-clamp-2 text-base text-pretty ${

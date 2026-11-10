@@ -2,7 +2,7 @@
  * End-to-end test of a project's Board (spec §6.10): the Workspaces tab shows
  * the project's workspaces and those linked into it (marked, and counted
  * apart in the tab), each card with its branch where Home's show the
- * project and a tooltip without it; Columns and no Group, the column layout
+ * project, its details behind the ⓘ (by click and by keyboard) without it; Columns and no Group, the column layout
  * shared with Home (hidden here, hidden there, and Reset there shows it here
  * again); the quick reply, ↵ on a card, drag to delete (Esc, then the
  * zone and the Delete workspace dialog) and ⌫ on a focused card; the
@@ -28,6 +28,7 @@ import {
   launchApp,
   pressKey,
   type RunningApp,
+  readCardDetails,
   screenshot,
   sleep,
   submitDialog,
@@ -135,6 +136,8 @@ exec sleep 600
         profiles: SEED_CONFIG.profiles.map((p) => ({
           ...p,
           claude: { command: fakeClaude, args: [] },
+          // Suspension on, never reached here: the cards' details say why or when (spec §9.8).
+          ...(p.id === 'work' ? { suspendIdleMin: 30 as const } : {}),
         })),
         projects: [
           {
@@ -233,19 +236,87 @@ exec sleep 600
       ),
       /^Workspaces\s*2\s*\+ 1 linked$/,
     );
-    // Cards show the branch where Home's show the project; the tooltip leaves it out.
+    // Cards show the branch where Home's show the project; the details leave it out.
     const waitingText = await page.eval<string>(`${card(id('waiting'))}.innerText`);
     assert.ok(waitingText.includes(ws.waiting?.branch as string), 'the branch on the card');
-    const waitingTip = await page.eval<string>(`${card(id('waiting'))}.title`);
+    const waitingTip = await readCardDetails(page, card(id('waiting')));
     assert.match(waitingTip, /^ABC-1 Pick a color\n/);
     assert.doesNotMatch(waitingTip, /\nBranch: /);
     assert.match(waitingTip, /\nClaude is waiting for your input\n/);
-    // The linked one: marked with its own project, in the chip and the tooltip.
+    // The details by a click on the ⓘ (spec §6.7): pinned, with the suspension
+    // line, and the workspace stays closed; a click outside closes them.
+    const info = `${card(id('waiting'))}.querySelector('[data-card-info]')`;
+    const details = `document.querySelector('[data-card-details]')`;
+    const stillHere = async (what: string) => {
+      await sleep(300);
+      assert.ok(await page.eval(`!!document.querySelector('[data-project-board]')`), what);
+      assert.ok(
+        await page.eval(`!document.querySelector('[data-board-float]')`),
+        `${what}: no drag`,
+      );
+    };
+    assert.equal(await page.eval(`${card(id('waiting'))}.title`), '', 'no tooltip on the card');
+    assert.equal(await page.eval(`${info}.getAttribute('aria-label')`), 'Details for ABC-1');
+    await page.waitFor(
+      `!!${card(id('waiting'))}.dataset.suspendNote`,
+      "the waiting workspace's suspension note",
+      20_000,
+    );
+    const infoAt = await centre(page, info);
+    await mouse(page, 'mousePressed', infoAt.x, infoAt.y);
+    await mouse(page, 'mouseReleased', infoAt.x, infoAt.y);
+    await page.waitFor(
+      `${details}?.dataset.cardDetailsPinned === 'true'`,
+      'the details by a click',
+    );
+    await stillHere('a click on the ⓘ opens no workspace');
+    const clicked = await page.eval<string>(`${details}.innerText`);
+    assert.match(clicked, /^ABC-1 Pick a color\n/);
+    assert.match(clicked, /\nActive (just now|\d+[smh] ago)\n/);
+    const suspendLine = await page.eval<string>(
+      `${details}.querySelector('[data-card-detail=suspend]')?.textContent ?? ''`,
+    );
+    assert.match(suspendLine, /^(Not suspended: .+|Suspended in \d+ min if it stays idle)$/);
+    const outside = await centre(
+      page,
+      `document.querySelector('main [data-board-column=idle] h2')`,
+    );
+    await mouse(page, 'mousePressed', outside.x, outside.y);
+    await mouse(page, 'mouseReleased', outside.x, outside.y);
+    await page.waitFor(`!${details}`, 'the details closed by a click outside');
+    await stillHere('a click outside opens nothing');
+    // By the keyboard: Tab from the card to the ⓘ, ↵ opens, Esc closes and gives the ⓘ focus.
+    await page.eval(`${card(id('waiting'))}.focus()`);
+    await pressKey(page, 'Tab');
+    assert.equal(await page.eval(`document.activeElement === ${info}`), true, 'Tab reaches the ⓘ');
+    const enter = {
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    };
+    await page.send('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', ...enter });
+    await page.send('Input.dispatchKeyEvent', { type: 'keyUp', ...enter });
+    await page.waitFor(`document.activeElement === ${details}`, 'the details by ↵, in focus');
+    await stillHere('↵ on the ⓘ opens no workspace');
+    assert.equal(
+      await page.eval(`${details}.querySelector('[data-card-detail=suspend]')?.textContent`),
+      suspendLine,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!${details}`, 'the details closed by Esc');
+    assert.equal(
+      await page.eval(`document.activeElement === ${info}`),
+      true,
+      'focus back on the ⓘ',
+    );
+    await page.eval(`document.activeElement?.blur()`);
+    // The linked one: marked with its own project, in the chip and the details.
     assert.equal(
       await page.eval(`${card(id('linked'))}.querySelector('[data-linked-from]')?.textContent`),
       '↗ lib',
     );
-    assert.match(await page.eval<string>(`${card(id('linked'))}.title`), /\nLinked in from lib\n/);
+    assert.match(await readCardDetails(page, card(id('linked'))), /\nLinked in from lib\n/);
     assert.equal(
       await page.eval(`${card(id('waiting'))}.querySelector('[data-linked-from]')`),
       null,
