@@ -4,7 +4,9 @@ import { BRAND } from '@shared/brand';
 import { prText } from '@shared/home';
 import {
   type BaseCheckout,
+  type BaseUpstream,
   type DivergedMode,
+  divergedBaseText,
   type MergeDecision,
   type MergeFacts,
   type MergeRepoStatus,
@@ -22,7 +24,7 @@ import type { WorkspaceRecords } from '../db/workspaces';
 import { type Git, gitReason } from '../git/git';
 import { expandHome } from '../paths';
 import type { ConversationEvent } from '../status/service';
-import { type FinishService, refreshMerged } from './finish';
+import { baseUpstream, type FinishService, refreshMerged } from './finish';
 
 /** One repository of a merge prompt. */
 export interface PromptRepo {
@@ -103,6 +105,16 @@ interface WaitRepo {
   projectId: string;
   /** The local base's tip when Claude was asked: a move afterwards is named. */
   baseTip: string | null;
+  /** Its upstream's tip then, when it has one. */
+  upstreamTip: string | null;
+  /** Its upstream was fetched: the try afterwards compares with it too. */
+  useUpstream: boolean;
+}
+
+/** A base's upstream, as a ref and by name ("origin/main"). */
+interface Upstream {
+  ref: string;
+  name: string;
 }
 
 interface Wait {
@@ -120,11 +132,12 @@ export interface ClaudeEvents {
 }
 
 /**
- * Merge into the base (spec §14.4): fast-forwards each repository's local
- * base, in the main checkout only when the base is checked out there and it
- * is clean, else by ref when it is checked out nowhere; never pushes. A
- * diverged branch goes to Claude, and the app tries once more when Claude's
- * turn ends, without looping.
+ * Merge into the base (spec §14.4): fetches each base's upstream, brings a
+ * base that is behind it up to date, then fast-forwards each repository's
+ * local base, in the main checkout only when the base is checked out there
+ * and it is clean, else by ref when it is checked out nowhere; never pushes.
+ * A diverged branch goes to Claude, and the app tries once more when
+ * Claude's turn ends, without looping.
  */
 export class MergeService {
   private readonly events = new EventEmitter();
@@ -206,10 +219,24 @@ export class MergeService {
     const repos = projectId
       ? workspace.repos.filter((r) => r.projectId === projectId)
       : workspace.repos;
-    const plans: { repo: WorkspaceRepo; facts: MergeFacts | null; decision: MergeDecision }[] = [];
-    for (const repo of repos) {
-      const facts = await this.facts(workspace, repo);
-      plans.push({ repo, facts, decision: facts ? mergeDecision(facts, diverged) : noBase(repo) });
+    // Each base's upstream first, within the network time limit; a failed
+    // fetch leaves that repository's merge purely local.
+    const fetched = await Promise.all(repos.map((repo) => this.fetchBase(workspace, repo)));
+    const plans: {
+      repo: WorkspaceRepo;
+      facts: MergeFacts | null;
+      decision: MergeDecision;
+      note: string | null;
+    }[] = [];
+    for (const [i, repo] of repos.entries()) {
+      const { ok, note } = fetched[i] ?? { ok: false, note: null };
+      const facts = await this.facts(workspace, repo, ok);
+      plans.push({
+        repo,
+        facts,
+        decision: facts ? mergeDecision(facts, diverged) : noBase(repo),
+        note,
+      });
     }
     const status = (phase: MergeStatus['phase'], rs: MergeRepoStatus[]): MergeStatus => ({
       workspaceId: workspace.id,
@@ -227,6 +254,7 @@ export class MergeService {
       base: p.repo.baseBranch,
       phase,
       reason,
+      note: p.note,
     });
     // A refusal anywhere changes nothing anywhere; the button shows why.
     const refused = plans.flatMap((p) =>
@@ -251,23 +279,33 @@ export class MergeService {
     for (const p of plans) {
       if (p.decision.action === 'skip') results.set(p.repo.projectId, entry(p, 'skipped'));
     }
+    // A base behind its upstream is brought up to date first (spec §14.4).
     for (const p of todo) {
+      const u = p.facts?.baseUpstream;
+      if (!u || u.behind === 0) continue;
+      const failure = await this.updateBase(workspace, p.repo);
+      if (failure) results.set(p.repo.projectId, entry(p, 'failed', failure));
+      else p.note = updatedNote(p.repo.baseBranch, u);
+    }
+    const ready = todo.filter((p) => !results.has(p.repo.projectId));
+    for (const p of ready) {
       if (p.decision.action !== 'fast-forward') continue;
       const failure = await this.fastForward(workspace, p.repo, p.decision.via);
       results.set(p.repo.projectId, entry(p, failure ? 'failed' : 'merged', failure));
     }
-    const toClaude = todo.filter((p) => p.decision.action === 'claude');
+    const toClaude = ready.filter((p) => p.decision.action === 'claude');
     const mode = diverged ?? 'rebase';
     if (toClaude.length > 0) {
       const tips: WaitRepo[] = [];
       for (const p of toClaude) {
         const { git, project } = await this.finish.context(workspace.id, p.repo.projectId);
+        const repoPath = expandHome(project.repoPath);
+        const up = await this.upstreamOf(workspace, p.repo);
         tips.push({
           projectId: p.repo.projectId,
-          baseTip: await git.revParse(
-            expandHome(project.repoPath),
-            `refs/heads/${p.repo.baseBranch}`,
-          ),
+          baseTip: await git.revParse(repoPath, `refs/heads/${p.repo.baseBranch}`),
+          upstreamTip: up ? await git.revParse(repoPath, up.ref) : null,
+          useUpstream: p.facts?.baseUpstream != null,
         });
       }
       const prompt = mergePrompt(
@@ -306,8 +344,47 @@ export class MergeService {
       : { kind: 'merged' };
   }
 
-  /** One repository's facts for the rules; null without a local base branch. */
-  private async facts(workspace: Workspace, repo: WorkspaceRepo): Promise<MergeFacts | null> {
+  /** The local base's upstream (spec §14.4), when it has one. */
+  private async upstreamOf(workspace: Workspace, repo: WorkspaceRepo): Promise<Upstream | null> {
+    const { git, project } = await this.finish.context(workspace.id, repo.projectId);
+    const up = await git.upstream(expandHome(project.repoPath), repo.baseBranch);
+    if (!up) return null;
+    return { ref: `refs/remotes/${up.remote}/${up.branch}`, name: `${up.remote}/${up.branch}` };
+  }
+
+  /**
+   * Fetches the base's upstream (spec §14.4), within the network time limit.
+   * `ok` when its remote-tracking ref is fresh; a failure is only noted, and
+   * the merge goes on with the local base alone.
+   */
+  private async fetchBase(
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+  ): Promise<{ ok: boolean; note: string | null }> {
+    const { git, project } = await this.finish.context(workspace.id, repo.projectId);
+    const up = await git.upstream(expandHome(project.repoPath), repo.baseBranch);
+    if (!up) return { ok: false, note: null };
+    try {
+      await git.fetch(expandHome(project.repoPath), up.remote, up.branch);
+      return { ok: true, note: null };
+    } catch (error) {
+      return {
+        ok: false,
+        note: `Couldn't fetch ${up.remote}/${up.branch} (${gitReason(error)}): merged with the local ${repo.baseBranch} as it was`,
+      };
+    }
+  }
+
+  /**
+   * One repository's facts for the rules; null without a local base branch.
+   * With `useUpstream`, the base is compared with its upstream, and a base
+   * behind it counts as already updated.
+   */
+  private async facts(
+    workspace: Workspace,
+    repo: WorkspaceRepo,
+    useUpstream: boolean,
+  ): Promise<MergeFacts | null> {
     const { git, project } = await this.finish.context(workspace.id, repo.projectId);
     const repoPath = expandHome(project.repoPath);
     const base = repo.baseBranch;
@@ -316,6 +393,9 @@ export class MergeService {
       git.revParse(repoPath, `refs/heads/${workspace.branch}`),
     ]);
     if (!baseTip || !branchTip) return null;
+    const baseUp = useUpstream ? await baseUpstream(git, repoPath, base) : null;
+    // A base behind its upstream is updated first: the branch must contain that.
+    const target = baseUp && baseUp.behind > 0 ? `refs/remotes/${baseUp.ref}` : baseTip;
     const merged = await refreshMerged(git, this.records, workspace, repo, project).catch(
       () => repo.merged,
     );
@@ -336,10 +416,43 @@ export class MergeService {
       uncommitted: (await git.status(repo.worktreePath)).length,
       hasOwnCommits: await this.finish.hasOwnCommits(git, workspace, repo, project),
       merged: merged !== null,
-      canFastForward: await git.isAncestor(repoPath, baseTip, branchTip),
+      canFastForward: await git.isAncestor(repoPath, target, branchTip),
       checkout: await baseCheckout(git, repoPath, base),
       published: where && pr ? `${where}, ${prText(pr)}` : (where ?? (pr ? prText(pr) : null)),
+      baseUpstream: baseUp,
     };
+  }
+
+  /**
+   * Fast-forwards the local base to its upstream (spec §14.4): in the main
+   * checkout when it is checked out there (clean, checked before), else by
+   * ref. Git's reason when it refuses.
+   */
+  private async updateBase(workspace: Workspace, repo: WorkspaceRepo): Promise<string | null> {
+    const { git, project } = await this.finish.context(workspace.id, repo.projectId);
+    const repoPath = expandHome(project.repoPath);
+    const base = repo.baseBranch;
+    const up = await this.upstreamOf(workspace, repo);
+    if (!up) return `${base} no longer has an upstream`;
+    try {
+      const at = await baseCheckout(git, repoPath, base);
+      if (at.kind === 'other') throw new Error(`${base} is checked out in ${at.path}`);
+      if (at.kind === 'main') {
+        if (at.dirty) throw new Error(`the main checkout has uncommitted changes on ${base}`);
+        await git.fastForward(at.path, up.ref);
+      } else {
+        const old = await git.revParse(repoPath, `refs/heads/${base}`);
+        const next = await git.revParse(repoPath, up.ref);
+        if (!old || !next) throw new Error(`${base} or ${up.name} is gone`);
+        if (!(await git.isAncestor(repoPath, old, next))) {
+          throw new Error(divergedBaseText(base, up.name));
+        }
+        await git.updateBranch(repoPath, base, next, old);
+      }
+    } catch (error) {
+      return `git refused to update ${base} to ${up.name}: ${gitReason(error)}`;
+    }
+    return null;
   }
 
   /** Fast-forwards one repository's local base; git's reason when it refuses. */
@@ -356,7 +469,7 @@ export class MergeService {
         const at = await baseCheckout(git, repoPath, base);
         if (at.kind !== 'main')
           throw new Error(`${base} is no longer checked out in the main checkout`);
-        await git.fastForward(at.path, workspace.branch);
+        await git.fastForward(at.path, `refs/heads/${workspace.branch}`);
       } else {
         const old = await git.revParse(repoPath, `refs/heads/${base}`);
         const next = await git.revParse(repoPath, `refs/heads/${workspace.branch}`);
@@ -447,19 +560,31 @@ export class MergeService {
         : `The ${operation} in the worktree isn't finished`;
     }
     if (said) return `Claude says it isn't ready: ${said}`;
-    const facts = await this.facts(fresh, repo);
+    // No new fetch: the upstream as the last fetch left it.
+    const before = wait.repos.find((x) => x.projectId === repo.projectId);
+    const facts = await this.facts(fresh, repo, before?.useUpstream ?? false);
     if (!facts) return `There's no local ${repo.baseBranch} branch to merge into`;
     const decision = mergeDecision(facts, wait.mode);
     if (decision.action === 'refuse') return decision.reason;
     if (decision.action === 'skip') return facts.merged ? null : decision.reason;
     if (decision.action === 'fast-forward') {
+      if (facts.baseUpstream && facts.baseUpstream.behind > 0) {
+        const failure = await this.updateBase(fresh, repo);
+        if (failure) return failure;
+      }
       return this.fastForward(fresh, repo, decision.via);
     }
-    const tip = await git.revParse(expandHome(project.repoPath), `refs/heads/${repo.baseBranch}`);
-    const before = wait.repos.find((x) => x.projectId === repo.projectId)?.baseTip;
-    return tip !== before
-      ? `${repo.baseBranch} moved again while Claude worked: merge again`
-      : `${workspace.branch} still doesn't contain ${repo.baseBranch}`;
+    const repoPath = expandHome(project.repoPath);
+    const tip = await git.revParse(repoPath, `refs/heads/${repo.baseBranch}`);
+    if (tip !== before?.baseTip) {
+      return `${repo.baseBranch} moved again while Claude worked: merge again`;
+    }
+    const up = await this.upstreamOf(fresh, repo);
+    const upTip = up ? await git.revParse(repoPath, up.ref) : null;
+    if (up && before?.upstreamTip && upTip !== before.upstreamTip) {
+      return `${up.name} moved again while Claude worked: merge again`;
+    }
+    return `${workspace.branch} still doesn't contain ${repo.baseBranch}`;
   }
 
   private set(status: MergeStatus): void {
@@ -477,6 +602,10 @@ export class MergeService {
     return workspace;
   }
 }
+
+/** What the outcome says after the base was updated: "main was 3 behind origin/main; …". */
+const updatedNote = (base: string, u: BaseUpstream) =>
+  `${base} was ${u.behind} behind ${u.ref}; it was updated first`;
 
 /** A repository whose local base branch (or branch) is missing. */
 const noBase = (repo: WorkspaceRepo): MergeDecision => ({

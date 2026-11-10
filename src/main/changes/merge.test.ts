@@ -137,6 +137,15 @@ function commit(fx: Fixture, dir: string, file: string, text = `${file}\n`) {
 
 const tip = (fx: Fixture, repo: string, ref: string) => fx.git(repo, 'rev-parse', ref).trim();
 
+/** Someone else's commit of `file`, pushed to the repository's origin `main`. */
+function pushElsewhere(fx: Fixture, repo: string, file: string) {
+  const origin = fx.git(repo, 'remote', 'get-url', 'origin').trim();
+  const other = path.join(fx.root, `elsewhere-${file}`);
+  fx.git(fx.root, 'clone', '-q', origin, other);
+  commit(fx, other, file);
+  fx.git(other, 'push', '-q', 'origin', 'main');
+}
+
 /** Waits until the merge status is no longer waiting (the retry is async). */
 async function settled(merge: MergeService): Promise<MergeStatus | undefined> {
   for (let i = 0; i < 100; i++) {
@@ -395,6 +404,122 @@ describe('Merge into the base (spec §14.4)', () => {
     fs.writeFileSync(path.join(api.repo, 'README'), 'changed\n');
     const result = await merge.merge('ws');
     expect(result.kind).toBe('stopped');
+    expect(tip(fx, web.repo, 'main')).toBe(before);
+  });
+});
+
+describe('Merge into the base: the base against its upstream (spec §14.4)', () => {
+  let fx: Fixture;
+  afterEach(() => fx.cleanup());
+
+  it('fetches the upstream, updates a base behind it, then fast-forwards it', async () => {
+    fx = createFixture();
+    const { repos, merge, prompts } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    // The branch already has origin's commit; the local main doesn't.
+    fx.git(web.worktree, 'pull', '-q', '--ff-only', 'origin', 'main');
+    commit(fx, web.worktree, 'fix.txt');
+    expect(await merge.merge('ws')).toEqual({ kind: 'merged' });
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.worktree, 'HEAD'));
+    expect(fs.existsSync(path.join(web.repo, 'theirs.txt'))).toBe(true);
+    expect(prompts).toEqual([]);
+    expect(merge.list()[0]?.repos[0]?.note).toBe(
+      'main was 1 behind origin/main; it was updated first',
+    );
+    // Never pushed.
+    expect(tip(fx, web.repo, 'origin/main')).not.toBe(tip(fx, web.repo, 'main'));
+  });
+
+  it('updates the base first, then asks Claude to rebase onto it', async () => {
+    fx = createFixture();
+    const { repos, merge, prompts, stop, onPrompt } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    commit(fx, web.worktree, 'fix.txt');
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    onPrompt(() => fx.git(web.worktree, 'rebase', '-q', 'main'));
+    expect(await merge.merge('ws')).toEqual({ kind: 'waiting' });
+    expect(prompts[0]).toMatch(/run git rebase main /);
+    // The local main is origin's now, before Claude rebases onto it.
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.repo, 'origin/main'));
+    stop();
+    expect((await settled(merge))?.phase).toBe('done');
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.worktree, 'HEAD'));
+    expect(fx.git(web.repo, 'merge-base', '--is-ancestor', 'origin/main', 'main') === '').toBe(
+      true,
+    );
+  });
+
+  it('moves a base checked out nowhere to its upstream by ref', async () => {
+    fx = createFixture();
+    const { repos, merge } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    fx.git(web.worktree, 'pull', '-q', '--ff-only', 'origin', 'main');
+    commit(fx, web.worktree, 'fix.txt');
+    fx.git(web.repo, 'switch', '-q', '-c', 'other');
+    expect(await merge.merge('ws')).toEqual({ kind: 'merged' });
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.worktree, 'HEAD'));
+    expect(fx.git(web.repo, 'symbolic-ref', '--short', 'HEAD').trim()).toBe('other');
+  });
+
+  it('stops, changing nothing, when the base and its upstream have both moved on', async () => {
+    fx = createFixture();
+    const { repos, merge, prompts } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    commit(fx, web.worktree, 'fix.txt');
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    commit(fx, web.repo, 'mine.txt');
+    const before = tip(fx, web.repo, 'main');
+    expect(await merge.merge('ws')).toEqual({
+      kind: 'stopped',
+      reason: 'main and origin/main have both moved on: update main first',
+    });
+    expect(tip(fx, web.repo, 'main')).toBe(before);
+    expect(prompts).toEqual([]);
+  });
+
+  it('stays purely local without an upstream', async () => {
+    fx = createFixture();
+    const { repos, merge } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    fx.git(web.repo, 'branch', '--unset-upstream', 'main');
+    commit(fx, web.worktree, 'fix.txt');
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    expect(await merge.merge('ws')).toEqual({ kind: 'merged' });
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.worktree, 'HEAD'));
+    expect(fs.existsSync(path.join(web.repo, 'theirs.txt'))).toBe(false);
+    // Not fetched either.
+    expect(fx.git(web.repo, 'rev-list', '--count', 'main..origin/main').trim()).toBe('0');
+    expect(merge.list()[0]?.repos[0]?.note ?? null).toBeNull();
+  });
+
+  it('merges locally, and says so, when the fetch fails', async () => {
+    fx = createFixture();
+    const { repos, merge } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    commit(fx, web.worktree, 'fix.txt');
+    fx.git(web.repo, 'remote', 'set-url', 'origin', path.join(fx.root, 'gone.git'));
+    expect(await merge.merge('ws')).toEqual({ kind: 'merged' });
+    expect(tip(fx, web.repo, 'main')).toBe(tip(fx, web.worktree, 'HEAD'));
+    expect(merge.list()[0]?.repos[0]?.note).toMatch(
+      /^Couldn't fetch origin\/main \(.+\): merged with the local main as it was$/,
+    );
+  });
+
+  it('refuses a base behind its upstream in a main checkout with changed files', async () => {
+    fx = createFixture();
+    const { repos, merge } = setup(fx, ['web'], { remote: true });
+    const [web] = repos as [Repo];
+    pushElsewhere(fx, web.repo, 'theirs.txt');
+    fx.git(web.worktree, 'pull', '-q', '--ff-only', 'origin', 'main');
+    commit(fx, web.worktree, 'fix.txt');
+    const before = tip(fx, web.repo, 'main');
+    fs.writeFileSync(path.join(web.repo, 'README'), 'changed\n');
+    expect(await merge.merge('ws')).toEqual({
+      kind: 'stopped',
+      reason: `Your main checkout of web (${web.repo}) has uncommitted changes on main: commit or stash them there first`,
+    });
     expect(tip(fx, web.repo, 'main')).toBe(before);
   });
 });

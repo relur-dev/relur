@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  baseUpstreamText,
   type MergeFacts,
   type MergeStatus,
   mergeDecision,
@@ -18,6 +19,7 @@ const facts = (over: Partial<MergeFacts> = {}): MergeFacts => ({
   canFastForward: true,
   checkout: { kind: 'main', path: '/repos/web', dirty: false },
   published: null,
+  baseUpstream: null,
   ...over,
 });
 
@@ -83,6 +85,35 @@ describe('the merge rules (spec §14.4)', () => {
     expect(mergeDecision(pushed, 'rebase')).toEqual({ action: 'claude', mode: 'rebase' });
     // A fast-forward needs no question.
     expect(mergeDecision(facts({ published: 'origin/PROJ-1-fix' })).action).toBe('fast-forward');
+  });
+});
+
+describe('the base against its upstream (spec §14.4)', () => {
+  it('refuses a base that diverged from its upstream, and merges one that is behind', () => {
+    expect(
+      mergeDecision(facts({ baseUpstream: { ref: 'origin/main', behind: 2, ahead: 1 } })),
+    ).toEqual({
+      action: 'refuse',
+      reason: 'main and origin/main have both moved on: update main first',
+    });
+    expect(
+      mergeDecision(facts({ baseUpstream: { ref: 'origin/main', behind: 3, ahead: 0 } })),
+    ).toEqual({ action: 'fast-forward', via: 'checkout' });
+    // Only ahead: the local base has unpushed commits, which is fine.
+    expect(
+      mergeDecision(facts({ baseUpstream: { ref: 'origin/main', behind: 0, ahead: 2 } })),
+    ).toEqual({ action: 'fast-forward', via: 'checkout' });
+  });
+
+  it('says what Merge does with the base first', () => {
+    expect(baseUpstreamText('main', { ref: 'origin/main', behind: 3, ahead: 0 })).toBe(
+      "main is 3 behind origin/main; it's updated first",
+    );
+    expect(baseUpstreamText('main', { ref: 'origin/main', behind: 3, ahead: 1 })).toBe(
+      'main and origin/main have both moved on: update main first',
+    );
+    expect(baseUpstreamText('main', { ref: 'origin/main', behind: 0, ahead: 1 })).toBeNull();
+    expect(baseUpstreamText('main', null)).toBeNull();
   });
 });
 

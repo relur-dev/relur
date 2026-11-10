@@ -6,6 +6,7 @@ import {
   PUSH_REJECTED,
   type WorkspaceChanges,
 } from '@shared/changes';
+import type { BaseUpstream } from '@shared/merge';
 import {
   DEFAULT_CREATE_PR_PROMPT,
   type Profile,
@@ -64,6 +65,13 @@ export interface FinishState {
   conflicts: string[] | null;
   /** The remote branch it tracks (`origin/feature-x`), when it has one. */
   upstream: string | null;
+  /**
+   * The local base against its upstream, as the last fetch left it: Merge
+   * updates a base behind it first (spec §14.4). Null without an upstream.
+   */
+  baseUpstream: BaseUpstream | null;
+  /** The local base branch it merges into. */
+  baseBranch: string;
 }
 
 /** The project's PR settings over its profile's, field by field. */
@@ -251,6 +259,22 @@ export function pushProblem(remote: string, stderr: string): string {
   return detail || 'git push failed';
 }
 
+/** The local base against its upstream (spec §14.4), from the refs alone; null without one. */
+export async function baseUpstream(
+  git: Git,
+  repoPath: string,
+  base: string,
+): Promise<BaseUpstream | null> {
+  const up = await git.upstream(repoPath, base);
+  if (!up) return null;
+  const counts = await git.aheadBehind(
+    repoPath,
+    `refs/heads/${base}`,
+    `refs/remotes/${up.remote}/${up.branch}`,
+  );
+  return counts ? { ref: `${up.remote}/${up.branch}`, ...counts } : null;
+}
+
 /**
  * Commit, Push, Create PR and the PR badge (spec §14.1, §12.3). git runs with
  * the workspace environment, so the profile's commit identity applies and
@@ -316,6 +340,8 @@ export class FinishService {
       usesPrs: Boolean(settings.createCommand || settings.statusCommand),
       hasOwnCommits,
       mergeable: hasOwnCommits && !merged && uncommitted === 0,
+      baseUpstream: await baseUpstream(git, expandHome(project.repoPath), repo.baseBranch),
+      baseBranch: repo.baseBranch,
     };
   }
 

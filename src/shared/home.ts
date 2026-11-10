@@ -25,6 +25,8 @@ export interface ShipState {
   withoutPr: number;
   /** Repositories Merge into the base has something to do in (§14.4). */
   mergeable: number;
+  /** What Merge does with a base first ("main is 3 behind origin/main; …", §14.4). */
+  baseNotes?: string[];
 }
 
 /** What a Ready to ship row offers: the first of these that applies (spec §6.7). */

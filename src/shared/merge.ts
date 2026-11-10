@@ -1,8 +1,33 @@
 /**
  * Merge into the base (spec §14.4): fast-forwards each repository's local
  * base branch to the workspace's branch; when the base has moved on, Claude
- * rebases (or merges the base in) first and the app tries once more.
+ * rebases (or merges the base in) first and the app tries once more. A base
+ * behind its upstream is fast-forwarded to it first.
  */
+
+/** The local base against its upstream (spec §14.4), as the last fetch left it. */
+export interface BaseUpstream {
+  /** The upstream's remote-tracking name: "origin/main". */
+  ref: string;
+  /** Commits the upstream has that the local base doesn't. */
+  behind: number;
+  /** Commits the local base has that the upstream doesn't. */
+  ahead: number;
+}
+
+/** Why the base can't be updated: both it and its upstream moved on (spec §14.4). */
+export const divergedBaseText = (base: string, ref: string) =>
+  `${base} and ${ref} have both moved on: update ${base} first`;
+
+/**
+ * What Merge does with the base first (spec §14.4): "main is 3 behind
+ * origin/main; it's updated first", or why it can't; null when it is up to date.
+ */
+export function baseUpstreamText(base: string, u: BaseUpstream | null | undefined): string | null {
+  if (!u || u.behind === 0) return null;
+  if (u.ahead > 0) return divergedBaseText(base, u.ref);
+  return `${base} is ${u.behind} behind ${u.ref}; it's updated first`;
+}
 
 /** Where a repository's base branch is checked out. */
 export type BaseCheckout =
@@ -24,11 +49,16 @@ export interface MergeFacts {
   hasOwnCommits: boolean;
   /** Its branch is merged into its base already. */
   merged: boolean;
-  /** The local base is contained in the branch: a fast-forward is possible. */
+  /**
+   * The base (its upstream's tip when it is behind it) is contained in the
+   * branch: a fast-forward is possible.
+   */
   canFastForward: boolean;
   checkout: BaseCheckout;
   /** Where the branch is published ("origin", "origin (PR #12 open)"); null when it isn't. */
   published: string | null;
+  /** The base against its fetched upstream; null without one (purely local). */
+  baseUpstream: BaseUpstream | null;
 }
 
 /** How Claude brings a diverged branch up to the base: rebase, or merge the base in. */
@@ -44,8 +74,9 @@ export type MergeDecision =
 
 /**
  * The merge rules (spec §14.4). Nothing to merge is skipped; uncommitted
- * files, a main checkout with changed files and a base checked out in another
- * worktree are refused; a branch that contains the base is fast-forwarded,
+ * files, a main checkout with changed files, a base checked out in another
+ * worktree and a base that diverged from its upstream are refused; a branch
+ * that contains the base (once updated to its upstream) is fast-forwarded,
  * in the main checkout when the base is checked out there, else by ref; a
  * diverged branch goes to Claude, asking first when it is published, since a
  * rebase would then need a force-push.
@@ -71,6 +102,10 @@ export function mergeDecision(f: MergeFacts, diverged: DivergedMode | null = nul
       reason: `${f.base} is checked out in ${f.checkout.path}, which the app doesn't change: merge there yourself`,
     };
   }
+  const u = f.baseUpstream;
+  if (u && u.behind > 0 && u.ahead > 0) {
+    return { action: 'refuse', reason: divergedBaseText(f.base, u.ref) };
+  }
   if (f.canFastForward) {
     return { action: 'fast-forward', via: f.checkout.kind === 'main' ? 'checkout' : 'ref' };
   }
@@ -88,6 +123,8 @@ export interface MergeRepoStatus {
   phase: MergeRepoPhase;
   /** Why it failed or was skipped. */
   reason: string | null;
+  /** What happened to the base first: updated from its upstream, or its fetch failed. */
+  note?: string | null;
 }
 
 /**

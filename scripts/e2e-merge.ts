@@ -6,6 +6,8 @@
  * the card says "Rebasing for merge…", the fake claude rebases and ends its
  * turn with "Ready to merge.", and the app fast-forwards main. Cancel stops
  * waiting: Claude's later rebase moves nothing. The base is never pushed.
+ * A local main behind origin/main is updated from it before the merge, as
+ * the Changes panel says beforehand and the outcome afterwards.
  * Runs with a throwaway HOME and a fake `claude`.
  *
  *   tsx scripts/e2e-merge.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
@@ -280,6 +282,49 @@ exec sleep 600
     await page.waitFor(`!!${mergeAll} && !${mergeAll}.disabled`, 'Merge offered again');
 
     assert.equal(tip(web, 'origin/main'), originMain, 'the base is never pushed');
+
+    // 4. A local main behind origin/main is updated from it first.
+    fx.git(web, 'push', '-q', 'origin', 'main');
+    const elsewhere = path.join(fx.root, 'elsewhere');
+    fx.git(fx.root, 'clone', '-q', fx.git(web, 'remote', 'get-url', 'origin').trim(), elsewhere);
+    commit(elsewhere, 'theirs.txt');
+    fx.git(elsewhere, 'push', '-q', 'origin', 'main');
+    await create('behind', 'ABC-4 Behind origin');
+    await workDone('behind', 'behind.txt');
+    // As the background fetch would have.
+    fx.git(web, 'fetch', '-q', 'origin');
+    assert.equal(fx.git(web, 'rev-list', '--count', 'main..origin/main').trim(), '1');
+    if (!(await page.eval<boolean>(`!!document.querySelector('[data-finish]')`))) {
+      await pressShortcut(page, 'changes');
+    }
+    const hint = `document.querySelector('[data-merge-base-upstream]')`;
+    await page.waitFor(
+      `${hint}?.dataset.mergeBaseUpstream === 'behind' && !!${mergeAll} && !${mergeAll}.disabled`,
+      '"main is 1 behind origin/main" beside Merge',
+    );
+    assert.equal(
+      await page.eval<string>(`${hint}.textContent`),
+      "main is 1 behind origin/main; it's updated first",
+    );
+    await page.eval(`${mergeAll}.click()`);
+    await page.waitFor(
+      `document.querySelector('[data-merge-outcome]')?.dataset.mergeOutcome === 'merged'`,
+      'the merge outcome after the update',
+      30_000,
+    );
+    assert.equal(
+      await page.eval<string>(`document.querySelector('[data-merge-note]')?.textContent ?? ''`),
+      'main was 1 behind origin/main; it was updated first',
+    );
+    assert.equal(tip(web, 'main'), tip(tree('behind'), 'HEAD'), 'main has the branch');
+    assert.ok(fx.git(web, 'merge-base', '--is-ancestor', 'origin/main', 'main') === '');
+    assert.ok(fs.existsSync(path.join(web, 'theirs.txt')), 'the main checkout has origin’s commit');
+    assert.ok(fs.existsSync(path.join(web, 'behind.txt')));
+    assert.equal(
+      fx.git(web, 'rev-list', '--count', 'origin/main..main').trim(),
+      '1',
+      'only the branch’s commit is left to push',
+    );
     console.log('e2e-merge: ok');
   } catch (error) {
     const shown = await app?.page.eval<string>(`document.body.innerText`).catch(() => '');

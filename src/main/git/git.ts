@@ -851,12 +851,30 @@ export class Git {
   }
 
   /**
-   * Fast-forwards the branch checked out in `dir` to `branch` (spec §14.4):
+   * Fast-forwards the branch checked out in `dir` to `ref` (spec §14.4), a
+   * full ref such as `refs/heads/feature` or `refs/remotes/origin/main`:
    * `git merge --ff-only`, which refuses anything else, and refuses to
    * overwrite untracked files.
    */
-  async fastForward(dir: string, branch: string): Promise<void> {
-    await this.run(dir, ['merge', '--ff-only', '--quiet', `refs/heads/${branch}`]);
+  async fastForward(dir: string, ref: string): Promise<void> {
+    await this.run(dir, ['merge', '--ff-only', '--quiet', ref]);
+  }
+
+  /**
+   * How far `a` and `b` have moved apart (`git rev-list --left-right
+   * --count a...b`): `ahead` commits only `a` has, `behind` only `b` has;
+   * null when either is missing.
+   */
+  async aheadBehind(
+    dir: string,
+    a: string,
+    b: string,
+  ): Promise<{ ahead: number; behind: number } | null> {
+    const out = await this.tryRun(dir, ['rev-list', '--left-right', '--count', `${a}...${b}`]);
+    const [ahead, behind] = (out ?? '').trim().split(/\s+/).map(Number);
+    if (ahead === undefined || behind === undefined || Number.isNaN(ahead) || Number.isNaN(behind))
+      return null;
+    return { ahead, behind };
   }
 
   /**

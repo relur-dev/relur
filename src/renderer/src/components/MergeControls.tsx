@@ -1,5 +1,8 @@
 import { BRAND } from '@shared/brand';
 import {
+  type BaseUpstream,
+  baseUpstreamText,
+  divergedBaseText,
   type MergeResult,
   type MergeStatus,
   mergeProgressText,
@@ -186,6 +189,7 @@ export function MergeRow({
   status,
   api,
   label,
+  baseUpstream = null,
 }: {
   workspace: Workspace;
   projectId: string | null;
@@ -195,6 +199,8 @@ export function MergeRow({
   api: MergeApi;
   /** The button's text; "Merge into <base>" by default. */
   label?: string;
+  /** The local base against its upstream: said before Merge updates it (spec §14.4). */
+  baseUpstream?: BaseUpstream | null;
 }) {
   const error = api.error(workspace.id);
   // A linked section shows its own repository's part of the merge.
@@ -204,6 +210,8 @@ export function MergeRow({
   if (projectId && status && !mine && !mergeable) return null;
   const blocked = mergeBlocked(workspace);
   const pending = api.pending(workspace.id);
+  const upstreamText = baseUpstreamText(base, baseUpstream);
+  const diverged = !!baseUpstream && upstreamText === divergedBaseText(base, baseUpstream.ref);
   return (
     <div data-merge-row={projectId ?? 'all'} className="space-y-1 text-sm">
       {waiting ? (
@@ -241,6 +249,14 @@ export function MergeRow({
               pushes.
             </span>
           ) : null}
+          {upstreamText ? (
+            <span
+              data-merge-base-upstream={diverged ? 'diverged' : 'behind'}
+              className={`basis-full ${diverged ? 'text-st-permission' : 'text-fg-muted'}`}
+            >
+              {upstreamText}
+            </span>
+          ) : null}
         </div>
       ) : null}
       <MergeOutcome
@@ -270,6 +286,10 @@ function MergeOutcome({
 }) {
   const linkedSection = projectId && workspace.repos.length > 1;
   let line: { ok: boolean; text: string } | null = null;
+  // What happened to the base first: updated from its upstream, or not fetched.
+  const notes = (status?.repos ?? [])
+    .filter((r) => r.note && (!linkedSection || r.projectId === projectId))
+    .map((r) => (workspace.repos.length > 1 && !linkedSection ? `${r.name}: ${r.note}` : r.note));
   if (error && !linkedSection) line = { ok: false, text: error };
   else if (linkedSection && status) {
     const r = status.repos.find((x) => x.projectId === projectId);
@@ -290,15 +310,22 @@ function MergeOutcome({
   if (!line) return null;
   return (
     <div className="flex items-start gap-1.5">
-      <p
-        data-merge-outcome={line.ok ? 'merged' : 'stopped'}
-        role={line.ok ? undefined : 'alert'}
-        className={`min-w-0 flex-1 whitespace-pre-wrap select-text ${
-          line.ok ? 'text-fg-muted' : 'text-st-permission'
-        }`}
-      >
-        {line.ok ? '✓' : '✕'} {line.text}
-      </p>
+      <div className="min-w-0 flex-1">
+        <p
+          data-merge-outcome={line.ok ? 'merged' : 'stopped'}
+          role={line.ok ? undefined : 'alert'}
+          className={`whitespace-pre-wrap select-text ${
+            line.ok ? 'text-fg-muted' : 'text-st-permission'
+          }`}
+        >
+          {line.ok ? '✓' : '✕'} {line.text}
+        </p>
+        {notes.map((note) => (
+          <p key={note} data-merge-note className="whitespace-pre-wrap select-text text-fg-subtle">
+            {note}
+          </p>
+        ))}
+      </div>
       {!linkedSection ? (
         <button
           type="button"

@@ -510,6 +510,7 @@ function FinishControls({ workspace }: { workspace: Workspace }) {
         mergeable={s.mergeable}
         status={mergeStatus}
         api={mergeApi}
+        baseUpstream={s.baseUpstream}
       />
       {mergeApi.dialog}
       {!s.hasRemote ? (
@@ -709,6 +710,7 @@ function RepoControls({
         mergeable={s.mergeable}
         status={mergeStatus}
         api={merge}
+        baseUpstream={s.baseUpstream}
       />
       {note ? (
         <p className="text-sm whitespace-pre-wrap text-fg-muted select-text">{note}</p>

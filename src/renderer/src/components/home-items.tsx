@@ -16,7 +16,7 @@ import {
   workingFor,
 } from '@shared/home';
 import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
-import { mergeProgressText, mergeStoppedText } from '@shared/merge';
+import { baseUpstreamText, mergeProgressText, mergeStoppedText } from '@shared/merge';
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, type StatusGlyph as Glyph } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
@@ -202,8 +202,14 @@ export function useShipStates(workspaces: Workspace[]) {
         unpushed: sum.unpushed + (s?.data?.unpushed ?? 0),
         withoutPr: sum.withoutPr + (s?.data && waitsForPr(s.data) ? 1 : 0),
         mergeable: sum.mergeable + (s?.data?.mergeable ? 1 : 0),
+        baseNotes: [
+          ...(sum.baseNotes ?? []),
+          ...(s?.data?.mergeable && s.data.baseUpstream
+            ? [baseUpstreamText(s.data.baseBranch, s.data.baseUpstream) ?? ''].filter(Boolean)
+            : []),
+        ],
       }),
-      { uncommitted: 0, unpushed: 0, withoutPr: 0, mergeable: 0 },
+      { uncommitted: 0, unpushed: 0, withoutPr: 0, mergeable: 0, baseNotes: [] },
     );
   };
 }
@@ -424,11 +430,12 @@ export function useHomeItems({
           kind={kind}
           data="merge"
           disabled={merge.pending(w.id) || merging?.phase === 'waiting'}
-          title={
+          title={[
             linked
               ? 'Fast-forwards each repository’s local base to the branch; never pushes'
-              : `Fast-forwards your local ${w.baseBranch} to ${w.branch}; never pushes`
-          }
+              : `Fast-forwards your local ${w.baseBranch} to ${w.branch}; never pushes`,
+            ...(state?.baseNotes ?? []),
+          ].join('\n')}
           onClick={() => merge.start(w.id)}
         >
           {merge.pending(w.id)
