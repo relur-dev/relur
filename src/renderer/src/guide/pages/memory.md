@@ -36,7 +36,7 @@ Esc or a click outside closes the panel.
 
 ## In the project view
 
-The project's **Workspaces** table has a **Memory** column. Hover a number to see the split; click the column's header to sort by it, largest first, then smallest first, then back to the usual order. Workspaces without a running Claude have no number.
+A working workspace's card on the Board, on Home and in the project view, shows its memory; hover the number to see the split. Every card's tooltip has its memory while its Claude runs. The memory panel above lists the workspaces that use the most.
 
 Above the tabs, **Memory** is the total of the project's running sessions, those in its workspaces and in its main checkout.
 

@@ -9,7 +9,14 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - **Notes for each workspace**: a scratchpad for thoughts while Claude works. **Notes** (⇧⌘K) in a workspace's tab bar opens a panel beside the terminal; **Add note** (⌥⌘N) starts a new item, and each item is saved as you type. Notes are private until sent: Relur keeps them in its own database, never where Claude could read them. They stay across restarts and suspension and are deleted with the workspace; the Delete dialog says how many unsent notes would go.
 - **Send now** types a note into Claude like the Board's quick reply, with the same care: never into a permission request or Claude's question menu, never over a prompt you're typing; a suspended Claude resumes first. **Send when Claude is done** holds it, marked **Queued**, until Claude finishes its turn, and sends it then by itself; it waits on when Claude ends by asking you something, with **Send now** to send it anyway. Tick several notes to send them as one prompt, each its own numbered point.
 - Sent notes move to **Sent** with the time they went, and **View response** opens the Responses panel at Claude's answer, whose entry says **from notes** and leads back. A sent note can be copied, deleted or moved back to the open ones.
-- On Home's Board and List, a small notes mark shows how many notes a workspace has waiting to be sent.
+- On the Board, on Home and in a project's view, a small notes mark shows how many notes a workspace has waiting to be sent.
+- **Hover a card on the Board** for what it doesn't show: its branch, the whole message Claude is waiting with, its workflow status, its memory, how long ago it was last active, and why its Claude isn't suspended yet or when it will be.
+
+### Changed
+
+- **The Board everywhere.** Home's Overview is the Board, without the List or the List | Board switch, and **New workspace** and **Add project** are always at the top of it. A profile with projects but no workspaces gets **New workspace** in place of empty columns. Everything the List showed is on the cards or in their tooltips, Dismiss included; At a glance is gone (the sidebar has the projects).
+- **A project's Workspaces tab is the same Board**, with your columns from Home (move or hide one in either place and both change) and without grouping. Cards show their branch where Home's show the project, and workspaces of other projects linked into it show too, marked with their project. **Other worktrees** is a strip under the Board; click it to list them. The memory sort of the old table is gone: the status bar's Memory panel lists the largest workspaces.
+- A gate's card on the Board has **Review** next to its answer button.
 
 ### Fixed
 

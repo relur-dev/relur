@@ -1,6 +1,6 @@
 # Status glyphs
 
-Each workspace shows its state as a glyph in the sidebar, on its Claude tab and in the project's table. The states come from Claude Code itself, through hooks {{app}} adds when it starts Claude.
+Each workspace shows its state as a glyph in the sidebar, on its Claude tab and on its card on the Board. The states come from Claude Code itself, through hooks {{app}} adds when it starts Claude.
 
 :::glyphs
 :::
@@ -15,7 +15,7 @@ A workspace that is starting shows the spinner while Claude launches, then no gl
 
 Claude can start work that goes on after its turn ends: background agents, or commands it runs in the background. Commands you run yourself in the workspace's Shell tabs don't count.
 
-- **Background agents:** while one runs, the workspace stays **Working**, since Claude continues once the agents hand back their results. The sidebar row shows how many tasks run, like **2 in background**, and so do its tooltip ("Working · 2 in background") and the project's table. You get the Done notification and sound only once Claude has finished and nothing is pending.
+- **Background agents:** while one runs, the workspace stays **Working**, since Claude continues once the agents hand back their results. The sidebar row shows how many tasks run, like **2 in background**, and so do its tooltip ("Working · 2 in background") and its card on the Board. You get the Done notification and sound only once Claude has finished and nothing is pending.
 - **Commands Claude waits for**, such as a long test run: the same. The workspace stays **Working**, with **1 in background**, for as long as the command runs, however long that is ({{app}} watches its process), and when the command ends Claude carries on by itself; you get one Done notification, after Claude's last turn.
 - **Dev servers:** a command that looks like one (`npm run dev`, vite, `next dev`, runserver, `python3 -m http.server` and the like, the same ones the [memory](memory) panel calls "dev server") is left running on purpose, so the workspace is **Done** at once, with a note: **1 running** in the sidebar row and "1 still running in the background" in its tooltip and the notification.
 - **When Claude doesn't carry on:** if the command has ended and Claude hasn't carried on within 2 minutes, the workspace becomes **Done** and you get the notification then. If {{app}} can't find the command's process, it waits 10 minutes instead, and a command still running after 2 hours makes it **Done** too, with "1 still running in the background". If Claude was waiting for it after all, it carries on when the command ends: Working again, then Done.

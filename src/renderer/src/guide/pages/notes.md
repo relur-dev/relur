@@ -14,7 +14,7 @@ Notes are private until you send them: {{app}} keeps them in its own database, n
 
 Each note has two ways to go:
 
-- **Send now** types it into Claude as a prompt, the way the Board's [quick reply](home#board) does. It never types into a permission request or Claude's question menu, and never over a prompt you've started typing in the terminal: the note says why it can't go, and stays. A suspended Claude resumes first. While Claude is working, Claude Code takes the note into its current turn after the step it's on.
+- **Send now** types it into Claude as a prompt, the way the Board's [quick reply](home#quick-reply) does. It never types into a permission request or Claude's question menu, and never over a prompt you've started typing in the terminal: the note says why it can't go, and stays. A suspended Claude resumes first. While Claude is working, Claude Code takes the note into its current turn after the step it's on.
 - **Send when Claude is done** holds it, read-only, marked **Queued**, until Claude finishes its turn; then it's sent by itself. **Cancel** takes it back before then, and **Send now** sends it without waiting.
 
 To send several notes together, tick them: a bar at the top offers **Send now** and **Send when done** for all of them. They go as one prompt, a numbered list in the panel's order, each note its own point. Notes held separately go out together too, when Claude is done.
@@ -38,7 +38,7 @@ A sent note can be copied, deleted, or moved back to the open notes with **Move 
 
 ## On Home
 
-On Home's Board and List, a workspace with unsent notes shows a small notes mark with their number beside its name. Hover it to see how many are queued.
+On the Board, on Home and in the project view, a workspace with unsent notes shows a small notes mark with their number beside its name. Hover it to see how many are queued.
 
 ## Size
 

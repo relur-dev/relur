@@ -31,7 +31,6 @@ import {
   pressKey,
   pressShortcut,
   type RunningApp,
-  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -307,23 +306,28 @@ exec sleep 600
       await page.eval(`(${row('Alpha two')}).querySelector('[role=img]')?.getAttribute('title')`),
       `Claude didn't finish when ${BRAND.displayName} closed`,
     );
-    // Delta in Personal: under Home's Needs you (spec §6.7), with Continue and
-    // Dismiss; Dismiss drops the marker and sends nothing.
+    // Delta in Personal: under the Board's Needs you (spec §6.7), with Continue
+    // and Dismiss and why in its tooltip; Dismiss drops the marker and sends
+    // nothing, and the card goes to Idle.
     // Personal opens on Delta, shown when the app quit (spec §5); then its Home.
     await pressKey(page, 'Digit2', CMD);
     await pressShortcut(page, 'home');
-    await showHomeList(page);
-    const homeDelta = `document.querySelector('[data-home-row="${ids.Delta}"]')`;
+    const homeDelta = `document.querySelector('[data-board-card="${ids.Delta}"]')`;
+    const deltaColumn = `${homeDelta}?.closest('[data-board-column]')?.dataset.boardColumn`;
     await page.waitFor(
-      `${homeDelta}?.dataset.homeSection === 'needs' && ${homeDelta}.innerText.includes('Unfinished')`,
+      `${deltaColumn} === 'needs' && ${homeDelta}.innerText.includes('Unfinished')`,
       "Delta under Home's Needs you",
     );
     assert.equal(
       await page.eval(`!!${homeDelta}.querySelector('[data-home-action=continue]')`),
       true,
     );
+    assert.match(
+      await page.eval<string>(`${homeDelta}.title`),
+      new RegExp(`\\nClaude didn't finish when ${BRAND.displayName} closed`),
+    );
     await page.eval(`${homeDelta}.querySelector('[data-home-action=dismiss]').click()`);
-    await page.waitFor(`!${homeDelta}`, 'Delta dismissed');
+    await page.waitFor(`${deltaColumn} === 'idle'`, 'Delta dismissed, in Idle');
     await pressKey(page, 'Digit1', CMD);
 
     // The bar: Continue in Bravo sends the prompt; Dismiss in Alpha two sends nothing.

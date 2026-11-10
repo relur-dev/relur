@@ -5,12 +5,6 @@ import {
   serializeCollapsedLanes,
   toggleLane,
 } from '@shared/board-group';
-import {
-  type BoardLayout,
-  isDefaultLayout,
-  parseBoardLayout,
-  serializeBoardLayout,
-} from '@shared/board-layout';
 import type { MemorySnapshot } from '@shared/memory';
 import type { Profile, Project } from '@shared/schemas';
 import { formatChord, SHORTCUTS } from '@shared/shortcuts';
@@ -19,12 +13,13 @@ import type { Workspace } from '@shared/workspaces';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useTRPC } from '../trpc';
-import { button, isMac, Kbd } from '../ui/controls';
+import { button, isMac, Kbd, keyHint } from '../ui/controls';
 import { remember } from '../ui/remember';
+import { Board, BoardEmpty } from './Board';
 import { BoardColumns } from './BoardColumns';
 import { BoardGroup } from './BoardGroup';
-import { HomeBoard } from './HomeBoard';
-import { type HomeActions, HomeOverview } from './HomeOverview';
+import { stored, useBoardLayout } from './board-state';
+import type { HomeActions } from './home-items';
 import { TerminalView } from './TerminalView';
 
 /** Home's tabs (spec §6.7): the Overview, and the profile's home shell. */
@@ -35,48 +30,9 @@ const TABS: { id: HomeTab; name: string; icon: string; tip: string }[] = [
   { id: 'terminal', name: 'Terminal', icon: '›_', tip: 'The profile’s shell' },
 ];
 
-/** How the Overview shows the workspaces (spec §6.7): the List's sections or the Board's columns. */
-export type HomeLayout = 'list' | 'board';
-
-const LAYOUTS: { id: HomeLayout; label: string; tip: string }[] = [
-  { id: 'list', label: 'List', tip: 'Show as list' },
-  { id: 'board', label: 'Board', tip: 'Show as board' },
-];
-
-/** Remembered per profile, across restarts, in the window's local storage. */
-const layoutKey = (profileId: string) => `home-layout:${profileId}`;
-
-function loadLayout(profileId: string): HomeLayout {
-  try {
-    // The Board unless the profile chose the List (spec §6.7).
-    return localStorage.getItem(layoutKey(profileId)) === 'list' ? 'list' : 'board';
-  } catch {
-    return 'board';
-  }
-}
-
-/** The Board's columns as the profile arranged them (spec §6.7), kept as the layout is. */
-const boardKey = (profileId: string) => `home-board-columns:${profileId}`;
-
-function loadBoardLayout(profileId: string): BoardLayout {
-  try {
-    return parseBoardLayout(localStorage.getItem(boardKey(profileId)));
-  } catch {
-    return parseBoardLayout(null);
-  }
-}
-
-/** The Board's grouping and its collapsed bands (spec §6.7), kept as the layout is. */
+/** The Board's grouping and its collapsed bands (spec §6.7), remembered per profile. */
 const groupKey = (profileId: string) => `home-board-group:${profileId}`;
 const lanesKey = (profileId: string) => `home-board-lanes:${profileId}`;
-
-const stored = (key: string): string | null => {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
 
 /** ⌃1 and ⌃2 on macOS, as a workspace's tabs; elsewhere Ctrl with a digit switches profiles. */
 const tabKey = (index: number): string | null =>
@@ -134,17 +90,7 @@ export function HomeView({
     return () => clearTimeout(timer);
   }, [tab]);
 
-  const [layout, setLayout] = useState<HomeLayout>(() => loadLayout(profile.id));
-  const chooseLayout = (next: HomeLayout) => {
-    setLayout(next);
-    remember(layoutKey(profile.id), next);
-  };
-  const [boardLayout, setBoardLayout] = useState<BoardLayout>(() => loadBoardLayout(profile.id));
-  const changeBoardLayout = (next: BoardLayout) => {
-    setBoardLayout(next);
-    // The default is stored as none, so a later default reaches it.
-    remember(boardKey(profile.id), isDefaultLayout(next) ? null : serializeBoardLayout(next));
-  };
+  const [boardLayout, changeBoardLayout] = useBoardLayout(profile.id);
   const [group, setGroup] = useState<Group>(() => parseBoardGroup(stored(groupKey(profile.id))));
   const chooseGroup = (next: Group) => {
     setGroup(next);
@@ -162,8 +108,8 @@ export function HomeView({
   const banded = projects
     .filter((p) => workspaces.some((w) => w.projectId === p.id))
     .map((p) => p.id);
-  // Without workspaces both show the empty states, so there is nothing to switch.
-  const switchable = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
+  // Without workspaces the Overview shows an empty state, with nothing to arrange.
+  const board = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
 
   const configDir = profile.env.CLAUDE_CONFIG_DIR;
   const error = (homeShell.error ?? restart.error)?.message ?? startClaude.error;
@@ -206,10 +152,10 @@ export function HomeView({
           })}
         </div>
         <span className="flex-1" />
-        {switchable && layout === 'board' ? (
+        {board ? (
           <BoardColumns layout={boardLayout} onLayout={changeBoardLayout} workspaces={workspaces} />
         ) : null}
-        {switchable && layout === 'board' ? (
+        {board ? (
           <BoardGroup
             group={group}
             onGroup={chooseGroup}
@@ -221,37 +167,34 @@ export function HomeView({
             }
           />
         ) : null}
-        {switchable ? (
-          <fieldset
-            aria-label="Show as"
-            title="Remembered for this profile"
-            data-home-layout={layout}
-            className="m-0 mb-[5px] box-border flex h-[26px] min-w-0 gap-0.5 self-center rounded-md border border-line bg-canvas p-0.5"
-          >
-            {LAYOUTS.map((l) => {
-              const on = l.id === layout;
-              return (
-                <button
-                  key={l.id}
-                  type="button"
-                  data-home-layout-option={l.id}
-                  aria-pressed={on}
-                  title={l.tip}
-                  className={`flex h-5 items-center rounded px-2.5 text-sm outline-none hover:text-fg focus-visible:shadow-[0_0_0_1.5px_var(--color-focus)] ${
-                    on ? 'bg-selected font-medium text-fg' : 'text-fg-muted'
-                  }`}
-                  onClick={() => chooseLayout(l.id)}
-                >
-                  {l.label}
-                </button>
-              );
-            })}
-          </fieldset>
-        ) : null}
       </div>
 
-      {tab === 'overview' && switchable && layout === 'board' ? (
-        <HomeBoard
+      {tab === 'overview' ? (
+        // Home's quick actions (spec §6.7), always above the Board.
+        <div data-home-quick-actions className="flex shrink-0 items-center gap-2 px-6 pt-3.5">
+          <button
+            type="button"
+            data-home-quick="New workspace"
+            className={button('primary')}
+            disabled={!actions.newWorkspace}
+            title={actions.newWorkspace ? undefined : 'Add a project first'}
+            onClick={actions.newWorkspace ?? undefined}
+          >
+            New workspace <Kbd onFg>{keyHint('newWorkspace')}</Kbd>
+          </button>
+          <button
+            type="button"
+            data-home-quick="Add project"
+            className={button('secondary')}
+            onClick={actions.addProject}
+          >
+            Add project <Kbd>{keyHint('addProject')}</Kbd>
+          </button>
+        </div>
+      ) : null}
+
+      {tab !== 'overview' ? null : board ? (
+        <Board
           profile={profile}
           projects={projects}
           workspaces={workspaces}
@@ -264,16 +207,13 @@ export function HomeView({
           collapsed={collapsed}
           onToggleLane={(projectId) => changeCollapsed(toggleLane(collapsed, projectId))}
         />
-      ) : tab === 'overview' ? (
-        <HomeOverview
-          profile={profile}
-          projects={projects}
-          workspaces={workspaces}
-          sessions={sessions}
-          memory={memory}
-          actions={actions}
+      ) : (
+        <BoardEmpty
+          kind={projects.length === 0 ? 'no-projects' : 'no-workspaces'}
+          onAddProject={actions.addProject}
+          onNewWorkspace={actions.newWorkspace}
         />
-      ) : null}
+      )}
 
       {/* Hidden, not removed, on the Overview: the terminal keeps its state. */}
       <div

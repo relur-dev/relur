@@ -260,7 +260,7 @@ export class SuspendService {
 
   /**
    * Each running workspace Claude's idle clock now (spec §9.8): why it isn't
-   * suspended, or when it will be. For the Workspaces table's tooltip.
+   * suspended, or when it will be. For a Board card's tooltip.
    */
   clocks(): SuspendClock[] {
     const shown = this.deps.shown();

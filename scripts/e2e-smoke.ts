@@ -473,16 +473,16 @@ exec sleep 600
     for (const theme of ['dark', 'light']) {
       await chooseAppearance(theme === 'dark' ? 'Dark' : 'Light');
       await page.waitFor(`document.documentElement.dataset.theme === '${theme}'`, theme);
-      // The Overview's, loaded, then the Board's (lazily loaded further down), in the same theme.
+      // The Board's, in the same theme.
       await page.waitFor(
-        `${shownImage}.split(',')[0] === 'home-overview-${theme}'`,
+        `${shownImage}.split(',')[0] === 'home-board-${theme}'`,
         `the ${theme} screenshot`,
       );
       assert.equal(
         await page.eval(
           `[...document.querySelectorAll('[data-guide-image]')].filter((i) => i.offsetParent).map((i) => i.dataset.guideImage).join()`,
         ),
-        `home-overview-${theme},home-board-${theme}`,
+        `home-board-${theme}`,
       );
     }
     await chooseAppearance('System');
@@ -1425,33 +1425,25 @@ exec sleep 600
       `document.querySelector('nav [data-nav-key=${JSON.stringify(firstRow)}]').getAttribute('aria-current') === 'true'`,
       'the workspace to open from the keyboard',
     );
-    // The project's Workspaces table (spec §6.10): ↑↓ move, ↵ opens.
+    // The project's Board (spec §6.10): its two workspaces, each card with its
+    // branch where Home's show the project; ↵ opens one.
+    const projectCards = `[...document.querySelectorAll('main [data-board-card]')]`;
     await page.eval(
       `document.querySelector('[data-nav-key="p:api-service"] [data-nav-focus]').click()`,
     );
-    await page.waitFor(
-      `document.querySelectorAll('[data-workspace-row]').length === 2`,
-      'the table',
+    await page.waitFor(`${projectCards}.length === 2`, "the project's Board");
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-workspace-row], [data-board-group]')`),
+      false,
+      'no table and no Group',
     );
-    assert.deepEqual(
-      await page.eval<number[]>(
-        `[...document.querySelectorAll('[data-workspace-row]')].map((r) => r.tabIndex)`,
-      ),
-      [0, -1],
-    );
-    // Memory (spec §6.14), measured from the fake claude's processes: the
-    // Memory column with its split, the project's total and the status bar's.
+    // Memory (spec §6.14), measured from the fake claude's processes: in the
+    // cards' tooltips with its split, the project's total and the status bar's.
     const size = String.raw`\d+(\.\d)? (MB|GB)`;
     await page.waitFor(
-      `[...document.querySelectorAll('[data-memory-cell]')].some((c) => /^${size}$/.test(c.textContent))`,
-      'the Memory column',
+      `${projectCards}.some((c) => new RegExp(${JSON.stringify(`\nMemory: ${size} · Claude ${size}, other ${size}`)}).test(c.title))`,
+      "the memory in a card's tooltip",
       15_000,
-    );
-    assert.match(
-      await page.eval<string>(
-        `[...document.querySelectorAll('[data-memory-cell]')].find((c) => c.textContent).title`,
-      ),
-      new RegExp(`^Claude ${size}, other ${size}`),
     );
     assert.match(
       await page.eval<string>(`document.querySelector('[data-detail=Memory] dd').textContent`),
@@ -1530,7 +1522,7 @@ exec sleep 600
       );
       await pressKey(page, 'BracketLeft', CMD);
       await page.waitFor(
-        `!document.querySelector('[data-guide]') && !!document.querySelector('[data-sort-memory]')`,
+        `!document.querySelector('[data-guide]') && !!document.querySelector('[data-detail=Memory]')`,
         `back from the Guide (${what})`,
       );
     };
@@ -1538,12 +1530,7 @@ exec sleep 600
     await page.waitFor(`!!${memoryPanel}`, 'the panel again');
     await toMemoryGuide(`${memoryPanel}.querySelector('[data-guide-to="memory"]')`, 'Learn more');
     assert.equal(await page.eval(`!!${memoryPanel}`), false, 'Learn more closes the panel');
-    // The "?" after the column's header and after the project's Memory.
-    await toMemoryGuide(
-      `document.querySelector('[data-sort-memory]').closest('th').querySelector('[data-guide-to="memory"]')`,
-      'the column\'s "?"',
-    );
-    await page.waitFor(`!!document.querySelector('[data-detail=Memory]')`, "the project's Memory");
+    // The "?" after the project's Memory.
     await toMemoryGuide(
       `document.querySelector('[data-detail=Memory] [data-guide-to="memory"]')`,
       'the project\'s "?"',
@@ -1553,28 +1540,23 @@ exec sleep 600
       await page.eval(`/\\d (MB|GB)\\b/.test(document.querySelector('nav').innerText)`),
       false,
     );
-    // The column sorts: largest first, smallest first, then as listed.
-    const memorySort = `document.querySelector('[data-sort-memory]').closest('th').getAttribute('aria-sort')`;
-    for (const expected of ['descending', 'ascending', null]) {
-      await page.eval(`document.querySelector('[data-sort-memory]').click()`);
-      await page.waitFor(
-        `${memorySort} === ${JSON.stringify(expected)}`,
-        `memory sort ${expected}`,
-      );
+    // Its cards name their branch (e2e-project-board), not the project; the
+    // tooltip leaves the branch out.
+    for (const c of await page.eval<{ text: string; title: string }[]>(
+      `${projectCards}.map((c) => ({ text: c.innerText, title: c.title }))`,
+    )) {
+      assert.doesNotMatch(c.title, /\nBranch: /);
+      assert.doesNotMatch(c.text, /\bapi-service\b/, 'no project name on the card');
     }
-    await page.eval(`document.querySelector('[data-workspace-row]').focus()`);
-    await pressKey(page, 'ArrowDown');
-    const secondRow = await page.eval<string>(`document.activeElement.dataset.workspaceRow`);
-    assert.equal(
-      secondRow,
-      await page.eval<string>(
-        `document.querySelectorAll('[data-workspace-row]')[1].dataset.workspaceRow`,
-      ),
-    );
+    // ↵ on a card opens it on its Claude tab, as on Home: Keep my commits, so
+    // Fix login timeout keeps its Shell tab for the keys below.
+    const keepCard = `${projectCards}.find((c) => c.title.includes('Keep my commits'))`;
+    const secondRow = await page.eval<string>(`${keepCard}.dataset.boardCard`);
+    await page.eval(`${keepCard}.focus()`);
     await pressEnter(page);
     await page.waitFor(
       `document.querySelector('nav [data-nav-key="w:${secondRow}"]')?.getAttribute('aria-current') === 'true'`,
-      'the workspace to open from the table',
+      "the workspace to open from the project's Board",
     );
     await page.eval(`document.querySelector('nav button[title^="Keep my commits"]').click()`);
     await page.waitFor(`document.querySelector('h1')?.textContent === 'Keep my commits'`, 'back');

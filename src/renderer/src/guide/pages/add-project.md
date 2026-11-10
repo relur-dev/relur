@@ -58,10 +58,24 @@ Below are its tabs:
 
 | Tab | What it has |
 | --- | --- |
-| Workspaces | The project's workspaces: status, task, title, branch, [memory](memory#in-the-project-view) and last activity, and the workflow status when there is a workflow. Click one to open it, or Tab to the table, move with ↑ ↓ and open with ↵. Below, [Other worktrees](adopting-worktrees) |
+| Workspaces | The project's workspaces on the [Board](#the-workspaces-tab), as on Home |
 | Setup | The project's **Editor** and its [setup and teardown commands](workspace-setup) |
 | Skills | Which of the profile's [skill sources](skills#per-project) apply to this project |
 | Workflow | The profile's [workflow](workflows#per-project), an override for this project, or none, and its own Start prompt |
+
+## The Workspaces tab
+
+The Workspaces tab shows the project's workspaces on the same [Board](home#overview) as Home, and everything on it works the same: the cards and their buttons, the [quick reply](home#quick-reply), [drag to delete](home#drag-to-delete) and the [keyboard](home#keyboard-on-the-board). The differences:
+
+- A card shows its **branch** at the top right, where Home's cards show the project.
+- Workspaces of other projects that are [linked into this one](tasks-across-repositories) show too, marked **↗** and the project they belong to. The tab counts them apart: **Workspaces 2 + 1 linked**.
+- **Columns** is at the right of the tabs. Your columns are the same as on Home: hide or move one here and it changes there too. The Board isn't grouped by project here.
+
+Hover over a card for its [memory](memory), how long ago it was last active, its [workflow](workflows) status and whether its Claude will be [suspended](suspend#why-one-isn-t-suspended).
+
+![The project view of api-service: its header with New workspace, Open shell, Start Claude here and Open in editor, its path, base branch, remote, worktrees and memory, then the Workspaces tab, "2 + 1 linked", with Columns at the right and the Board: Working with a workspace and its memory, Needs you with a workspace linked in from web-app at Spec review, and Ready to ship with a suspended one; each card shows its branch.](images/project-board.webp)
+
+A project without workspaces offers **New workspace** in the Board's place. When the repository has worktrees that aren't workspaces, **Other worktrees** shows as a strip under the Board; click it to list them, each with [Open as workspace](adopting-worktrees).
 
 ## From a terminal
 

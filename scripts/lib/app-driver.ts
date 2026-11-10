@@ -576,17 +576,6 @@ export async function showHomeTerminal(page: Cdp): Promise<void> {
   );
 }
 
-/**
- * Shows Home's Overview as the List (spec §6.7): the Board is the default, and
- * the switch shows once the profile has workspaces. The choice is remembered.
- */
-export async function showHomeList(page: Cdp): Promise<void> {
-  const option = `document.querySelector('[data-home-layout-option=list]')`;
-  await page.waitFor(`!!${option}`, 'the List | Board switch', 30_000);
-  await page.eval(`${option}.click()`);
-  await page.waitFor(`!!document.querySelector('[data-home-overview]')`, 'the List');
-}
-
 /** Replaces the text of an input field and presses Enter. */
 export async function typeInField(page: Cdp, selector: string, text: string, enter = true) {
   await page.eval(

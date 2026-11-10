@@ -12,26 +12,28 @@ import {
   BOARD_COLUMNS,
   type BoardColumn,
   boardColumns,
+  cardTooltip,
   type HomeSection,
   QUICK_REPLY_REFUSAL,
   quickReply,
 } from '@shared/home';
 import type { LastWords } from '@shared/last-words';
-import type { MemorySnapshot } from '@shared/memory';
+import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
 import { answerable } from '@shared/question';
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, STATE_LABEL } from '@shared/status';
-import { SUSPENDED_TOOLTIP } from '@shared/suspend';
+import { SUSPENDED_TOOLTIP, suspendClockNote } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import { workspaceGlyph } from '@shared/unfinished';
 import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
-import { iconButton, keyHint } from '../ui/controls';
+import { button, iconButton, Kbd, keyHint } from '../ui/controls';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
+import { ago } from '../ui/time';
 import {
   Action,
   actionClass,
@@ -47,7 +49,7 @@ import {
   useShipStates,
 } from './home-items';
 
-/** The column's List section, whose rules and actions it shares (spec §6.7). */
+/** The column's section, whose rules and actions it shows (spec §6.7). */
 const SECTION_OF: Record<Exclude<BoardColumn, 'idle'>, HomeSection> = {
   needs: 'needs',
   working: 'working',
@@ -103,14 +105,16 @@ const TONE_TEXT: Record<NeedsTone, string> = {
 const cardLabel = (w: Workspace) => w.task.id ?? (w.task.title || w.name);
 
 /**
- * Home's Board (spec §6.7): the profile's workspaces in five status columns,
- * by the List's rules, in the order the profile arranged them and without
- * the ones it hid. Cards move by themselves as states change; the only card
- * drag target is Drop to delete, which opens the Delete workspace dialog. A
- * column moves by dragging its header or from its menu.
+ * The Board (spec §6.7, §6.10): workspaces in five status columns, in the
+ * order the profile arranged them and without the ones it hid; on Home the
+ * profile's, in a project's view that project's and those linked into it.
+ * Cards move by themselves as states change; the only card drag target is
+ * Drop to delete, which opens the Delete workspace dialog. A column moves by
+ * dragging its header or from its menu.
  */
-export function HomeBoard({
+export function Board({
   profile,
+  inProject = null,
   projects,
   workspaces,
   sessions,
@@ -123,6 +127,12 @@ export function HomeBoard({
   onToggleLane,
 }: {
   profile: Profile;
+  /**
+   * A project's view (spec §6.10): its cards show their branch where Home's
+   * show the project, and mark the workspaces linked in from other projects.
+   */
+  inProject?: Project | null;
+  /** The profile's projects. */
   projects: Project[];
   workspaces: Workspace[];
   sessions: SessionInfo[];
@@ -145,6 +155,32 @@ export function HomeBoard({
   const item = useHomeItems({ profile, projects, sessions, memory, actions, ship, now });
   const columns = boardColumns(workspaces, ship);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '';
+  // Why a running Claude isn't suspended, or when it will be (spec §9.8), for
+  // the cards' tooltips: read again as often as the app checks.
+  const clocks = useQuery(
+    trpc.sessions.suspendClocks.queryOptions(undefined, { refetchInterval: 15_000 }),
+  );
+  const clockNote = (w: Workspace) => {
+    const clock = clocks.data?.find((c) => c.workspaceId === w.id);
+    return clock ? suspendClockNote(clock, Date.now()) : null;
+  };
+  /** A card's tooltip (spec §6.7): what the card itself leaves out. */
+  const tooltip = (w: Workspace) => {
+    const used = workspaceMemory(memory, w.id);
+    return cardTooltip(w, {
+      linkedFrom: linkedFrom(w),
+      branch: !inProject,
+      memory: used ? `${formatBytes(used.total)} · ${describeSplit(used)}` : null,
+      active: ago(w.lastActivityAt ?? w.createdAt, now),
+      suspended: suspended.has(w.id),
+      suspendNote: clockNote(w),
+    });
+  };
+  /** On a project's Board, the project a linked-in workspace belongs to (spec §6.10). */
+  const linkedFrom = (w: Workspace) =>
+    inProject && w.projectId !== inProject.id ? projectName(w.projectId) : null;
+  /** What a card names at its top right: the project on Home, the branch in a project's view. */
+  const place = (w: Workspace) => (inProject ? w.branch : projectName(w.projectId));
 
   // Drafts change as keys are typed into a terminal: read them often while shown.
   const drafts = useQuery(
@@ -518,9 +554,9 @@ export function HomeBoard({
   // biome-ignore lint/correctness/useExhaustiveDependencies: once the moved column has rendered
   useEffect(refocus, [layout]);
 
-  /** What a card shows: its List section's item, or Idle's own. */
+  /** What a card shows: its section's item, or Idle's own. */
   const cardItem = (column: BoardColumn, w: Workspace): HomeItem => {
-    if (column !== 'idle') return item(SECTION_OF[column], w, true);
+    if (column !== 'idle') return item(SECTION_OF[column], w);
     // Done keeps its quiet mark for a dev server (spec §10.2); other states their note.
     const note = backgroundNote(w.state, w.background);
     const background: Part | null = runningMark(w) ?? (note ? { text: note } : null);
@@ -537,7 +573,6 @@ export function HomeBoard({
         <Action
           key="open"
           kind="secondary"
-          size="card"
           data="open"
           title={
             suspended.has(w.id) ? 'Open the workspace; its Claude resumes' : 'Open the workspace'
@@ -547,7 +582,6 @@ export function HomeBoard({
           Open
         </Action>,
       ],
-      hover: [],
       meta: null,
       title: null,
       error: null,
@@ -606,7 +640,9 @@ export function HomeBoard({
         tabIndex={0}
         data-board-card={w.id}
         data-board-lifted={lifted || undefined}
-        title={`${w.task.id ? `${w.task.id} ` : ''}${w.task.title || w.name} · click to open, drag to delete`}
+        data-board-linked={linkedFrom(w) ?? undefined}
+        data-suspend-note={suspended.has(w.id) ? undefined : (clockNote(w) ?? undefined)}
+        title={tooltip(w)}
         className={`group flex flex-none cursor-default touch-none flex-col rounded-[7px] border py-[9px] pr-2.5 pl-[11px] outline-none select-none focus-visible:outline-none ${
           lifted
             ? 'border-dashed border-line-strong bg-transparent'
@@ -632,7 +668,8 @@ export function HomeBoard({
           <CardBody
             w={w}
             it={it}
-            project={projectName(w.projectId)}
+            place={place(w)}
+            linkedFrom={linkedFrom(w)}
             linkedIn={group === 'project' ? projectName : null}
             suspended={suspended.has(w.id) && column !== 'idle'}
           />
@@ -648,7 +685,7 @@ export function HomeBoard({
                       data-question-option={i}
                       title={`${o.description ? `${o.description} · ` : ''}Answer "${o.label}" (${i + 1} in the Claude tab)`}
                       disabled={answer.isPending && answer.variables?.workspaceId === w.id}
-                      className={`${actionClass('secondary', 'card')} max-w-full truncate`}
+                      className={`${actionClass('secondary')} max-w-full truncate`}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -660,7 +697,6 @@ export function HomeBoard({
                   ))}
                   <Action
                     kind="ghost"
-                    size="card"
                     data="other"
                     title="Open the Claude tab to type your own answer"
                     onClick={() => actions.open(w)}
@@ -672,7 +708,6 @@ export function HomeBoard({
                 <div className="mt-[3px] flex h-7 items-center gap-2 text-sm text-fg-subtle">
                   <Action
                     kind="secondary"
-                    size="card"
                     data="open"
                     title="Open the Claude tab to answer"
                     onClick={() => actions.open(w)}
@@ -739,7 +774,6 @@ export function HomeBoard({
             >
               <Action
                 kind="secondary"
-                size="card"
                 data="open"
                 title="Open the Claude tab to allow or deny"
                 onClick={() => actions.open(w)}
@@ -781,7 +815,7 @@ export function HomeBoard({
           ) : null}
           {!drag ? (
             <Unfold>
-              <div className="mt-0.5 flex items-center gap-1.5 border-t border-line pt-[7px]">
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 border-t border-line pt-[7px]">
                 {main}
                 <span className="flex-1" />
                 <button
@@ -834,7 +868,16 @@ export function HomeBoard({
           void columnMenu(column, false);
         }}
       >
-        <h2 className="text-base font-semibold whitespace-nowrap">{BOARD_COLUMN_TITLE[column]}</h2>
+        <h2
+          className="text-base font-semibold whitespace-nowrap"
+          title={
+            column === 'needs'
+              ? `${keyHint('nextNeedingYou')} jumps to the next one that needs you`
+              : undefined
+          }
+        >
+          {BOARD_COLUMN_TITLE[column]}
+        </h2>
         <span
           data-board-count
           className={`font-mono text-sm ${tone ? `font-semibold ${TONE_TEXT[tone]}` : 'text-fg-subtle'}`}
@@ -891,7 +934,8 @@ export function HomeBoard({
     <div
       ref={root}
       tabIndex={-1}
-      data-home-board={drag ? 'dragging' : ''}
+      data-home-board={inProject ? undefined : drag ? 'dragging' : ''}
+      data-project-board={inProject ? (drag ? 'dragging' : '') : undefined}
       data-board-grouped={grouped ? 'project' : undefined}
       data-board-column-drag={columnDrag?.column}
       className={`relative flex min-h-0 flex-1 flex-col bg-term outline-none ${columnDrag ? 'cursor-grabbing' : ''}`}
@@ -1115,7 +1159,8 @@ export function HomeBoard({
             <CardBody
               w={lifted}
               it={cardItem(liftedColumn, lifted)}
-              project={projectName(lifted.projectId)}
+              place={place(lifted)}
+              linkedFrom={linkedFrom(lifted)}
               suspended={suspended.has(lifted.id) && liftedColumn !== 'idle'}
             />
           </div>
@@ -1165,17 +1210,21 @@ function placeholder(column: BoardColumn, w: Workspace, suspended: boolean): str
   return 'Message Claude…';
 }
 
-/** A card's glyph, id, project, title and status line (components.md, Board). */
+/** A card's glyph, id, project or branch, title and status line (components.md, Board). */
 function CardBody({
   w,
   it,
-  project,
+  place,
+  linkedFrom = null,
   linkedIn = null,
   suspended,
 }: {
   w: Workspace;
   it: HomeItem;
-  project: string;
+  /** The project on Home, the branch on a project's Board (spec §6.10). */
+  place: string;
+  /** On a project's Board, the project a linked-in workspace belongs to. */
+  linkedFrom?: string | null;
   /**
    * Grouped by project, the band names the project: the card shows its
    * linked repositories' count in its place, named by this (spec §6.7).
@@ -1193,8 +1242,17 @@ function CardBody({
         ) : null}
         <NotesMark w={w} />
         <span className="flex-1" />
+        {linkedFrom ? (
+          <span
+            data-linked-from={linkedFrom}
+            title={`Linked in from ${linkedFrom}`}
+            className="flex-none rounded-xs border border-line-strong px-1 font-mono text-2xs text-fg-muted"
+          >
+            ↗ {linkedFrom}
+          </span>
+        ) : null}
         {!linkedIn ? (
-          <span className="min-w-0 truncate font-mono text-xs text-fg-subtle">{project}</span>
+          <span className="min-w-0 truncate font-mono text-xs text-fg-subtle">{place}</span>
         ) : linkedRepos(w).length > 0 ? (
           <span
             data-linked-chip
@@ -1249,5 +1307,60 @@ function CardBody({
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * In place of the Board without anything to show on it (spec §6.7, §6.10):
+ * without projects, Add your first project; without workspaces, New workspace,
+ * in place of five empty columns.
+ */
+export function BoardEmpty({
+  kind,
+  onAddProject,
+  onNewWorkspace,
+}: {
+  kind: 'no-projects' | 'no-workspaces';
+  onAddProject?: () => void;
+  /** Null while it can't open (no projects). */
+  onNewWorkspace?: (() => void) | null;
+}) {
+  return (
+    <div data-board-empty={kind} className="min-h-0 flex-1 overflow-auto bg-term outline-none">
+      <div className="box-border flex min-h-full flex-col items-center justify-center px-6 pt-10 pb-20">
+        <div className="flex w-full max-w-[400px] flex-col gap-[22px]">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[17px] font-semibold">
+              {kind === 'no-projects' ? 'No projects yet' : 'No workspaces yet'}
+            </span>
+            <span className="text-base leading-normal text-pretty text-fg-muted">
+              {kind === 'no-projects'
+                ? 'A project is a git repository on disk. Add one, then start a workspace for each task: its own worktree, branch and terminals.'
+                : 'A workspace is one task in its own worktree and branch, with Claude and shells running there. Its card shows here, in the column of what it’s doing.'}
+            </span>
+          </div>
+          {kind === 'no-projects' ? (
+            <button
+              type="button"
+              data-home-action="add-first-project"
+              className={`${button('primary', 'lg')} self-start`}
+              onClick={onAddProject}
+            >
+              Add your first project <Kbd onFg>{keyHint('addProject')}</Kbd>
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-home-action="new-first-workspace"
+              className={`${button('primary', 'lg')} self-start`}
+              disabled={!onNewWorkspace}
+              onClick={onNewWorkspace ?? undefined}
+            >
+              New workspace <Kbd onFg>{keyHint('newWorkspace')}</Kbd>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

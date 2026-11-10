@@ -9,7 +9,7 @@ import { BOARD_COLUMN_TITLE, homeSection } from '@shared/home';
 import type { Workspace } from '@shared/workspaces';
 import { useEffect, useId, useRef, useState } from 'react';
 import { button } from '../ui/controls';
-import { needsTone } from './HomeBoard';
+import { needsTone } from './Board';
 
 const MARK: Record<'permission' | 'input', string> = {
   permission: 'bg-st-permission',

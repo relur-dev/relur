@@ -197,8 +197,8 @@ exec sleep 600
     let page = app.page;
     const main = () => (app as RunningApp).main;
     await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
-      'All clear',
+      `document.querySelector('[data-board-empty]')?.dataset.boardEmpty === 'no-workspaces'`,
+      'No workspaces yet',
     );
 
     // 1. Workspaces in two of Work's three projects, one in Personal's.
@@ -290,12 +290,12 @@ exec sleep 600
     assert.equal(await page.eval(`${groupButton}.dataset.boardGroup`), 'none');
     assert.match(await page.eval<string>(`${groupButton}.textContent`), /Group\s*None/);
     assert.equal(await page.eval(`document.querySelectorAll('[data-board-lane]').length`), 0);
-    // Columns, Group, List | Board, left to right.
+    // Columns, then Group, left to right.
     assert.deepEqual(
       await page.eval(
         `[...document.querySelectorAll('[data-board-columns], [data-board-group], [data-home-layout]')].map((e) => Object.keys(e.dataset)[0])`,
       ),
-      ['boardColumns', 'boardGroup', 'homeLayout'],
+      ['boardColumns', 'boardGroup'],
     );
     // Its menu: None ticked, Project; nothing to expand or collapse yet.
     await page.eval(`${groupButton}.click()`);

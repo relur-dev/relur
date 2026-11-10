@@ -4,7 +4,7 @@
  * workspace suspended after the delay (Claude and a process it started gone),
  * never one that is shown, working, has a background command or a draft, or
  * is kept running, while the mouse over its terminal is no draft; why each
- * isn't (the Workspaces table's tooltip), the suspended ones by name in the
+ * isn't (a Board card's tooltip in the project view), the suspended ones by name in the
  * memory panel, and app.log; resuming on open (`--resume` with the session
  * id, "Resuming…", keys blocked, then typed); Esc on the memory panel over a
  * Claude terminal; a main checkout's Claude; and the start, where only the
@@ -34,7 +34,6 @@ import {
   ptyRecords,
   type RunningApp,
   recordPtys,
-  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -174,10 +173,10 @@ done
       const log = path.join(path.dirname(configFile), 'app.log');
       return fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
     };
-    /** The Status cell's tooltip in the Workspaces table (spec §9.8). */
+    /** A card's line on suspension in its tooltip, in the project view's Board (spec §9.8). */
     const suspendNote = (name: string) =>
       page.eval<string | null>(
-        `document.querySelector('[data-workspace-row="${ids[name]}"] [data-suspend-note]')?.dataset.suspendNote ?? null`,
+        `document.querySelector('main [data-board-card="${ids[name]}"]')?.dataset.suspendNote ?? null`,
       );
     /** A real click: the pointer moves there, presses and releases. */
     const click = async (page: Cdp, selector: string) => {
@@ -245,7 +244,7 @@ done
     };
     const showProject = async (page: Cdp) => {
       await page.eval(`document.querySelector('[data-nav-key="p:api"] [data-nav-focus]').click()`);
-      await page.waitFor(`!!document.querySelector('[data-workspace-row]')`, 'the project view');
+      await page.waitFor(`!!document.querySelector('main [data-board-card]')`, 'the project view');
     };
 
     // 1. Workspaces with Claude in each, suspension still off.
@@ -345,15 +344,15 @@ done
       assert.equal(await page.eval(suspendedRow(name)), false, `${name} isn't suspended`);
       assert.ok(alive(pidOf(name.toLowerCase())), `${name}'s Claude runs`);
     }
-    // The Workspaces table and the memory panel say so too.
+    // The project view's Board and the memory panel say so too.
     await showProject(page);
     await page.waitFor(
-      `!!document.querySelector('[data-workspace-row="${ids.Alpha}"] [data-suspended]')`,
-      'Suspended in the Workspaces table',
+      `!!document.querySelector('main [data-board-card="${ids.Alpha}"] [data-suspended]')`,
+      "Suspended on the project's Board",
     );
-    // Its Status tooltip says why each running one isn't suspended, or when it will be.
+    // A card's tooltip says why each running one isn't suspended, or when it will be.
     await page.waitFor(
-      `!!document.querySelector('[data-workspace-row="${ids.Golf}"] [data-suspend-note]')`,
+      `!!document.querySelector('main [data-board-card="${ids.Golf}"]')?.dataset.suspendNote`,
       'the tooltips',
     );
     assert.equal(await suspendNote('Golf'), 'Not suspended: a draft in the prompt');
@@ -363,14 +362,22 @@ done
     assert.equal(await suspendNote('Foxtrot'), 'Not suspended: no conversation yet');
     // Echo's clock runs once the window no longer shows it (read again every 15 s).
     await page.waitFor(
-      `/^Suspended in \\d+ min if it stays idle$/.test(document.querySelector('[data-workspace-row="${ids.Echo}"] [data-suspend-note]')?.dataset.suspendNote)`,
+      `/^Suspended in \\d+ min if it stays idle$/.test(document.querySelector('main [data-board-card="${ids.Echo}"]')?.dataset.suspendNote)`,
       "Echo's clock",
       20_000,
     );
     assert.equal(await suspendNote('Alpha'), null, 'none on a suspended one');
-    assert.equal(
-      await page.eval(`document.querySelector('[data-workspace-row="${ids.Golf}"] td').title`),
-      'Not suspended: a draft in the prompt',
+    assert.match(
+      await page.eval<string>(
+        `document.querySelector('main [data-board-card="${ids.Golf}"]').title`,
+      ),
+      /\nNot suspended: a draft in the prompt\n/,
+    );
+    assert.match(
+      await page.eval<string>(
+        `document.querySelector('main [data-board-card="${ids.Alpha}"]').title`,
+      ),
+      new RegExp(`\\n${SUSPENDED_TOOLTIP}\\n`),
     );
     await page.waitFor(`!!document.querySelector('button[data-memory]')`, 'Memory', 20_000);
     await page.eval(`document.querySelector('button[data-memory]').click()`);
@@ -582,18 +589,17 @@ done
     for (const branch of ['alpha', 'charlie', 'delta', 'golf'] as const) {
       assert.equal(starts(branch).length, before[branch], `${branch} starts suspended`);
     }
-    // Home's rows show the mark too: Alpha is Ready to ship, suspended.
+    // Home's cards show the mark too: Alpha, suspended.
     // Home, under the overview that start's work shows (spec §9.7).
     await page.eval(`document.querySelector('[data-nav-key="home"]').click()`);
-    await showHomeList(page);
     await page.waitFor(
-      `!!document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]')`,
+      `!!document.querySelector('[data-home-board] [data-board-card="${ids.Alpha}"] [data-suspended]')`,
       'Suspended on Home',
       20_000,
     );
     assert.equal(
       await page.eval(
-        `document.querySelector('[data-home-row="${ids.Alpha}"] [data-suspended]').title`,
+        `document.querySelector('[data-home-board] [data-board-card="${ids.Alpha}"] [data-suspended]').title`,
       ),
       SUSPENDED_TOOLTIP,
     );

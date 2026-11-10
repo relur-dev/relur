@@ -59,7 +59,7 @@ The **title field** names the task. A workspace you created with a key alone, wi
 ## In the workspace
 
 - The header shows the statuses as a stepper, every one by name and in order: finished ones greyed with ✓, upcoming ones greyed, the current one highlighted. Gates have a small diamond ◆ next to their name, so you can see where Claude will stop. When the names don't fit the window, the others shrink to ✓ or their number while the current one keeps its name; hover one to see its name.
-- The sidebar row and the project's Workspaces table show the status's label.
+- The sidebar row shows the status's label, and so does the tooltip of the workspace's card on the Board.
 - Next to the stepper: the status's hint, if it has one, like "Review and approve the spec".
 - At a step, **Continue** <kbd>{{key:continueWorkflow}}</kbd> types the Continue prompt into Claude and presses Enter. It shows only while Claude is idle.
 - At a gate there's no Continue: the skill waits for your own decision. **Review** opens the status file, and the gate's answer button, like **Approve spec**, types its text into Claude, like "I approve the spec." Without an answer button, answer in Claude's tab: <kbd>{{key:continueWorkflow}}</kbd> at a gate takes you there, with the terminal in focus.

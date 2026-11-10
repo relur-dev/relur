@@ -17,6 +17,7 @@ import { APP_NOTICE_EVENT } from './components/EditorPicker';
 import { EditProfileDialog } from './components/EditProfileDialog';
 import { FirstLaunch } from './components/FirstLaunch';
 import { type HomeTab, HomeView } from './components/HomeView';
+import type { HomeActions } from './components/home-items';
 import { InstallCliDialog } from './components/InstallCliDialog';
 import { Modal, ModalFooter } from './components/Modal';
 import { NewProfileWizard } from './components/NewProfileWizard';
@@ -849,6 +850,33 @@ export function App() {
   const openGuideRef = useRef(openGuide);
   openGuideRef.current = openGuide;
 
+  /** What the Board's cards and Home's quick actions do, on Home and in a project's view. */
+  const boardActions: HomeActions = {
+    open: (w) => openRequest.current(w.id),
+    responses: (w, entry) => {
+      requestOnOpen(w.id, 'responses', entry ?? undefined);
+      openRequest.current(w.id);
+    },
+    review: (w) => {
+      requestOnOpen(w.id, 'spec');
+      openWorkspace(w);
+    },
+    commit: (w) => {
+      requestOnOpen(w.id, 'commit');
+      toggleChanges(w.id, true);
+      openWorkspace(w);
+    },
+    openChanges: (w) => {
+      toggleChanges(w.id, true);
+      openWorkspace(w);
+    },
+    delete: setDeleting,
+    deleteMerged: setDeletingMerged,
+    newWorkspace: profileProjects.length > 0 ? () => startNewWorkspace(null) : null,
+    newWorkspaceIn: startNewWorkspace,
+    addProject: () => setAddingProject(true),
+  };
+
   return (
     // data-app-ready marks a completed round trip to the main process (--self-test waits for it).
     <SessionMarks launching={launching} suspended={suspended}>
@@ -1033,13 +1061,15 @@ export function App() {
                       key={tabKey}
                       profile={profile}
                       project={project}
-                      workspaces={profileWorkspaces.filter((w) => w.projectId === project.id)}
+                      projects={profileProjects}
+                      workspaces={profileWorkspaces}
                       sessions={viewSessions}
+                      profileSessions={profileSessions}
+                      actions={boardActions}
                       tab={projectTab}
                       onSelectTab={(tab) => showView(profile.id, view, tab)}
                       onSessionOpened={showSession}
                       onNewWorkspace={() => startNewWorkspace(project)}
-                      onOpenWorkspace={openWorkspace}
                       onRemove={() => setRemoving(project)}
                       onAdopt={(worktree) => setAdopting({ projectId: project.id, worktree })}
                       shortcutError={(projectShell.error ?? projectClaude.error)?.message ?? null}
@@ -1057,34 +1087,7 @@ export function App() {
                       workspaces={profileWorkspaces}
                       memory={memory.data ?? null}
                       startClaude={{ error: homeNotice }}
-                      actions={{
-                        open: (w) => openRequest.current(w.id),
-                        responses: (w, entry) => {
-                          requestOnOpen(w.id, 'responses', entry ?? undefined);
-                          openRequest.current(w.id);
-                        },
-                        openProject,
-                        review: (w) => {
-                          requestOnOpen(w.id, 'spec');
-                          openWorkspace(w);
-                        },
-                        commit: (w) => {
-                          requestOnOpen(w.id, 'commit');
-                          toggleChanges(w.id, true);
-                          openWorkspace(w);
-                        },
-                        openChanges: (w) => {
-                          toggleChanges(w.id, true);
-                          openWorkspace(w);
-                        },
-                        delete: setDeleting,
-                        deleteMerged: setDeletingMerged,
-                        newWorkspace:
-                          profileProjects.length > 0 ? () => startNewWorkspace(null) : null,
-                        newWorkspaceIn: startNewWorkspace,
-                        addProject: () => setAddingProject(true),
-                        guide: () => openGuide(null),
-                      }}
+                      actions={boardActions}
                     />
                   ) : currentConfig ? (
                     <FirstLaunch onCreateProfile={() => setCreatingProfile(true)} />

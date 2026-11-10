@@ -27,7 +27,7 @@ Opening a suspended workspace, from the sidebar, Home or a notification, resumes
 
 Keys you type while it resumes aren't sent: the terminal says **Keys you type now aren't sent**. Type again once Claude is ready. Holding them back would be riskier: a starting Claude can ask its own questions, where a held <kbd>↵</kbd> would answer without you seeing them.
 
-Buttons that type into Claude, such as **Continue**, a gate's answer or a [quick reply](home#board) on Home's Board, resume it first and type once it's ready.
+Buttons that type into Claude, such as **Continue**, a gate's answer or a [quick reply](home#quick-reply) on Home's Board, resume it first and type once it's ready.
 
 ## What a resume keeps and what it doesn't
 
@@ -53,16 +53,15 @@ For Claude started with **Start Claude here**, right-click its tab in the projec
 ## Where it shows
 
 - **Sidebar:** the workspace keeps its status glyph and shows **Suspended**. Hover it: "Suspended to save memory; resumes when you open it".
-- **Home:** **Suspended** on the workspace's row in the List and on its card in the Board.
-- **Workspaces table** in the project view: **· Suspended** after the state.
+- **Board:** **Suspended** on the workspace's card, on Home and in the project view.
 - **Start Claude here** tabs: **Suspended** after the name.
 - **Memory:** a suspended session uses none and isn't counted. The panel that opens from the status bar's **Memory** lists the suspended sessions by name, in every profile (with the profile's name when it isn't the one shown), and the project view says how many. See [Memory](memory).
 
-![The Workspaces table of api-service: ABC-133 is Done (unread) · Suspended and has no memory; ABC-142 is working and uses 1.5 GB.](images/suspended-workspace.webp)
+![The card of ABC-133 on api-service's Board: Done (unread), then Suspended.](images/suspended-workspace.webp)
 
 ## Why one isn't suspended
 
-In the project view's **Workspaces** table, hover a workspace's status. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.
+Hover a workspace's card on the Board, on Home or in the project view. While its Claude runs, the tooltip says why it isn't suspended, for example "Not suspended: a draft in the prompt", or when it will be: "Suspended in 3 min if it stays idle". The reasons are the conditions above: shown in a window, Claude isn't idle, background work running, a draft in the prompt, no conversation yet, Keep Claude Running is on.
 
 {{app}}'s log, `app.log` in its settings folder, has a line each time a session's clock starts, starts again (with the reason), and when it is suspended or resumed.
 

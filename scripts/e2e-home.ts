@@ -1,12 +1,12 @@
 /**
- * End-to-end test of Home (spec §6.7): its Overview and Terminal tabs. Every
- * section of the Overview with its actions (Open, Review and a gate's answer,
- * Commit…, Push, View PR, Delete and Delete n merged workspaces), Create PR
- * and Create PRs… for repositories without a PR, View PRs with several, Show all,
- * the keyboard (↑↓ across sections, ↵, Tab to a row's actions, hover actions
- * on focus), At a glance, the empty states (All clear, Add your first
- * project), and the Terminal tab (⌃1 ⌃2, ⌘L, ⌘0). Unfinished rows are
- * covered by e2e-continue. Runs with a throwaway HOME and a fake `claude`.
+ * End-to-end test of Home (spec §6.7): its Overview and Terminal tabs. The
+ * quick actions, the empty states (no workspaces with New workspace, Add your
+ * first project), the Board's columns with the cards' actions (Open, Review
+ * and a gate's answer, Commit…, Push, View PR, Delete and Delete n merged),
+ * Create PR and Create PRs… for repositories without a PR, View PRs with
+ * several, the cards' tooltips, ↵ on a card, and the Terminal tab (⌃1 ⌃2, ⌘L,
+ * ⌘0). The Board's own behaviour is covered by e2e-board, Unfinished cards by
+ * e2e-continue. Runs with a throwaway HOME and a fake `claude`.
  *
  *   tsx scripts/e2e-home.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
  */
@@ -30,7 +30,6 @@ import {
   pressShortcut,
   type RunningApp,
   screenshot,
-  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -45,12 +44,14 @@ const devMode = args.includes('--dev');
 const electronArgs = args.filter((a) => !a.startsWith('--screenshots=') && a !== '--dev');
 const isMac = process.platform === 'darwin';
 
-/** A Home row by workspace id, as an expression. */
-const homeRow = (id: string) => `document.querySelector('[data-home-row="${id}"]')`;
-/** The ids of a section's rows, in order, as an expression. */
-const sectionIds = (section: string) =>
-  `[...document.querySelectorAll('[data-home-list=${section}] [data-home-row]')].map((r) => r.dataset.homeRow)`;
-const activeRow = `document.activeElement?.dataset?.homeRow ?? null`;
+/** A Board card by workspace id, as an expression. */
+const homeRow = (id: string) => `document.querySelector('[data-board-card="${id}"]')`;
+/** The ids of a column's cards, in order, as an expression. */
+const sectionIds = (column: string) =>
+  `[...document.querySelectorAll('[data-board-column=${column}] [data-board-card]')].map((r) => r.dataset.boardCard)`;
+/** The column a card is in, as an expression. */
+const columnOf = (id: string) =>
+  `(${homeRow(id)}?.closest('[data-board-column]')?.dataset.boardColumn ?? null)`;
 const hasNoThanks = `[...document.querySelectorAll('button')].some((b) => b.textContent === 'No thanks')`;
 
 async function main() {
@@ -170,9 +171,10 @@ exec sleep 600
       shell.openExternal = async (url) => { globalThis.__opened.push(url); };
     })()`);
 
-    // 1. Home opens on the Overview. Work has projects but no workspaces: All clear.
+    // 1. Home opens on the Overview. Work has projects but no workspaces: in
+    // place of empty columns, New workspace.
     await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
+      `document.querySelector('[data-board-empty]')?.dataset.boardEmpty === 'no-workspaces'`,
       'the Overview',
     );
     assert.equal(
@@ -181,13 +183,46 @@ exec sleep 600
       ),
       'true',
     );
-    assert.match(await page.eval<string>(`document.querySelector('main').innerText`), /All clear/);
-    assert.equal(
-      await page.eval(
-        `[...document.querySelectorAll('[data-home-quick]')].map((b) => b.dataset.homeQuick).join()`,
-      ),
-      'New workspace,Add project,Guide',
+    assert.match(
+      await page.eval<string>(`document.querySelector('main').innerText`),
+      /No workspaces yet/,
     );
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-board-columns], [data-home-board]')`),
+      false,
+      'no columns and no Columns control without workspaces',
+    );
+    // The quick actions, always at the top: New workspace and Add project, no Guide.
+    const quick = `[...document.querySelectorAll('[data-home-quick]')].map((b) => b.dataset.homeQuick + (b.disabled ? ':off' : '') + ':' + b.textContent).join('|')`;
+    const keys = await page.eval<string>(
+      `[...document.querySelectorAll('[data-home-quick] kbd')].map((k) => k.textContent).join()`,
+    );
+    assert.ok(keys.split(',').every(Boolean), 'each quick action shows its shortcut');
+    assert.match(
+      await page.eval<string>(quick),
+      /^New workspace:New workspace.+\|Add project:Add project.+$/,
+    );
+    // The empty state's New workspace opens the dialog. Until the profile's
+    // setup check has passed it shows the check instead: then Home again.
+    const opens = async (button: string) => {
+      const open = `!!document.querySelector('dialog[open] #ws-task')`;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await page.waitFor(`!!document.querySelector(${JSON.stringify(button)})`, button);
+        await page.eval(`document.querySelector(${JSON.stringify(button)}).click()`);
+        for (let i = 0; i < 20 && !(await page.eval<boolean>(open)); i++) await sleep(100);
+        if (await page.eval<boolean>(open)) return;
+        await pressKey(page, 'Digit0', CMD);
+        await sleep(500);
+      }
+      throw new Error(`${button} didn't open New workspace`);
+    };
+    await opens('[data-home-action=new-first-workspace]');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    // The quick row's New workspace too.
+    await opens('[data-home-quick="New workspace"]');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
     assert.equal(
       await page
         .eval<string>(`document.querySelector('footer').innerText`)
@@ -195,15 +230,21 @@ exec sleep 600
       true,
       'the status bar says Home',
     );
-    await screenshot(page, screenshotDir, 'h1-all-clear.png');
+    await screenshot(page, screenshotDir, 'h1-no-workspaces.png');
 
-    // A profile without projects: Add your first project, which opens Add project.
+    // A profile without projects: Add your first project, which opens Add
+    // project; the quick row's New workspace is off until there is one.
     await clickLabel(page, 'Select Personal');
     await page.waitFor(
       `!!document.querySelector('[data-home-action=add-first-project]')`,
       'Add your first project',
     );
+    assert.match(await page.eval<string>(quick), /^New workspace:off:.+\|Add project:Add project/);
     await screenshot(page, screenshotDir, 'h2-no-projects.png');
+    await page.eval(`document.querySelector('[data-home-quick="Add project"]').click()`);
+    await page.waitFor(`${dialogText}.includes('Add project')`, 'the Add project dialog');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
     await page.eval(`document.querySelector('[data-home-action=add-first-project]').click()`);
     await page.waitFor(`${dialogText}.includes('Add project')`, 'the Add project dialog');
     await pressKey(page, 'Escape');
@@ -229,7 +270,7 @@ exec sleep 600
     if (isMac) await pressKey(page, 'Digit1', MOD.ctrl);
     else await pressShortcut(page, 'cycleTabs');
     await page.waitFor(
-      `!(${terminalShown}) && !!document.querySelector('[data-home-overview]')`,
+      `!(${terminalShown}) && !!document.querySelector('[data-board-empty]')`,
       'the Overview again',
     );
     // ⌘L from the Overview starts Claude in the home shell, on the Terminal tab.
@@ -311,7 +352,7 @@ exec sleep 600
     await typeInTerminal(page, 'stop');
     await waitState('gate', 'Awaiting approval');
 
-    // Working now: six, so the section shows five and Show all 6.
+    // Working: six, each with its card.
     for (const [i, key] of ['w1', 'w2', 'w3', 'w4', 'w5', 'w6'].entries()) {
       await create(key, 'api', `ABC-${20 + i} Working ${i + 1}`);
       await typeInTerminal(page, 'prompt');
@@ -340,39 +381,54 @@ exec sleep 600
       await waitState(key, 'Done');
     }
 
-    // 4. ⌘0: the Overview with every section, on the List (the Board is the default).
+    // 4. ⌘0: the Board with every column.
     await pressKey(page, 'Digit0', CMD);
-    await showHomeList(page);
-    await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
-      'the sections',
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board');
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-home-layout], [data-home-overview]')`),
+      false,
+      'no List and no List | Board switch',
     );
     await page.waitFor(
       `(${sectionIds('needs')}).join() === ${JSON.stringify([ws.perm?.id, ws.input?.id, ws.gate?.id].join())}`,
       'Needs you, oldest first',
     );
     const needsText = await page.eval<string>(
-      `document.querySelector('[data-home-list=needs]').innerText`,
+      `document.querySelector('[data-board-column=needs]').innerText`,
     );
     assert.match(needsText, /Needs permission/);
-    assert.match(needsText, /Claude needs your permission to use Bash/);
     assert.match(needsText, /Waiting for input/);
     assert.match(needsText, /At\s*Spec review/);
-    assert.match(needsText, /jumps to the next one/);
-    // Working now: five shown, Show all 6, with how long and the memory.
-    assert.equal(await page.eval(`(${sectionIds('working')}).length`), 5);
+    // ⌘J, which the List said under Needs you, in its header's tooltip.
     assert.match(
-      await page.eval<string>(`document.querySelector('[data-home-list=working]').innerText`),
-      /Working now\s*6[\s\S]*working for less than a minute[\s\S]*Show all 6/,
+      await page.eval<string>(`document.querySelector('[data-board-column=needs] h2').title`),
+      /jumps to the next one that needs you/,
+    );
+    // A card's tooltip: the whole permission message, the branch, the activity.
+    const permTip = await page.eval<string>(`${homeRow(ws.perm?.id as string)}.title`);
+    assert.match(permTip, /^ABC-1 Fix the flaky test\n/);
+    assert.match(permTip, /\nClaude needs your permission to use Bash\n/);
+    assert.match(permTip, new RegExp(`\\nBranch: ${ws.perm?.branch}\\n`));
+    assert.match(permTip, /\nActive (just now|\d+[smh] ago)\n/);
+    assert.match(permTip, /\nClick to open, drag to delete$/);
+    // A card names its project at the top right.
+    assert.match(await page.eval<string>(`${homeRow(ws.perm?.id as string)}.innerText`), /\bweb\b/);
+    // Working: all six, with how long and the memory, also in the tooltip.
+    assert.equal(await page.eval(`(${sectionIds('working')}).length`), 6);
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-board-column=working]').innerText`),
+      /Working\s*6[\s\S]*working for less than a minute/,
     );
     await page.waitFor(
-      `[...document.querySelectorAll('[data-home-list=working] [data-home-memory]')].some((m) => /^\\d+(\\.\\d)? (MB|GB)$/.test(m.textContent))`,
+      `[...document.querySelectorAll('[data-board-column=working] [data-home-memory]')].some((m) => /^\\d+(\\.\\d)? (MB|GB)$/.test(m.textContent))`,
       'the memory of working workspaces',
       30_000,
     );
-    await clickButtonText(page, 'Show all 6');
-    await page.waitFor(`(${sectionIds('working')}).length === 6`, 'all six');
-    await clickButtonText(page, 'Show fewer');
+    await page.waitFor(
+      `[...document.querySelectorAll('[data-board-column=working] [data-board-card]')].some((c) => /\\nMemory: \\d+(\\.\\d)? (MB|GB) · Claude /.test(c.title))`,
+      'the memory in a tooltip',
+      30_000,
+    );
     // Ready to ship: the merged ones too until they are pushed and their PR is known.
     const shipping = ['commit', 'push', 'merged1', 'merged2'].map((k) => ws[k]?.id).sort();
     await page.waitFor(
@@ -387,11 +443,6 @@ exec sleep 600
     assert.match(
       await page.eval<string>(`${homeRow(ws.push?.id as string)}.innerText`),
       /1 commit not pushed/,
-    );
-    // At a glance: the projects with their counts.
-    assert.match(
-      await page.eval<string>(`document.querySelector('[data-home-glance]').innerText`),
-      /web\s*7[\s\S]*api\s*6/,
     );
     await screenshot(page, screenshotDir, 'h4-overview.png');
     // For comparing with the design: its frames, 1440×900 dark and light, and 900×1120.
@@ -416,7 +467,7 @@ exec sleep 600
       await sleep(500);
     }
 
-    // 5. Push from Home: pushed to the bare remote, then its PR is checked: View PR.
+    // 5. Push from a card: pushed to the bare remote, then its PR is checked: View PR.
     await page.eval(
       `${homeRow(ws.push?.id as string)}.querySelector('[data-home-action=push]').click()`,
     );
@@ -437,51 +488,27 @@ exec sleep 600
     assert.deepEqual(await mainProcess.eval('globalThis.__opened'), [
       'https://git.example.com/acme/web/pull/212',
     ]);
-    // The merged ones: pushed from Home too, then Clean up.
+    // The merged ones: pushed from Home too, then Merged.
     for (const key of ['merged1', 'merged2']) {
       await page.eval(
         `${homeRow(ws[key]?.id as string)}.querySelector('[data-home-action=push]').click()`,
       );
       await page.waitFor(
-        `${homeRow(ws[key]?.id as string)}?.dataset.homeSection === 'clean'`,
-        `${key} under Clean up`,
+        `${columnOf(ws[key]?.id as string)} === 'merged'`,
+        `${key} under Merged`,
         30_000,
       );
     }
     assert.match(
-      await page.eval<string>(`document.querySelector('[data-home-list=clean]').innerText`),
-      /Clean up\s*2[\s\S]*Delete 2 merged workspaces[\s\S]*PR #198 merged[\s\S]*PR #187 merged|Clean up\s*2[\s\S]*Delete 2 merged workspaces[\s\S]*PR #187 merged[\s\S]*PR #198 merged/,
+      await page.eval<string>(`document.querySelector('[data-board-column=merged]').innerText`),
+      /Merged\s*2[\s\S]*Delete 2 merged[\s\S]*PR #198 merged[\s\S]*PR #187 merged|Merged\s*2[\s\S]*Delete 2 merged[\s\S]*PR #187 merged[\s\S]*PR #198 merged/,
     );
 
-    // 6. Keyboard: ↑↓ across sections, Tab to a row's actions, hover actions on focus.
-    await page.eval(`document.querySelector('[data-home-overview]').focus()`);
-    await pressKey(page, 'ArrowDown');
-    await page.waitFor(`${activeRow} === ${JSON.stringify(ws.perm?.id)}`, 'the first row');
-    await pressKey(page, 'ArrowUp');
-    assert.equal(await page.eval(activeRow), ws.perm?.id, 'stays on the first row');
-    for (let i = 0; i < 3; i++) await pressKey(page, 'ArrowDown');
-    // The first of Working now: its Open shows only while it has focus or the mouse.
-    const working = await page.eval<string>(activeRow);
-    assert.equal(await page.eval(`${homeRow(working)}.dataset.homeSection`), 'working');
-    const openShown = (id: string) =>
-      `!!${homeRow(id)}.querySelector('[data-home-action=open]')?.offsetParent`;
-    assert.equal(await page.eval(openShown(working)), true, 'Open shows on focus');
-    await pressKey(page, 'Tab');
-    assert.equal(
-      await page.eval(
-        `document.activeElement.dataset.homeAction + ':' + document.activeElement.closest('[data-home-row]').dataset.homeRow`,
-      ),
-      `open:${working}`,
-      'Tab reaches its Open',
-    );
-    await pressKey(page, 'Tab');
-    assert.equal(await page.eval(activeRow), (await page.eval<string[]>(sectionIds('working')))[1]);
-    assert.equal(await page.eval(openShown(working)), false, 'Open hides again');
-    await screenshot(page, screenshotDir, 'h5-focus.png');
-    // ↵ on a row opens its workspace: the second of Needs you.
+    // 6. ↵ on a card opens its workspace: the second of Needs you. (The Board's
+    // keyboard is covered by e2e-board.)
     await page.eval(`${homeRow(ws.input?.id as string)}.focus()`);
     await pressKey(page, 'Enter');
-    await page.waitFor(`!document.querySelector('[data-home-overview]')`, 'the workspace');
+    await page.waitFor(`!document.querySelector('[data-home-board]')`, 'the workspace');
     assert.match(
       await page.eval<string>(
         `document.querySelector('[aria-label=Terminals] [role=tab][aria-selected=true]').innerText`,
@@ -489,20 +516,21 @@ exec sleep 600
       /Claude/,
     );
 
-    // 7. The rows' actions. Open: the Claude tab of a workspace that needs permission.
+    // 7. The cards' actions. Open: the Claude tab of a workspace that needs permission.
     const home = async () => {
       await pressKey(page, 'Digit0', CMD);
-      await page.waitFor(`!!document.querySelector('[data-home-overview=sections]')`, 'Home');
+      await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'Home');
     };
     await home();
     await page.eval(
       `${homeRow(ws.perm?.id as string)}.querySelector('[data-home-action=open]').click()`,
     );
     await page.waitFor(
-      `!document.querySelector('[data-home-overview]') && /Claude/.test(document.querySelector('[aria-label=Terminals] [role=tab][aria-selected=true]')?.innerText ?? '')`,
+      `!document.querySelector('[data-home-board]') && /Claude/.test(document.querySelector('[aria-label=Terminals] [role=tab][aria-selected=true]')?.innerText ?? '')`,
       'the Claude tab',
     );
-    // Review at a gate opens the spec view; its answer types into Claude.
+    // Review at a gate opens the spec view, also next to the gate's answer; the
+    // answer types into Claude.
     await home();
     await page.eval(
       `${homeRow(ws.gate?.id as string)}.querySelector('[data-home-action=review]').click()`,
@@ -532,12 +560,8 @@ exec sleep 600
       'the commit box in focus',
     );
     assert.equal(await page.eval(`!!document.querySelector('[data-finish]')`), true);
-    // At a glance: a project opens its view.
-    await home();
-    await page.eval(`document.querySelector('[data-home-project=api]').click()`);
-    await page.waitFor(`document.querySelector('h1')?.textContent === 'api'`, 'the api project');
 
-    // 8. Delete on a merged row: the Delete workspace dialog, as from the sidebar.
+    // 8. Delete on a merged card: the Delete workspace dialog, as from the sidebar.
     await home();
     await page.eval(`${homeRow(ws.merged1?.id as string)}.focus()`);
     await page.eval(
@@ -546,8 +570,8 @@ exec sleep 600
     await page.waitFor(`${dialogText}.includes('Delete ABC-198 Merged 198?')`, 'Delete workspace');
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
-    // Delete 2 merged workspaces: one dialog with both and their checks, one button.
-    await clickButtonText(page, 'Delete 2 merged workspaces');
+    // Delete 2 merged: one dialog with both and their checks, one button.
+    await clickButtonText(page, 'Delete 2 merged');
     await page.waitFor(
       `document.querySelectorAll('dialog[open] [data-delete-workspace]').length === 2 && ${dialogText}.includes('No uncommitted changes or unpushed commits')`,
       'the merged workspaces with their checks',
@@ -561,7 +585,7 @@ exec sleep 600
     );
     await submitDialog(page);
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the deletes', 30_000);
-    await page.waitFor(`!document.querySelector('[data-home-list=clean]')`, 'Clean up empty');
+    await page.waitFor(`(${sectionIds('merged')}).length === 0`, 'Merged empty');
     for (const key of ['merged1', 'merged2']) {
       assert.equal(fs.existsSync(ws[key]?.tree as string), false, `${key}'s worktree is gone`);
     }

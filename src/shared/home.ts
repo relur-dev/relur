@@ -1,4 +1,6 @@
 import { atMenu, needsYou, type WorkspaceState } from './status';
+import { SUSPENDED_TOOLTIP } from './suspend';
+import { unfinishedTooltip } from './unfinished';
 import {
   mergedText,
   type PrStatus,
@@ -9,23 +11,11 @@ import {
 } from './workspaces';
 
 /**
- * Home's Overview (spec §6.7): which of a profile's workspaces show in which
- * section. A workspace shows in one section at most, the first that applies:
- * Needs you, Working now, Clean up, Ready to ship.
+ * The Board (spec §6.7): which status a workspace's card shows, by the first
+ * rule that applies: Needs you, Working, Merged (`clean`), Ready to ship; a
+ * workspace in none of them is Idle.
  */
 export type HomeSection = 'needs' | 'working' | 'clean' | 'ship';
-
-export const HOME_SECTIONS: readonly HomeSection[] = ['needs', 'working', 'ship', 'clean'];
-
-export const HOME_SECTION_TITLE: Record<HomeSection, string> = {
-  needs: 'Needs you',
-  working: 'Working now',
-  ship: 'Ready to ship',
-  clean: 'Clean up',
-};
-
-/** Rows a section shows before "Show all n" (spec §6.7). */
-export const HOME_SECTION_LIMIT = 5;
 
 /** What a Done workspace has left to ship, summed over its repositories. */
 export interface ShipState {
@@ -122,8 +112,8 @@ export function homeSection(w: Workspace, ship: ShipState | null): HomeSection |
 }
 
 /**
- * The profile's workspaces by section, each in its order: Needs you oldest
- * first (as ⌘J goes), Working now longest first, the rest by last activity.
+ * The workspaces by section, each in its order: Needs you oldest first (as
+ * ⌘J goes), Working longest first, the rest by last activity.
  */
 export function homeSections(
   workspaces: Workspace[],
@@ -189,22 +179,24 @@ export function workingFor(since: string | null, now = Date.now()): string {
   return `working for ${h} h${m ? ` ${m} min` : ''}`;
 }
 
-/** The profile's projects with their own workspaces and those they are linked into (§21.1). */
-export function projectCounts(
-  projectIds: string[],
-  workspaces: Pick<Workspace, 'projectId' | 'repos'>[],
-): { projectId: string; count: number; linked: number }[] {
-  return projectIds.map((projectId) => ({
-    projectId,
-    count: workspaces.filter((w) => w.projectId === projectId).length,
-    linked: workspaces.filter(
+/**
+ * What a project's Board shows (spec §6.10): the project's own workspaces, and
+ * those of other projects linked into it (§21.1), which its cards mark.
+ */
+export function projectWorkspaces<W extends Pick<Workspace, 'projectId' | 'repos'>>(
+  projectId: string,
+  workspaces: W[],
+): { own: W[]; linkedIn: W[] } {
+  return {
+    own: workspaces.filter((w) => w.projectId === projectId),
+    linkedIn: workspaces.filter(
       (w) => w.projectId !== projectId && w.repos.some((r) => r.projectId === projectId),
-    ).length,
-  }));
+    ),
+  };
 }
 
 /**
- * Home's Board (spec §6.7): the List's sections as columns, and Idle for
+ * The Board's columns (spec §6.7): a column for each section, and Idle for
  * every workspace that is in none of them.
  */
 export type BoardColumn = 'needs' | 'working' | 'idle' | 'ship' | 'merged';
@@ -226,15 +218,14 @@ const COLUMN_OF: Record<HomeSection, BoardColumn> = {
   clean: 'merged',
 };
 
-/** The column a workspace belongs in: its List section's, else Idle. */
+/** The column a workspace belongs in: its section's, else Idle. */
 export const boardColumn = (w: Workspace, ship: ShipState | null): BoardColumn => {
   const section = homeSection(w, ship);
   return section ? COLUMN_OF[section] : 'idle';
 };
 
 /**
- * The profile's workspaces by column: the List's sections in their order,
- * and Idle (interrupted, suspended, exited, or Done with nothing to ship) by
+ * The workspaces by column: the sections in their order (spec §6.7), and Idle (interrupted, suspended, exited, or Done with nothing to ship) by
  * last activity.
  */
 export function boardColumns(
@@ -324,4 +315,41 @@ export const QUICK_REPLY_REFUSAL: Record<Exclude<QuickReply, 'field'>, string> =
 export function permissionTool(message: string | null): string | null {
   if (!message || /^claude needs your permission\.?$/i.test(message.trim())) return null;
   return /permission to use (.+)$/i.exec(message)?.[1]?.trim() ?? message;
+}
+
+/**
+ * A card's tooltip (spec §6.7): its task, then what its card leaves out: where
+ * it is linked in from (on a project's Board), its branch (on Home; a
+ * project's Board shows it on the card), the whole of its state's message,
+ * its workflow status (§13.5), memory (§6.14), last activity, and why its
+ * Claude is or isn't suspended (§9.8).
+ */
+export function cardTooltip(
+  w: Workspace,
+  o: {
+    linkedFrom: string | null;
+    branch: boolean;
+    /** "1.2 GB · Claude 900 MB, other 300 MB" while a session runs. */
+    memory: string | null;
+    /** How long ago it was last active ("4m", "now"; ui/time `ago`). */
+    active: string;
+    suspended: boolean;
+    /** `suspendClockNote`'s text, while it isn't suspended. */
+    suspendNote: string | null;
+  },
+): string {
+  const lines = [`${w.task.id ? `${w.task.id} ` : ''}${w.task.title || w.name}`];
+  if (o.linkedFrom) lines.push(`Linked in from ${o.linkedFrom}`);
+  if (o.branch) lines.push(`Branch: ${w.branch}`);
+  if (w.state === 'needs-permission' && w.stateMessage) lines.push(w.stateMessage);
+  else if (w.state === 'needs-input' && w.stateMessage) lines.push(w.stateMessage);
+  else if (w.unfinished) lines.push(unfinishedTooltip(w.unfinished));
+  const workflow = w.workflow?.label ?? w.workflow?.problem;
+  if (workflow) lines.push(`Workflow: ${workflow}`);
+  if (o.memory) lines.push(`Memory: ${o.memory}`);
+  if (o.active) lines.push(o.active === 'now' ? 'Active just now' : `Active ${o.active} ago`);
+  if (o.suspended) lines.push(SUSPENDED_TOOLTIP);
+  else if (o.suspendNote) lines.push(o.suspendNote);
+  lines.push('Click to open, drag to delete');
+  return lines.join('\n');
 }

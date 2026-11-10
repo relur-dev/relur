@@ -3,6 +3,7 @@ import {
   BOARD_COLUMNS,
   boardColumn,
   boardColumns,
+  cardTooltip,
   type HomeSection,
   homeSection,
   homeSections,
@@ -11,7 +12,7 @@ import {
   openPrsText,
   permissionTool,
   prNumber,
-  projectCounts,
+  projectWorkspaces,
   prText,
   quickReply,
   type ShipState,
@@ -297,15 +298,78 @@ describe('workingFor', () => {
   });
 });
 
-describe('projectCounts', () => {
-  it('counts own workspaces and those the project is linked into', () => {
+describe('projectWorkspaces', () => {
+  it('splits own workspaces from those of other projects linked into it', () => {
     const own = ws('done');
     const linked = ws('done', { projectId: 'api', repos: [repo('api', true), repo('web', false)] });
-    expect(projectCounts(['web', 'api', 'ui'], [own, linked])).toEqual([
-      { projectId: 'web', count: 1, linked: 1 },
-      { projectId: 'api', count: 1, linked: 0 },
-      { projectId: 'ui', count: 0, linked: 0 },
+    const other = ws('done', { projectId: 'api', repos: [repo('api', true)] });
+    expect(projectWorkspaces('web', [own, linked, other])).toEqual({
+      own: [own],
+      linkedIn: [linked],
+    });
+    expect(projectWorkspaces('api', [own, linked, other])).toEqual({
+      own: [linked, other],
+      linkedIn: [],
+    });
+  });
+});
+
+describe('cardTooltip', () => {
+  const base = {
+    linkedFrom: null,
+    branch: true,
+    memory: null,
+    active: '4m',
+    suspended: false,
+    suspendNote: null,
+  };
+  it('names the task, the branch, the activity and what a click and a drag do', () => {
+    const w = ws('done', { task: { id: 'ABC-1', title: 'Fix login', url: null }, branch: 'abc-1' });
+    expect(cardTooltip(w, base)).toBe(
+      'ABC-1 Fix login\nBranch: abc-1\nActive 4m ago\nClick to open, drag to delete',
+    );
+  });
+  it('leaves the branch out where the card shows it, and marks a linked workspace', () => {
+    const w = ws('done', { task: { id: null, title: '', url: null }, name: 'spike' });
+    expect(cardTooltip(w, { ...base, branch: false, linkedFrom: 'api', active: 'now' })).toBe(
+      'spike\nLinked in from api\nActive just now\nClick to open, drag to delete',
+    );
+  });
+  it('adds the whole state message, the workflow, memory and the suspension note', () => {
+    const w = ws('needs-permission', {
+      stateMessage: 'Claude needs your permission to use Bash',
+      workflow: {
+        statuses: [],
+        status: 'plan',
+        index: 0,
+        kind: 'step',
+        label: 'Plan',
+        file: 'spec.md',
+        problem: null,
+      },
+    });
+    const lines = cardTooltip(w, {
+      ...base,
+      memory: '1.2 GB · Claude 1.0 GB, other 200 MB',
+      suspendNote: 'Not suspended: shown',
+    }).split('\n');
+    expect(lines.slice(2)).toEqual([
+      'Claude needs your permission to use Bash',
+      'Workflow: Plan',
+      'Memory: 1.2 GB · Claude 1.0 GB, other 200 MB',
+      'Active 4m ago',
+      'Not suspended: shown',
+      'Click to open, drag to delete',
     ]);
+  });
+  it('says why it is unfinished, and that it is suspended in place of the clock', () => {
+    const w = ws('exited', {
+      unfinished: { kind: 'working', since: '2026-11-01T09:00:00.000Z', stopped: 0 },
+    });
+    const text = cardTooltip(w, { ...base, suspended: true, suspendNote: 'Not suspended: shown' });
+    expect(text).toContain("Claude didn't finish");
+    expect(text).toContain('Suspended to save memory; resumes when you open it');
+    expect(text).not.toContain('Not suspended');
   });
 });
 

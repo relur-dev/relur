@@ -12,7 +12,7 @@ When Claude needs you, the workspace shows a status glyph, the profile tab gets 
 
 ## Home
 
-Each profile has a Home <kbd>{{key:home}}</kbd>, where you go back to between tasks. Its **Overview** shows what needs you, what is working, what is ready to ship and what can be cleaned up, as a **Board** with a column for each state (the default) or as a list. On the Board you can answer Claude from a workspace's card without opening it. Its **Terminal** is a shell in your home folder that uses the profile's account, for anything that isn't a task. See [Home](home).
+Each profile has a Home <kbd>{{key:home}}</kbd>, where you go back to between tasks. Its **Overview** shows what needs you, what is working, what is ready to ship and what is merged, as a **Board** with a column for each state; each project's view shows its own workspaces on the same Board. On the Board you can answer Claude from a workspace's card without opening it. Its **Terminal** is a shell in your home folder that uses the profile's account, for anything that isn't a task. See [Home](home).
 
 ## Appearance
 

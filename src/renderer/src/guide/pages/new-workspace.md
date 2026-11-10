@@ -1,6 +1,6 @@
 # New workspace
 
-Click the **+** at the right of a project's row in the sidebar (or of its band's header, when Home's Board is [grouped by project](home#board)), or **New workspace** in the project view or on Home. <kbd>{{key:newWorkspace}}</kbd> uses the project you're looking at, or the project of the workspace you're in; from Home the dialog has a **Project** field to pick one, when the profile has more than one.
+Click the **+** at the right of a project's row in the sidebar (or of its band's header, when Home's Board is [grouped by project](home#group-by-project)), or **New workspace** in the project view or on Home. <kbd>{{key:newWorkspace}}</kbd> uses the project you're looking at, or the project of the workspace you're in; from Home the dialog has a **Project** field to pick one, when the profile has more than one.
 
 At the top, **New branch** starts the task on a branch of its own, made for it: that's the default, and what most of this page is about. **Existing branch** works on a branch that's already there, such as a colleague's pull request; see [From an existing branch](#from-an-existing-branch).
 

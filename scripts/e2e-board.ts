@@ -1,6 +1,6 @@
 /**
- * End-to-end test of Home's Board (spec §6.7): the List | Board switch and
- * its memory per profile (also across a restart), the five columns following
+ * End-to-end test of Home's Board (spec §6.7): the only way Home shows the
+ * workspaces (no List, no switch), the five columns following
  * the workspaces live, drag to delete (Esc, a drop elsewhere, the zone, the
  * dialog's Cancel and Delete), the keyboard (↑↓←→, ↵, Tab, Delete), Delete n
  * merged, a branch merged only locally (Merged, and Delete workspace's
@@ -16,7 +16,7 @@
  * (Open instead) and over a draft; above it what Claude last said (its
  * question, its words at a gate or the gate's hint alone, none for a fresh
  * session), the line opening the Responses panel at that entry, and Claude's
- * question tool shown as Asked a question (card, List, sidebar, Needs you in
+ * question tool shown as Asked a question (card, sidebar, Needs you in
  * the input color) and answered from its card's options. Runs with a throwaway HOME and a fake
  * `claude`.
  *
@@ -69,7 +69,6 @@ const columnIds = (column: string) =>
 const columnOf = (id: string) =>
   `(${card(id)}?.closest('[data-board-column]')?.dataset.boardColumn ?? null)`;
 const activeCard = `(document.activeElement?.dataset?.boardCard ?? null)`;
-const layout = `(document.querySelector('[data-home-layout]')?.dataset.homeLayout ?? null)`;
 /** The Board's shown columns, left to right, as an expression. */
 const shown = `[...document.querySelectorAll('[data-board-column]')].map((c) => c.dataset.boardColumn)`;
 const DEFAULT_ORDER = ['working', 'idle', 'needs', 'ship', 'merged'];
@@ -281,12 +280,16 @@ exec sleep 600
     app = await launch();
     let page = app.page;
 
-    // 1. Without workspaces there is nothing to switch.
+    // 1. Without workspaces, New workspace in place of empty columns.
     await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
-      'All clear',
+      `document.querySelector('[data-board-empty]')?.dataset.boardEmpty === 'no-workspaces'`,
+      'No workspaces yet',
     );
-    assert.equal(await page.eval(layout), null, 'no switch without workspaces');
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-board-columns], [data-board-column]')`),
+      false,
+      'no columns without workspaces',
+    );
 
     // 2. Workspaces in every column but Ready to ship.
     const ws: Record<string, { id: string; tree: string; branch: string }> = {};
@@ -358,20 +361,14 @@ exec sleep 600
     await waitState('draft', 'Done');
     await typeInTerminal(page, 'half a thought', false);
 
-    // 3. ⌘0: the Board, the default of a profile that never chose; the List and back.
+    // 3. ⌘0: the Board, with no List and no switch.
     await pressKey(page, 'Digit0', CMD);
-    await page.waitFor(`${layout} === 'board'`, 'the switch on Board');
-    assert.equal(
-      await page.eval(
-        `document.querySelector('[data-home-layout-option=board]').getAttribute('aria-pressed')`,
-      ),
-      'true',
-    );
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board');
-    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
-    await page.waitFor(`!!document.querySelector('[data-home-overview]')`, 'the List');
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
-    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board again');
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-home-layout], [data-home-overview]')`),
+      false,
+      'no List | Board switch',
+    );
     await page.waitFor(`${columnIds('ship')}.length === 2`, 'the cards to ship', 30_000);
     assert.deepEqual(
       await page.eval(
@@ -1051,16 +1048,14 @@ exec sleep 600
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('[data-board-columns-panel]')`, 'closed');
     assert.equal(await page.eval(`document.activeElement?.dataset.boardColumns`), 'true');
-    // The List still shows the hidden columns' workspaces.
-    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
-    await page.waitFor(`!!document.querySelector('[data-home-overview]')`, 'the List');
-    assert.match(
-      await page.eval<string>(`document.querySelector('[data-home-overview]').innerText`),
-      /ABC-2[\s\S]*ABC-3/,
-    );
-    assert.equal(await page.eval(`!!document.querySelector('[data-board-columns]')`), false);
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
-    await page.waitFor(`${shown}.join() === 'merged'`, 'the Board as it was');
+    // The sidebar still shows the hidden columns' workspaces.
+    for (const key of ['perm', 'working']) {
+      assert.equal(
+        await page.eval(`!!document.querySelector('nav [data-nav-key="w:${id(key)}"]')`),
+        true,
+        `${key} in the sidebar`,
+      );
+    }
     // Reset to default: today's order, all shown, no mark.
     await page.eval(`document.querySelector('[data-board-columns]').click()`);
     await page.waitFor(`!!document.querySelector('[data-board-columns-panel]')`, 'the panel');
@@ -1089,7 +1084,6 @@ exec sleep 600
     await typeInTerminal(page, 'stop');
     await waitState('sleepy', 'Done');
     await pressKey(page, 'Digit0', CMD);
-    await page.waitFor(`${layout} === 'board'`, "Personal's Board by default");
     // Its own columns: the default, whatever Work did.
     await page.waitFor(`!!document.querySelector('[data-home-board]')`, "Personal's Board");
     assert.deepEqual(await page.eval(shown), DEFAULT_ORDER);
@@ -1198,17 +1192,7 @@ exec sleep 600
     );
     // Needs you in the input color: a question counts as input, the gate too.
     assert.equal(await page.eval(tone('needs')), 'input');
-    // The List says the same.
-    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
-    await page.waitFor(
-      `!!document.querySelector('[data-home-row="${id('asker')}"]')`,
-      "the question's row in the List",
-    );
-    const askerListRow = `document.querySelector('[data-home-row="${id('asker')}"]')`;
-    assert.match(await page.eval<string>(`${askerListRow}.innerText`), /Asked a question/);
-    assert.equal(await page.eval(inInput(askerListRow)), true, 'the List row in st-input');
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
-    await page.waitFor(`!!${context('asker')}`, 'the Board again');
+    await page.waitFor(`!!${context('asker')}`, "the question's line");
     // Typed text would answer the menu: no field, and not Open's permission note.
     assert.equal(
       await page.eval(`!!${card(id('asker'))}.querySelector('[data-quick-reply]')`),
@@ -1247,38 +1231,23 @@ exec sleep 600
       'the question gone',
     );
     assert.equal(await page.eval(columnOf(id('gate'))), 'needs');
-    // Personal chooses the List.
-    await page.eval(`document.querySelector('[data-home-layout-option=list]').click()`);
-    await page.waitFor(`${layout} === 'list'`, 'Personal on the List');
 
-    // 10. Both layouts are remembered per profile across a restart.
+    // 10. Each profile's columns are remembered across a restart.
     await app.stop();
     app = await launch();
     page = app.page;
-    await page.waitFor(`${layout} !== null`, 'the switch');
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, 'the Board');
     await clickLabel(page, 'Select Work');
-    await page.waitFor(
-      `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
-      "Work's Board",
-    );
+    await page.waitFor(`${shown}.join() === 'working,needs,merged,ship'`, "Work's Board");
     // Work's columns as it left them.
     assert.deepEqual(await page.eval(shown), ['working', 'needs', 'merged', 'ship']);
     assert.match(
       await page.eval<string>(`document.querySelector('[data-board-columns]').textContent`),
       /1 hidden/,
     );
-    // A stored List stays, though the Board is the default.
     await clickLabel(page, 'Select Personal');
     await page.waitFor(
-      `${layout} === 'list' && !!document.querySelector('[data-home-overview]')`,
-      "Personal's List",
-    );
-    await page.eval(`document.querySelector('[data-home-layout-option=board]').click()`);
-    await clickLabel(page, 'Select Work');
-    await page.waitFor(`${layout} === 'board'`, 'Work still on the Board');
-    await clickLabel(page, 'Select Personal');
-    await page.waitFor(
-      `${layout} === 'board' && !!document.querySelector('[data-home-board]')`,
+      `${shown}.join() === ${JSON.stringify(DEFAULT_ORDER.join())}`,
       'Personal on the Board',
     );
     assert.deepEqual(await page.eval(shown), DEFAULT_ORDER, "Personal's columns, the default");

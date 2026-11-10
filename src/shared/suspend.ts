@@ -40,7 +40,7 @@ export function suspendDefaultNotice(profiles: readonly string[]): string {
 const listOf = (names: readonly string[]) =>
   names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '');
 
-/** The mark's tooltip on the sidebar row, in the Workspaces table and on a tab (spec §9.8). */
+/** The mark's tooltip on the sidebar row, on a Board card and on a tab (spec §9.8). */
 export const SUSPENDED_TOOLTIP = 'Suspended to save memory; resumes when you open it';
 
 /**
@@ -165,7 +165,7 @@ export function draftAfter(draft: boolean, data: string): boolean {
   return draft || typesText(keys);
 }
 
-/** Why a running Claude isn't suspended, for app.log and the Workspaces table (spec §9.8). */
+/** Why a running Claude isn't suspended, for app.log and a Board card's tooltip (spec §9.8). */
 export const BLOCKER_TEXT: Record<SuspendBlocker, string> = {
   off: 'suspension is off',
   resuming: 'resuming',
@@ -187,7 +187,7 @@ export interface SuspendClock {
 }
 
 /**
- * The Workspaces table's tooltip on a running Claude's state (spec §9.8):
+ * A Board card's tooltip on a running Claude's state (spec §9.8):
  * "Not suspended: a draft in the prompt", or "Suspended in 3 min if it stays
  * idle"; nothing while suspension is off.
  */

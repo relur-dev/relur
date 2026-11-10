@@ -1,6 +1,6 @@
 /**
  * End-to-end test of notes per workspace (spec §6.15): two items written in
- * the Notes panel, the mark on Home's Board while they are unsent, one sent
+ * the Notes panel, the mark on Home's and the project's Board while they are unsent, one sent
  * now while Claude works (Claude Code takes it into the running turn), the
  * other held until Claude is done and sent then by itself; both move to Sent,
  * and each View response opens the Responses panel at its own entry, which
@@ -206,7 +206,13 @@ async function main() {
     await pressShortcut(page, 'home');
     await page.waitFor(has('[data-home-board]'), 'the Board');
     await page.waitFor(has('[data-board-card] [data-notes-mark="2"]'), 'the notes mark with 2');
-    await page.eval(`document.querySelector('[data-board-card]').click()`);
+    // The project's Board too (spec §6.10).
+    await page.eval(`document.querySelector('[data-nav-key="p:web"] [data-nav-focus]').click()`);
+    await page.waitFor(
+      has('main [data-board-card] [data-notes-mark="2"]'),
+      "the mark on the project's Board",
+    );
+    await page.eval(`document.querySelector('main [data-board-card]').click()`);
     await page.waitFor(has('[data-notes-panel]'), 'the workspace with its Notes panel');
 
     // 4. Send now while Claude works: Claude Code takes it into the running turn.

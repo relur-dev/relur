@@ -30,7 +30,6 @@ import {
   openContextMenu,
   pressKey,
   type RunningApp,
-  showHomeList,
   sleep,
   submitDialog,
   typeInField,
@@ -658,23 +657,25 @@ async function main() {
       below: 6,
     });
 
-    // 6. The project view, with the suspended workspace and the Memory column.
+    // 6. The project view: its Board, and the suspended workspace's card.
     await page.eval(
       `document.querySelector('[data-project="api-service"] [data-nav-focus]').click()`,
     );
     await page.waitFor(`!!document.querySelector('main [data-suspended]')`, 'the project view');
+    await page.eval('document.activeElement?.blur()');
+    // Wide enough for all five columns, as Home's Board below.
+    const setWidth = (width: number) =>
+      mainProcess.eval(
+        `process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].setContentSize(${width}, ${HEIGHT})`,
+      );
+    await setWidth(BOARD_WIDTH);
     await sleep(800);
-    await shoot('suspended-workspace', { selectors: ['main table'], pad: 4 });
-
-    // 7. Home's Overview, on the List (the Board is the default).
-    await pressKey(page, 'Digit0', CMD);
-    await showHomeList(page);
-    await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'sections'`,
-      'the Overview',
-    );
-    await sleep(800);
-    await shoot('home-overview', null);
+    await shoot('project-board', null);
+    await setWidth(WIDTH);
+    await shoot('suspended-workspace', {
+      selectors: ['main [data-board-card]:has([data-suspended])'],
+      pad: 8,
+    });
 
     // 8. Edit profile.
     const openEdit = async () => {
@@ -769,7 +770,7 @@ async function main() {
     }
     await pressKey(page, 'Digit0', CMD);
     for (const id of Object.keys(merged)) {
-      const push = `[...document.querySelectorAll('[data-home-row]')].find((r) => r.title.startsWith('${id}'))?.querySelector('[data-home-action=push]')`;
+      const push = `[...document.querySelectorAll('[data-board-card]')].find((r) => r.title.startsWith('${id}'))?.querySelector('[data-home-action=push]')`;
       await page.waitFor(`!!${push}`, `Push on ${id}`, 30_000);
       await page.eval(`${push}.click()`);
     }
@@ -778,7 +779,6 @@ async function main() {
       'ABC-136 suspended',
       SUSPEND_MIN * MINUTE_MS + 30_000,
     );
-    await page.eval(`document.querySelector('[data-home-layout-option="board"]').click()`);
     const count = (column: string) =>
       `document.querySelector('[data-board-column=${column}] [data-board-count]')?.textContent`;
     await page.waitFor(
@@ -800,7 +800,6 @@ async function main() {
     await sleep(800);
     await shoot('home-board', null);
     await resize(WIDTH);
-    await page.eval(`document.querySelector('[data-home-layout-option="list"]').click()`);
 
     console.log(`${shots.length} screenshots in ${out}:\n  ${shots.join('\n  ')}`);
   } catch (error) {

@@ -17,12 +17,7 @@ import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, type StatusGlyph as Glyph } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
-import {
-  canContinue,
-  planLimitReached,
-  unfinishedTooltip,
-  workspaceGlyph,
-} from '@shared/unfinished';
+import { canContinue, planLimitReached, workspaceGlyph } from '@shared/unfinished';
 import { type Workspace, workspaceMerged } from '@shared/workspaces';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -31,13 +26,12 @@ import { NotesIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
 import { GateAnswer } from './WorkflowViews';
 
-/** What Home's rows, cards and quick actions do; the app opens views and dialogs. */
+/** What the Board's cards and Home's quick actions do; the app opens views and dialogs. */
 export interface HomeActions {
   /** Opens the workspace, on its Claude tab when it has one. */
   open: (workspace: Workspace) => void;
   /** The workspace's Claude tab with its Responses panel open at `entry` (spec §6.7). */
   responses: (workspace: Workspace, entry: number | null) => void;
-  openProject: (project: Project) => void;
   /** Review at a gate: the workspace with its spec view (spec §13.8). */
   review: (workspace: Workspace) => void;
   /** Commit…: the workspace with the Changes panel and its commit box in focus. */
@@ -53,40 +47,23 @@ export interface HomeActions {
   /** New workspace in that project: a grouped Board band's + (spec §6.7). */
   newWorkspaceIn: (project: Project) => void;
   addProject: () => void;
-  guide: () => void;
 }
 
-/** A row's or card's action button (components.md, Home); `hover` ones show on hover and focus. */
-export type ActionKind = 'primary' | 'secondary' | 'ghost' | 'danger';
+/** A card's action button (components.md, Board). */
+export type ActionKind = 'primary' | 'secondary' | 'ghost';
 
 const ACTION: Record<ActionKind, string> = {
   primary: 'bg-fg text-on-fg font-medium enabled:hover:opacity-[0.86]',
   secondary: 'border border-line-strong text-fg enabled:hover:bg-raised',
   ghost: 'text-fg-muted enabled:hover:bg-band-strong enabled:hover:text-fg',
-  danger: 'text-st-error enabled:hover:bg-band-strong',
 };
 
-/** Focus on an action: a gap in `gap`'s color, then the focus ring. */
-export const actionRing = (gap: 'term' | 'raised' = 'term') =>
-  `outline-none focus-visible:outline-none ${
-    gap === 'term'
-      ? 'focus-visible:shadow-[0_0_0_2px_var(--color-term),0_0_0_3.5px_var(--color-focus)]'
-      : 'focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)]'
-  }`;
-
-export const ring = actionRing('term');
-
-/** The List's 26px actions; the Board's cards use 24px ones on `raised`. */
-export type ActionSize = 'row' | 'card';
-
-export const actionClass = (kind: ActionKind, size: ActionSize = 'row') =>
-  `inline-flex shrink-0 items-center gap-1.5 rounded-[5px] whitespace-nowrap disabled:opacity-40 ${
-    size === 'row' ? `h-6.5 px-2.5 text-md ${ring}` : `h-6 px-[9px] text-sm ${actionRing('raised')}`
-  } ${ACTION[kind]}`;
+/** A card's 24px action on `raised`; focus a gap in `raised`, then the focus ring. */
+export const actionClass = (kind: ActionKind) =>
+  `inline-flex h-6 shrink-0 items-center gap-1.5 rounded-[5px] px-[9px] text-sm whitespace-nowrap outline-none focus-visible:shadow-[0_0_0_2px_var(--color-raised),0_0_0_3.5px_var(--color-focus)] focus-visible:outline-none disabled:opacity-40 ${ACTION[kind]}`;
 
 export function Action({
   kind,
-  size = 'row',
   title,
   onClick,
   disabled,
@@ -94,7 +71,6 @@ export function Action({
   children,
 }: {
   kind: ActionKind;
-  size?: ActionSize;
   title?: string;
   onClick: () => void;
   disabled?: boolean;
@@ -106,7 +82,7 @@ export function Action({
     <button
       type="button"
       data-home-action={data}
-      className={actionClass(kind, size)}
+      className={actionClass(kind)}
       title={title}
       disabled={disabled}
       onClick={(e) => {
@@ -149,7 +125,7 @@ export function runningMark(w: Pick<Workspace, 'state' | 'background'>): Part | 
 
 /**
  * A workspace with unsent notes (spec §6.15): a small notes mark with their
- * count beside its title on the Board and the List; nothing without any.
+ * count beside its title on a Board card; nothing without any.
  */
 export function NotesMark({ w }: { w: Pick<Workspace, 'notes'> }): ReactNode {
   const counts = w.notes;
@@ -171,16 +147,14 @@ export function NotesMark({ w }: { w: Pick<Workspace, 'notes'> }): ReactNode {
   );
 }
 
-/** What a row (List) or card (Board) shows for a workspace in a section. */
+/** What a Board card shows for a workspace in a section. */
 export interface HomeItem {
   glyph: Glyph | null;
   parts: Part[];
   /** Parts are separated by `·` each (Working now), else after one `·`. */
   dotted: boolean;
-  /** Always shown on a List row; a card's main action. */
+  /** The card's main actions. */
   buttons: ReactNode[];
-  /** Shown on hover and focus. */
-  hover: ReactNode[];
   meta: { text: string; title: string } | null;
   title: 'bold' | 'muted' | null;
   error: string | null;
@@ -240,11 +214,10 @@ export function useNow(): number {
 }
 
 /**
- * What each workspace shows in its section (spec §6.7), shared by the List's
- * rows and the Board's cards. A card (`card`) shows one short status line and
- * one main action: the gate's answer without Review, Unfinished without
- * Dismiss (it stays in the List and the workspace's bar), Working's Open as
- * its main action, Clean up none (Delete is on every card).
+ * What a Board card shows in its section (spec §6.7): one short status line
+ * and its main actions: a gate's Review and answer, Unfinished's
+ * Continue (or Open) and Dismiss, Working's Open, Merged none (Delete is on
+ * every card).
  */
 export function useHomeItems({
   profile,
@@ -292,11 +265,9 @@ export function useHomeItems({
   const setError = (id: string) => (message: string | null) =>
     setErrors((e) => (e[id] === message ? e : { ...e, [id]: message }));
 
-  return (section: HomeSection, w: Workspace, card = false): HomeItem => {
-    const size: ActionSize = card ? 'card' : 'row';
+  return (section: HomeSection, w: Workspace): HomeItem => {
     const parts: Part[] = [];
     const buttons: ReactNode[] = [];
-    const hover: ReactNode[] = [];
     let glyph: Glyph | null = workspaceGlyph(w, launching.has(w.id));
     let meta: HomeItem['meta'] = null;
     let title: HomeItem['title'] = null;
@@ -314,7 +285,6 @@ export function useHomeItems({
       <Action
         key="open"
         kind="secondary"
-        size={size}
         data="open"
         title="Open the Claude tab"
         onClick={() => actions.open(w)}
@@ -325,12 +295,11 @@ export function useHomeItems({
     if (section === 'needs') {
       if (w.state === 'needs-permission') {
         parts.push({ text: 'Needs permission', tone: 'perm' });
-        const what = card ? permissionTool(w.stateMessage) : w.stateMessage;
-        if (what) parts.push({ text: what, tone: card ? 'cmd' : undefined });
+        const what = permissionTool(w.stateMessage);
+        if (what) parts.push({ text: what, tone: 'cmd' });
         buttons.push(open);
       } else if (w.state === 'needs-input') {
         parts.push({ text: 'Waiting for input', tone: 'input' });
-        if (w.stateMessage && !card) parts.push({ text: w.stateMessage });
         buttons.push(open);
       } else if (w.state === 'needs-answer') {
         // Claude Code's notice names no tool, so nothing follows (spec §10.2).
@@ -339,12 +308,11 @@ export function useHomeItems({
       } else if (w.state === 'awaiting-approval') {
         parts.push({ text: 'At' }, { text: w.workflow?.label ?? 'a gate', tone: 'appr' });
         const answers = !!w.workflow?.statuses[w.workflow.index]?.answer;
-        if (w.workflow?.file && !(card && answers)) {
+        if (w.workflow?.file) {
           buttons.push(
             <Action
               key="review"
               kind="secondary"
-              size={size}
               data="review"
               title="Open the spec"
               onClick={() => actions.review(w)}
@@ -363,21 +331,19 @@ export function useHomeItems({
               claudeRunning={sessions.some(
                 (s) => s.workspaceId === w.id && s.kind === 'claude' && s.status !== 'exited',
               )}
-              className={(primary) => actionClass(primary ? 'primary' : 'secondary', size)}
+              className={(primary) => actionClass(primary ? 'primary' : 'secondary')}
               onError={setError(w.id)}
             />,
           );
         }
-        if (!w.workflow?.file && !(card && answers)) buttons.unshift(open);
+        if (!w.workflow?.file && !answers) buttons.unshift(open);
       } else if (w.unfinished) {
         parts.push({ text: 'Unfinished', tone: 'strong' });
-        if (!card) parts.push({ text: unfinishedTooltip(w.unfinished) });
         buttons.push(
           canContinue(w.unfinished.kind) ? (
             <Action
               key="continue"
               kind="secondary"
-              size={size}
               data="continue"
               disabled={!!limit || proceed.isPending}
               title={limit ?? 'Sends the continue prompt from Edit profile'}
@@ -389,19 +355,17 @@ export function useHomeItems({
             open
           ),
         );
-        if (!card) {
-          buttons.push(
-            <Action
-              key="dismiss"
-              kind="ghost"
-              data="dismiss"
-              title="Mark as finished"
-              onClick={() => dismiss.mutate({ workspaceId: w.id })}
-            >
-              Dismiss
-            </Action>,
-          );
-        }
+        buttons.push(
+          <Action
+            key="dismiss"
+            kind="ghost"
+            data="dismiss"
+            title="Mark as finished"
+            onClick={() => dismiss.mutate({ workspaceId: w.id })}
+          >
+            Dismiss
+          </Action>,
+        );
       }
     } else if (section === 'working') {
       glyph = 'working';
@@ -410,11 +374,10 @@ export function useHomeItems({
       if (background) parts.push({ text: background });
       const used = workspaceMemory(memory, w.id);
       if (used) meta = { text: formatBytes(used.total), title: describeSplit(used) };
-      (card ? buttons : hover).push(
+      buttons.push(
         <Action
           key="open"
-          kind={card ? 'secondary' : 'ghost'}
-          size={size}
+          kind="secondary"
           data="open"
           title="Open the workspace"
           onClick={() => actions.open(w)}
@@ -432,7 +395,6 @@ export function useHomeItems({
           <Action
             key="commit"
             kind="secondary"
-            size={size}
             data="commit"
             title={`Review and commit ${step.files} ${step.files === 1 ? 'file' : 'files'}`}
             onClick={() => actions.commit(w)}
@@ -450,7 +412,6 @@ export function useHomeItems({
           <Action
             key="push"
             kind="secondary"
-            size={size}
             data="push"
             disabled={pushing}
             title={
@@ -470,7 +431,6 @@ export function useHomeItems({
           <Action
             key="create-pr"
             kind="secondary"
-            size={size}
             data="create-pr"
             disabled={creating}
             title={
@@ -495,7 +455,6 @@ export function useHomeItems({
             <Action
               key="pr"
               kind="secondary"
-              size={size}
               data="pr"
               title={
                 several
@@ -514,19 +473,6 @@ export function useHomeItems({
       title = 'muted';
       const merged = workspaceMerged(w);
       parts.push({ text: merged ? mergedLabel(merged) : 'Merged' });
-      if (!card) {
-        hover.push(
-          <Action
-            key="delete"
-            kind="danger"
-            data="delete"
-            title="Delete the workspace and its worktree"
-            onClick={() => actions.delete(w)}
-          >
-            Delete
-          </Action>,
-        );
-      }
     }
     // Ready to ship and Clean up keep a Done workspace whose dev server still runs.
     const mark = section === 'ship' || section === 'clean' ? runningMark(w) : null;
@@ -536,7 +482,6 @@ export function useHomeItems({
       parts,
       dotted: section === 'working',
       buttons,
-      hover,
       meta,
       title,
       error,
