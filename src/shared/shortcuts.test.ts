@@ -77,8 +77,6 @@ describe('shortcuts', () => {
     expect(formatShortcut(SHORTCUTS.noteSendNow, false)).toBe('Ctrl+Enter');
     expect(formatShortcut(SHORTCUTS.noteQueue, true)).toBe('⌥↵');
     expect(formatShortcut(SHORTCUTS.noteQueue, false)).toBe('Alt+Enter');
-    expect(formatShortcut(SHORTCUTS.noteEditor, true)).toBe('⌥⌘F');
-    expect(formatShortcut(SHORTCUTS.noteEditor, false)).toBe('Ctrl+Alt+F');
     expect(formatShortcut(SHORTCUTS.responses, true)).toBe('⇧⌘R');
     expect(formatShortcut(SHORTCUTS.notes, true)).toBe('⇧⌘K');
     expect(formatShortcut(SHORTCUTS.notes, false)).toBe('Ctrl+Shift+K');

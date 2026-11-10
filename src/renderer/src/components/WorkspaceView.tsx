@@ -256,14 +256,12 @@ export function WorkspaceView({
     (open: boolean) => onNotesOpen(workspace.id, open),
     [onNotesOpen, workspace.id],
   );
-  // ⌥⌘N's request, by when it was made; cleared once the panel has added the item,
-  // so the panel opening again later doesn't add another.
-  const [addNote, setAddNote] = useState<number | null>(null);
-  const addNoteHandled = useCallback(() => setAddNote(null), []);
+  // ⌥⌘N's request, by when it was made; cleared once the panel's box has the
+  // focus, so the panel opening again later doesn't take it.
+  const [noteFocus, setNoteFocus] = useState<number | null>(null);
+  const noteFocusHandled = useCallback(() => setNoteFocus(null), []);
   const [notesHighlight, setNotesHighlight] = useState<{ ids: string[]; at: number } | null>(null);
   const [responsesFull, setResponsesFull] = useState(false);
-  // The workspace area: the Notes panel's large editor goes over it (spec §6.15).
-  const [area, setArea] = useState<HTMLDivElement | null>(null);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
   const [changesFull, setChangesFull] = useState(false);
   useEffect(() => {
@@ -407,7 +405,7 @@ export function WorkspaceView({
     if (open && narrowRef.current) setResponsesOpen(false);
     setNotesOpen(open);
   }, [setNotesOpen]);
-  // ⇧⌘K shows or hides the Notes panel; ⌥⌘N opens it with a new item (spec §6.6).
+  // ⇧⌘K shows or hides the Notes panel; ⌥⌘N opens it with its box in focus (spec §6.6).
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
       const toggle = matchShortcut('notes', e, isMac) !== -1;
@@ -422,7 +420,7 @@ export function WorkspaceView({
       }
       if (narrowRef.current) setResponsesOpen(false);
       setNotesOpen(true);
-      setAddNote(Date.now());
+      setNoteFocus(Date.now());
     };
     window.addEventListener('keydown', listener, true);
     return () => window.removeEventListener('keydown', listener, true);
@@ -519,6 +517,14 @@ export function WorkspaceView({
     const listener = (e: KeyboardEvent) => {
       if (matchShortcut('restartClaude', e, isMac) === -1) return;
       if (document.querySelector('dialog[open]')) return;
+      // ↵ in a text field beside the terminal (a note, the Notes box) is that field's.
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (
+        target?.matches('input, textarea, [contenteditable="true"]') &&
+        !target.closest('[data-terminal]')
+      ) {
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       startClaude.mutate({ workspaceId: workspace.id });
@@ -736,7 +742,7 @@ export function WorkspaceView({
               }
               aria-pressed={notesOpen}
               aria-label={`Notes${workspace.notes?.unsent ? `, ${workspace.notes.unsent} unsent` : ''}`}
-              title={`Notes: thoughts for Claude, sent when you're ready (${keyHint('notes')}; ${keyHint('addNote')} adds one)`}
+              title={`Notes: thoughts for Claude, sent when you're ready (${keyHint('notes')}; ${keyHint('addNote')} to write one)`}
               onClick={toggleNotes}
             >
               {narrow ? <NotesIcon /> : 'Notes'}
@@ -915,7 +921,7 @@ export function WorkspaceView({
           ✕ {error}
         </p>
       ) : null}
-      <div ref={setArea} data-workspace-area className="relative flex min-h-0 flex-1">
+      <div data-workspace-area className="relative flex min-h-0 flex-1">
         {/* Hidden, not removed, in the Responses panel's full view: the terminal keeps its state. */}
         <div
           className={`min-h-0 min-w-0 flex-1 flex-col bg-term ${(responsesShown && responsesFull) || (changesOpen && changesFull) ? 'hidden' : 'flex'}`}
@@ -964,12 +970,11 @@ export function WorkspaceView({
           <NotesPanel
             workspaceId={workspace.id}
             narrow={narrow}
-            addRequest={addNote}
-            onAddHandled={addNoteHandled}
+            focusRequest={noteFocus}
+            onFocusHandled={noteFocusHandled}
             highlight={notesHighlight}
             onViewResponse={viewResponse}
             onClose={() => setNotesOpen(false)}
-            overlay={area}
           />
         ) : null}
         {changesOpen && !(responsesShown && responsesFull) ? (

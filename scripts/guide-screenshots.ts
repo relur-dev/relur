@@ -29,6 +29,7 @@ import {
   launchApp,
   MOD,
   openContextMenu,
+  pressEnter,
   pressKey,
   type RunningApp,
   sleep,
@@ -611,7 +612,7 @@ async function main() {
 
     // 3. The Notes panel: two notes sent together while Claude works (its
     // answer then written to the transcript, so they lead to it), one queued
-    // for when Claude is done, and two unsent, the first being edited.
+    // for when Claude is done, two unsent, and a thought being typed in the box.
     await pressKey(page, 'KeyK', CMD | MOD.shift);
     await page.waitFor(`!!document.querySelector('[data-notes-panel]')`, 'the Notes panel');
     const noteWith = (text: string) =>
@@ -620,12 +621,10 @@ async function main() {
       const count = `document.querySelectorAll('[data-notes-open] [data-note]').length`;
       const before = await page.eval<number>(count);
       await pressKey(page, 'KeyN', CMD | MOD.alt);
-      await page.waitFor(
-        `${count} === ${before + 1} && document.activeElement?.matches('[data-note-text]')`,
-        'a new note',
-      );
+      await page.waitFor(`document.activeElement?.matches('[data-notes-box]')`, 'the Notes box');
       await page.send('Input.insertText', { text });
-      await sleep(700);
+      await pressEnter(page);
+      await page.waitFor(`${count} === ${before + 1}`, 'a new note');
     };
     const together = [
       'Use a sliding window, not a fixed one.',
@@ -671,11 +670,13 @@ async function main() {
       `${noteWith('When the tests pass, add a line to the PR about the 5-per-minute limit.')}.querySelector('[data-note-hold]').click()`,
     );
     await page.waitFor(`!!document.querySelector('[data-notes-queued] [data-note]')`, 'queued');
-    const editing =
-      "Count only failed logins? A user who mistypes once and then gets in shouldn't burn an attempt.";
-    await addNote(editing);
+    await addNote(
+      "Count only failed logins? A user who mistypes once and then gets in shouldn't burn an attempt.",
+    );
     await addNote('Add a test for two users behind the same proxy (X-Forwarded-For).');
-    await page.eval(`${noteWith(editing)}.querySelector('[data-note-text]').focus()`);
+    await pressKey(page, 'KeyN', CMD | MOD.alt);
+    await page.waitFor(`document.activeElement?.matches('[data-notes-box]')`, 'the Notes box');
+    await page.send('Input.insertText', { text: 'And log each block with the IP and the count' });
     await sleep(800);
     await shoot('notes-panel', null);
     await pressKey(page, 'KeyK', CMD | MOD.shift);

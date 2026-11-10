@@ -480,15 +480,22 @@ export async function waitForFile(
   );
 }
 
-export async function pressEnter(page: Cdp): Promise<void> {
+/** ↵ as typed, with its text (a new line in a text field unless a handler takes it); `modifiers` as MOD. */
+export async function pressEnter(page: Cdp, modifiers = 0): Promise<void> {
   await page.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
     key: 'Enter',
     code: 'Enter',
     windowsVirtualKeyCode: 13,
     text: '\r',
+    modifiers,
   });
-  await page.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter' });
+  await page.send('Input.dispatchKeyEvent', {
+    type: 'keyUp',
+    key: 'Enter',
+    code: 'Enter',
+    modifiers,
+  });
 }
 
 /** CDP modifier bits for Input.dispatchKeyEvent. */

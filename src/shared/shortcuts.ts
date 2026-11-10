@@ -125,29 +125,21 @@ export const SHORTCUTS = {
   },
   addNote: {
     group: 'Workspaces',
-    label: 'Add a note (opens the Notes panel)',
+    label: 'Write a note (opens the Notes panel)',
     // Ctrl+Alt+N on Linux and Windows: no shell or desktop key there (spec §6.6).
     chords: [{ mod: true, alt: true, code: 'KeyN' }],
   },
   noteSendNow: {
     group: 'Workspaces',
-    label: 'In a note: send it now',
+    label: 'In a note or the Notes box: send it now',
     // Ctrl+Enter and Alt+Enter type nothing in a text field on Linux, and
     // aren't shell keys; ⌘↵ is also Confirm, but only in dialogs (spec §6.15).
     chords: [{ mod: true, code: 'Enter' }],
   },
   noteQueue: {
     group: 'Workspaces',
-    label: 'In a note: send it when Claude is done',
+    label: 'In a note or the Notes box: send it when Claude is done',
     chords: [{ alt: true, code: 'Enter' }],
-  },
-  noteEditor: {
-    group: 'Workspaces',
-    label: 'In a note: open it in the large editor, or back',
-    // F for full view, as the Responses panel's ⇧⌘F; Ctrl+Alt+F on Linux and
-    // Windows, as ⌥⌘N is Ctrl+Alt+N: it types nothing in a text field and
-    // isn't a desktop key, unlike Alt+letters (menus) or Ctrl+Shift+U (IBus).
-    chords: [{ mod: true, alt: true, code: 'KeyF' }],
   },
   changesFileStep: {
     group: 'Workspaces',

@@ -5,10 +5,15 @@
  * other held until Claude is done and sent then by itself; both move to Sent,
  * and each View response opens the Responses panel at its own entry, which
  * has the "from notes" label. The Delete dialog mentions an unsent item.
- * Then the panel's keys: Esc leaves a note and a second Esc closes the panel,
- * ⌥↵ holds a note, ⌘↵ refused over a draft offers Queue instead, and both go
- * by themselves once the draft is deleted with ⌫; the footer's
- * "All n, as one prompt", and the Sent section staying collapsed.
+ * Notes are written in the box at the panel's foot, as in a chat: ↵ adds,
+ * ⇧↵ types a new line, an empty box adds nothing, ⌥⌘N focuses it without
+ * adding a note, and its text is kept when the panel closes. Then the keys:
+ * Esc leaves a note or the box and a second Esc closes the panel, ⌥↵ holds a
+ * note, ⌘↵ from the box refused over a draft offers Queue instead, ⌥↵ from
+ * the box holds it, and they go by themselves once the draft is deleted
+ * with ⌫; the footer's "All n, as one prompt", the chat order (Sent, Queued,
+ * open, newest last, scrolled to it), the Sent section staying collapsed,
+ * and a pasted log growing the box, then scrolling, and Show more.
  * Runs with a throwaway HOME and a fake `claude` that writes its transcript
  * as Claude Code does (uuids, a queued prompt as an attachment).
  *
@@ -21,12 +26,15 @@ import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
 import { SEED_CONFIG } from '../src/main/test-support/seed-config';
+import { hint } from '../src/shared/shortcuts';
 import {
   type Cdp,
   chooseFromNextContextMenu,
   clickLabel,
   dialogText,
   launchApp,
+  MOD,
+  pressEnter,
   pressKey,
   pressShortcut,
   type RunningApp,
@@ -186,20 +194,44 @@ const notesIn = (section: 'open' | 'sent') =>
 const noteWith = (text: string) =>
   `[...document.querySelectorAll('[data-note]')].find((n) => (n.querySelector('[data-note-text]')?.value ?? n.querySelector('[data-note-text]')?.textContent ?? '').trim() === ${JSON.stringify(text)})`;
 
-/** Adds a note and types its text: it is focused once it shows. */
-async function writeNote(page: Cdp, add: () => Promise<void>, text: string) {
-  const before = await page.eval<number>(
-    `document.querySelectorAll('[data-notes-open] [data-note]').length`,
-  );
-  await add();
-  await page.waitFor(
-    `document.querySelectorAll('[data-notes-open] [data-note]').length === ${before + 1} && document.activeElement?.matches('[data-note-text]')`,
-    'a new note in focus',
-  );
-  await page.send('Input.insertText', { text });
-  // Saved as you type, after a pause.
-  await sleep(700);
+/** The Notes box, as an expression. */
+const box = `document.querySelector('[data-notes-box]')`;
+/** How many open notes there are, as an expression. */
+const openCount = `document.querySelectorAll('[data-notes-open] [data-note]').length`;
+
+/**
+ * ⌥⌘N: the panel opens, its box in focus. Right after a workspace opens, its
+ * terminal can take the focus back once; ⌥⌘N is pressed again then.
+ */
+async function focusBox(page: Cdp) {
+  for (let attempt = 1; ; attempt++) {
+    await pressShortcut(page, 'addNote');
+    try {
+      await page.waitFor(`document.activeElement === ${box}`, 'the Notes box in focus', 2_000);
+      await sleep(150);
+      if (await page.eval<boolean>(`document.activeElement === ${box}`)) return;
+    } catch (error) {
+      if (attempt === 3) throw error;
+    }
+    if (attempt === 3) throw new Error('the Notes box lost the focus');
+  }
 }
+
+/** Writes a note in the box and adds it with ↵ (or the Add button): the box is empty again. */
+async function writeNote(page: Cdp, text: string, how: 'enter' | 'button' = 'enter') {
+  const before = await page.eval<number>(openCount);
+  await focusBox(page);
+  await page.send('Input.insertText', { text });
+  if (how === 'enter') await pressEnter(page);
+  else await page.eval(`document.querySelector('[data-notes-box-add]').click()`);
+  await page.waitFor(
+    `${openCount} === ${before + 1} && ${box}.value === ''`,
+    `"${text.slice(0, 30)}" added, the box empty`,
+  );
+}
+
+/** Whether the notes list shows its end, as an expression. */
+const listAtEnd = `(() => { const l = document.querySelector('[data-notes-list]'); return l.scrollHeight - l.scrollTop - l.clientHeight < 4; })()`;
 
 async function main() {
   const fx = createFixture();
@@ -244,19 +276,32 @@ async function main() {
     const transcript = path.join(fx.root, 'transcript-notes.jsonl');
     await page.waitFor(`${screenText}.includes('Start the work')`, 'the turn');
 
-    // 2. The Notes panel (⇧⌘K) and two items: Add note, then ⌥⌘N.
+    // 2. The Notes panel (⇧⌘K) and its box: an empty ↵ adds nothing, ⌥⌘N
+    // focuses the box without adding a note, ↵ adds one, the Add button too.
     await pressShortcut(page, 'notes');
     await page.waitFor(has('[data-notes-panel]'), 'the Notes panel');
-    await writeNote(
-      page,
-      () => page.eval(`document.querySelector('[data-note-add]').click()`),
-      'Also update the changelog',
+    await focusBox(page);
+    await pressEnter(page);
+    await sleep(300);
+    assert.equal(await page.eval(openCount), 0, 'an empty box adds nothing');
+    assert.equal(await page.eval(`${box}.value`), '', 'nor types a new line');
+    assert.equal(
+      await page.eval(`document.querySelector('[data-notes-box-add]').disabled`),
+      true,
+      'Add is off while the box is empty',
     );
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Then run the linter');
+    await writeNote(page, 'Also update the changelog');
+    await writeNote(page, 'Then run the linter', 'button');
     assert.deepEqual(await page.eval(notesIn('open')), [
       'Also update the changelog',
       'Then run the linter',
     ]);
+    const tips = await page.eval<string[]>(
+      `['add', 'send', 'hold'].map((b) => document.querySelector('[data-notes-box-' + b + ']').title)`,
+    );
+    assert.match(tips[0] ?? '', /↵|Enter/);
+    assert.ok(tips[1]?.includes(hint('noteSendNow', process.platform === 'darwin')), tips[1]);
+    assert.ok(tips[2]?.includes(hint('noteQueue', process.platform === 'darwin')), tips[2]);
     await page.waitFor(
       `document.querySelector('[data-notes-toggle]')?.textContent.includes('2')`,
       'the count on the Notes toggle',
@@ -301,8 +346,8 @@ async function main() {
     );
     await typeInTerminal(page, 'finish');
     await page.waitFor(
-      `JSON.stringify(${notesIn('sent')}.sort()) === '["Also update the changelog","Then run the linter"]'`,
-      'both notes sent',
+      `JSON.stringify(${notesIn('sent')}) === '["Also update the changelog","Then run the linter"]'`,
+      'both notes sent, the oldest first',
       20_000,
     );
     await page.waitFor(`!document.querySelector('[data-notes-open] [data-note]')`, 'no open notes');
@@ -355,7 +400,16 @@ async function main() {
     // 8. An unsent note: the Delete dialog says it goes with the workspace.
     await page.eval(`document.querySelector('[data-board-card]').click()`);
     await page.waitFor(has('[data-notes-panel]'), 'the Notes panel again');
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'A last thought');
+    // Text left in the box stays there when the panel closes, until it is added.
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'A last thought' });
+    await pressShortcut(page, 'notes');
+    await page.waitFor(`!document.querySelector('[data-notes-panel]')`, 'the panel closed');
+    await pressShortcut(page, 'notes');
+    await page.waitFor(`${box}?.value === 'A last thought'`, 'the box kept its text');
+    await focusBox(page);
+    await pressEnter(page);
+    await page.waitFor(`!!${noteWith('A last thought')} && ${box}.value === ''`, 'added');
     await page.eval(
       `document.querySelector('main [data-terminal] .xterm-helper-textarea')?.focus()`,
     );
@@ -371,12 +425,24 @@ async function main() {
     // 9. The panel's keys and footer (spec §6.15). With two unsent notes the
     // footer offers all of them as one prompt; Esc in a note leaves it, a
     // second Esc closes the panel.
-    await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Held by key');
+    // ⇧↵ types a new line in the box; ↵ then adds both lines as one note.
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'Held by key' });
+    await pressEnter(page, MOD.shift);
+    await page.send('Input.insertText', { text: 'on two lines' });
+    assert.equal(await page.eval(`${box}.value`), 'Held by key\non two lines');
+    await pressEnter(page);
+    await page.waitFor(`!!${noteWith('Held by key\non two lines')}`, 'a two-line note');
     assert.match(
       await page.eval<string>(`document.querySelector('[data-notes-footer]')?.innerText ?? ''`),
       /All 2, as one prompt/,
     );
+    // Esc in the box leaves it, as Esc in a note does.
+    await focusBox(page);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`document.activeElement?.matches('[data-notes-panel]')`, 'the box left');
+    await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
+    await page.waitFor(`document.activeElement?.matches('textarea[data-note-text]')`, 'in a note');
     await pressKey(page, 'Escape');
     await page.waitFor(`document.activeElement?.matches('[data-notes-panel]')`, 'the note left');
     assert.equal(await page.eval(has('[data-notes-panel]')), true, 'still open after one Esc');
@@ -399,36 +465,47 @@ async function main() {
     );
     await page.eval(`document.querySelector('[data-notes-sent-toggle]').click()`);
     await page.waitFor(`!!document.querySelector('[data-notes-sent] [data-note]')`, 'Sent open');
-    // A draft in the terminal while Claude is done: ⌥↵ holds a note, waiting
-    // on it; ⌘↵ is refused, naming the draft, and Queue instead holds that one
-    // too. Then a click into the terminal to focus it, on the prompt line
+    // A draft in the terminal while Claude is done: ⌥↵ in a note holds it,
+    // waiting on the draft; ⌘↵ in the box adds a note and is refused, naming
+    // the draft, and Queue instead holds that one too. Then a click into the terminal to focus it, on the prompt line
     // (where Claude Code would move its cursor), and ⌫ until the prompt is
     // empty, without ↵: both go by themselves.
     const draft = 'half a thought';
     await typeInTerminal(page, draft, false);
     await page.waitFor(`${promptText} === ${JSON.stringify(draft)}`, 'the draft in the input box');
-    await page.eval(`${noteWith('Held by key')}.querySelector('[data-note-text]').focus()`);
+    const twoLines = 'Held by key\non two lines';
+    await page.eval(`${noteWith(twoLines)}.querySelector('[data-note-text]').focus()`);
     await pressShortcut(page, 'noteQueue');
     await page.waitFor(
-      `${noteWith('Held by key')}?.dataset.noteState === 'held' && ${noteWith('Held by key')}.querySelector('[data-note-queued]').textContent.includes(${JSON.stringify(WAITING_DRAFT)})`,
+      `${noteWith(twoLines)}?.dataset.noteState === 'held' && ${noteWith(twoLines)}.querySelector('[data-note-queued]').textContent.includes(${JSON.stringify(WAITING_DRAFT)})`,
       '⌥↵ held it, waiting on the draft',
     );
-    await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'Sent from the box' });
     await pressShortcut(page, 'noteSendNow');
     await page.waitFor(
-      `!!${noteWith('A last thought')}?.querySelector('[data-note-queue-instead]')`,
-      '⌘↵ refused over the draft',
+      `!!${noteWith('Sent from the box')}?.querySelector('[data-note-queue-instead]')`,
+      '⌘↵ in the box added it, refused over the draft',
     );
+    assert.equal(await page.eval(`${box}.value`), '', 'the box empty again');
     assert.match(
-      await page.eval<string>(refusalOf('A last thought')),
+      await page.eval<string>(refusalOf('Sent from the box')),
       /^There may be text in Claude's prompt: send it or clear it with Ctrl\+C/,
     );
     await page.eval(
-      `${noteWith('A last thought')}.querySelector('[data-note-queue-instead]').click()`,
+      `${noteWith('Sent from the box')}.querySelector('[data-note-queue-instead]').click()`,
     );
     await page.waitFor(
-      `${noteWith('A last thought')}?.dataset.noteState === 'held'`,
+      `${noteWith('Sent from the box')}?.dataset.noteState === 'held'`,
       'Queue instead held it',
+    );
+    // In a chat's order: Sent, then Queued, then the open notes.
+    assert.equal(
+      await page.eval<boolean>(
+        `(() => { const [s, q, o] = ['[data-notes-sent]', '[data-notes-queued-section]', '[data-notes-open]'].map((x) => document.querySelector(x)); return !!(s.compareDocumentPosition(q) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(q.compareDocumentPosition(o) & Node.DOCUMENT_POSITION_FOLLOWING); })()`,
+      ),
+      true,
+      'Sent, Queued, then open',
     );
     await page.waitFor(
       `[...document.querySelectorAll('[data-note-queued]')].some((q) => q.textContent.includes(${JSON.stringify(WAITING_DRAFT)}))`,
@@ -446,14 +523,14 @@ async function main() {
     await sleep(1_000);
     assert.deepEqual(
       await page.eval(
-        `[${noteWith('Held by key')}?.dataset.noteState, ${noteWith('A last thought')}?.dataset.noteState]`,
+        `[${noteWith(twoLines)}?.dataset.noteState, ${noteWith('Sent from the box')}?.dataset.noteState]`,
       ),
       ['held', 'held'],
       'one character of the draft left: still waiting',
     );
     await pressKey(page, 'Backspace');
     await page.waitFor(
-      `${notesIn('sent')}.includes('Held by key') && ${notesIn('sent')}.includes('A last thought')`,
+      `${notesIn('sent')}.includes(${JSON.stringify(twoLines)}) && ${notesIn('sent')}.includes('Sent from the box')`,
       'both sent by themselves once the draft was deleted',
       5_000,
     );
@@ -461,17 +538,23 @@ async function main() {
     // A click while the terminal has the focus reaches Claude, which may move
     // its cursor there; the keys can't follow that, Claude's screen can: once
     // it shows the prompt empty after ⌫, a queued note goes.
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'After a click in the draft');
+    // ⌥↵ in the box adds a note and holds it.
+    await page.waitFor(`${promptText} === ''`, "Claude's prompt empty after the last send");
+    await sleep(500);
     await typeInTerminal(page, 'more', false);
     await page.waitFor(`${promptText} === 'more'`, 'a second draft');
-    await page.eval(
-      `${noteWith('After a click in the draft')}.querySelector('[data-note-hold]').click()`,
-    );
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'After a click in the draft' });
+    await pressShortcut(page, 'noteQueue');
     await page.waitFor(
       `${noteWith('After a click in the draft')}?.querySelector('[data-note-queued]')?.textContent.includes(${JSON.stringify(WAITING_DRAFT)})`,
-      'held behind the second draft',
+      '⌥↵ in the box held it behind the second draft',
     );
-    assert.equal(await page.eval(terminalFocused), true, 'the terminal kept the focus');
+    assert.equal(await page.eval(`${box}.value`), '', 'the box empty again');
+    await page.eval(
+      `document.querySelector('main [data-terminal] .xterm-helper-textarea')?.focus()`,
+    );
+    assert.equal(await page.eval(terminalFocused), true, 'the terminal has the focus');
     await clickPromptLine(page);
     const clicked = () =>
       fs.existsSync(mouseFile) && fs.readFileSync(mouseFile, 'utf8').endsWith('m\n');
@@ -484,111 +567,92 @@ async function main() {
       5_000,
     );
 
-    // Room for long notes: a pasted log grows the field at once, up to half
-    // the panel's height, then it scrolls; left, the note shows its first
-    // four lines and "…". ⌥⌘F opens it in the large editor, Done goes back;
-    // ⤢ opens it again, Esc goes back; edited there and sent from there.
+    // Room for long notes: a pasted log grows the box at once, up to 40% of
+    // the panel's height, then it scrolls; added, the box shrinks back and
+    // the list shows the new note at its end. The note shows its first four
+    // lines; Show more shows all of it in place, Show less clamps it again.
     const log = Array.from({ length: 60 }, (_, i) => `log line ${i + 1}: request took 12 ms`).join(
       '\n',
     );
-    await writeNote(page, () => pressShortcut(page, 'addNote'), log);
-    const field = await page.eval<{ height: number; scroll: number; panel: number }>(
-      `(() => { const f = document.activeElement; return { height: f.clientHeight, scroll: f.scrollHeight, panel: document.querySelector('[data-notes-panel]').clientHeight }; })()`,
+    await focusBox(page);
+    const empty = await page.eval<number>(`${box}.clientHeight`);
+    await page.send('Input.insertText', { text: log });
+    const grown = await page.eval<{ height: number; scroll: number; panel: number }>(
+      `({ height: ${box}.clientHeight, scroll: ${box}.scrollHeight, panel: document.querySelector('[data-notes-panel]').clientHeight })`,
     );
-    assert.ok(field.height > 150, `the field grew with the paste (${field.height}px)`);
-    assert.ok(
-      field.height <= field.panel / 2 + 2,
-      `at most half the panel (${JSON.stringify(field)})`,
+    assert.ok(grown.height > 120, `the box grew with the paste (${grown.height}px)`);
+    assert.ok(grown.height <= grown.panel * 0.4 + 2, `at most 40% (${JSON.stringify(grown)})`);
+    assert.ok(grown.scroll > grown.height + 100, 'then it scrolls');
+    await screenshot(page, screenshotDir, 'n5-box-grown.png');
+    await pressEnter(page);
+    await page.waitFor(`!!${noteWith(log)} && ${box}.value === ''`, 'the log added');
+    assert.equal(await page.eval(`${box}.clientHeight`), empty, 'the box shrank back');
+    assert.equal(
+      await page.eval(
+        `[...document.querySelectorAll('[data-notes-open] [data-note]')].at(-1) === ${noteWith(log)}`,
+      ),
+      true,
+      'the newest last',
     );
-    assert.ok(field.scroll > field.height + 100, 'then it scrolls');
-    await pressKey(page, 'Escape');
-    await page.waitFor(`!!${noteWith(log)}?.querySelector('[data-note-preview]')`, 'its preview');
+    await page.waitFor(listAtEnd, 'the list at its newest note');
+    const clamp = `${noteWith(log)}.querySelector('[data-note-clamp]')`;
     const preview = await page.eval<{ height: number; scroll: number; clamp: string }>(
-      `(() => { const p = ${noteWith(log)}.querySelector('[data-note-preview] [data-note-clamp]'); return { height: p.clientHeight, scroll: p.scrollHeight, clamp: getComputedStyle(p).webkitLineClamp }; })()`,
+      `({ height: ${clamp}.clientHeight, scroll: ${clamp}.scrollHeight, clamp: getComputedStyle(${clamp}).webkitLineClamp })`,
     );
     assert.equal(preview.clamp, '4', 'four lines, then "…"');
     assert.ok(preview.height < 100 && preview.scroll > preview.height, JSON.stringify(preview));
-    await screenshot(page, screenshotDir, 'n5-long-note.png');
-    const editor = '[data-note-editor]';
-    const editorText = `document.querySelector('[data-note-editor-text]')`;
-    /**
-     * Back from the editor: it goes, and a frame later its note has the focus
-     * again. Keys for the terminal wait for that, or the note takes them.
-     */
-    const backFromEditor = async (what: string) => {
-      await page.waitFor(`!document.querySelector('${editor}')`, what);
-      await page.waitFor(
-        `!!document.activeElement?.closest('[data-notes-panel] [data-note]')`,
-        `${what}: the note in focus again`,
+    await page.eval(`${noteWith(log)}.querySelector('[data-note-more]').click()`);
+    await page.waitFor(
+      `${clamp}.clientHeight > 600 && ${noteWith(log)}.querySelector('[data-note-more]').textContent === 'Show less'`,
+      'Show more showed all of it',
+    );
+    assert.equal(
+      await page.eval(`document.activeElement?.matches('textarea[data-note-text]') ?? false`),
+      false,
+      'without editing it',
+    );
+    await screenshot(page, screenshotDir, 'n6-show-more.png');
+    await page.eval(`${noteWith(log)}.querySelector('[data-note-more]').click()`);
+    await page.waitFor(`${clamp}.clientHeight < 100`, 'Show less clamped it again');
+    // A short note has no Show more.
+    assert.equal(
+      await page.eval(`!!${noteWith('A last thought')}.querySelector('[data-note-more]')`),
+      false,
+    );
+
+    // Focus after an action (spec §6.15): from a focused button, the focus
+    // follows the item to its new section, or goes to the box once it's gone.
+    const pressOn = (text: string, button: string) =>
+      page.eval(
+        `(() => { const n = ${noteWith(text)}; n.focus(); const b = n.querySelector('${button}'); b.focus(); b.click(); })()`,
       );
-    };
-    await page.eval(`${noteWith(log)}.querySelector('[data-note-text]').focus()`);
-    await page.waitFor(`document.activeElement?.matches('textarea[data-note-text]')`, 'editing it');
-    await pressShortcut(page, 'noteEditor');
+    const inFocus = (text: string) => `document.activeElement === ${noteWith(text)}`;
+    await pressOn('Also update the changelog', '[data-note-reopen]');
     await page.waitFor(
-      `${editorText}?.value === ${JSON.stringify(log)} && document.activeElement === ${editorText}`,
-      '⌥⌘F opened it in the large editor, in focus',
+      `${noteWith('Also update the changelog')}?.dataset.noteState === 'open' && ${inFocus('Also update the changelog')}`,
+      'Move back: the item in focus among the open ones',
     );
-    assert.equal(await page.eval(`document.querySelector('${editor}').dataset.noteState`), 'open');
-    await screenshot(page, screenshotDir, 'n6-editor.png');
-    await page.eval(`document.querySelector('[data-note-editor-done]').click()`);
-    await backFromEditor('Done went back');
-    await page.eval(`${noteWith(log)}.querySelector('[data-note-expand]').click()`);
-    await page.waitFor(`document.activeElement === ${editorText}`, '⤢ opened it');
-    const added = '\nlast line added in the editor';
-    await page.send('Input.insertText', { text: added });
-    await sleep(700);
-    await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('${editor}')`, 'Esc went back');
-    assert.equal(await page.eval(has('[data-notes-panel]')), true, 'the panel stays open');
-    await page.waitFor(`!!${noteWith(log + added)}`, 'the edit shows in the panel');
-    await page.eval(`${noteWith(log + added)}.querySelector('[data-note-expand]').click()`);
-    await page.waitFor(
-      `${editorText}?.value === ${JSON.stringify(log + added)}`,
-      'kept when opened again',
-    );
-    await page.eval(`document.querySelector('${editor} [data-note-send-now]').click()`);
-    await page.waitFor(`!document.querySelector('${editor}')`, 'sent: the editor goes');
-    await page.waitFor(`${notesIn('sent')}.includes(${JSON.stringify(log + added)})`, 'in Sent');
-    for (let i = 0; i < 50 && !fs.readFileSync(transcript, 'utf8').includes('last line added'); i++)
-      await sleep(100);
-    assert.ok(
-      fs.readFileSync(transcript, 'utf8').includes('last line added in the editor'),
-      'Claude got the edited text',
-    );
-    // A sent note opens read-only, with Copy.
-    await page.eval(`${noteWith(log + added)}.querySelector('[data-note-expand]').click()`);
-    await page.waitFor(
-      `document.querySelector('${editor}')?.dataset.noteState === 'sent' && ${editorText}.readOnly && !!document.querySelector('${editor} [data-note-copy]')`,
-      'a sent note read-only with Copy',
-    );
-    await pressKey(page, 'Escape');
-    await backFromEditor('back from the sent note');
-    // A queued note opens read-only, with Send now and Cancel.
+    await page.waitFor(`${promptText} === ''`, "Claude's prompt empty");
     await typeInTerminal(page, 'x', false);
-    await page.waitFor(`${promptText} === 'x'`, 'a draft to hold it');
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Queued and long enough');
-    await pressShortcut(page, 'noteQueue');
+    await page.waitFor(`${promptText} === 'x'`, 'a draft to hold a note');
+    await pressOn('A last thought', '[data-note-hold]');
     await page.waitFor(
-      `${noteWith('Queued and long enough')}?.dataset.noteState === 'held'`,
-      'queued',
+      `${noteWith('A last thought')}?.dataset.noteState === 'held' && ${inFocus('A last thought')}`,
+      'When done: the item in focus in Queued',
     );
-    await page.eval(
-      `${noteWith('Queued and long enough')}.querySelector('[data-note-expand]').click()`,
-    );
+    await pressOn('A last thought', '[data-note-cancel]');
     await page.waitFor(
-      `document.querySelector('${editor}')?.dataset.noteState === 'held' && ${editorText}.readOnly && !!document.querySelector('${editor} [data-note-cancel]')`,
-      'a queued note read-only with Cancel',
+      `${noteWith('A last thought')}?.dataset.noteState === 'open' && ${inFocus('A last thought')}`,
+      'Cancel: the item in focus among the open ones',
     );
-    await pressKey(page, 'Escape');
-    await backFromEditor('back from the queued note');
+    await pressOn('A last thought', '[data-note-delete]');
+    await page.waitFor(
+      `!${noteWith('A last thought')} && document.activeElement === ${box}`,
+      'deleted: the box in focus',
+    );
     await typeInTerminal(page, '', false);
     await pressKey(page, 'Backspace');
-    await page.waitFor(
-      `${notesIn('sent')}.includes('Queued and long enough')`,
-      'the queued note sent once the draft went',
-      5_000,
-    );
+    await page.waitFor(`${promptText} === ''`, 'the draft gone');
 
     // A fresh workspace: its Claude waits at its prompt in Starting, before
     // any prompt. Send now types a note there, and a held one goes at once.
@@ -601,14 +665,16 @@ async function main() {
     await page.waitFor(`${promptText} === ''`, "its Claude's empty input box", 30_000);
     if (!(await page.eval<boolean>(has('[data-notes-panel]')))) await pressShortcut(page, 'notes');
     await page.waitFor(has('[data-notes-panel]'), 'its Notes panel');
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'First words');
+    await writeNote(page, 'First words');
+    // The panel opening resized the terminal: Claude redraws its prompt first.
+    await sleep(700);
     await page.eval(`${noteWith('First words')}.querySelector('[data-note-send-now]').click()`);
     await page.waitFor(`${notesIn('sent')}.includes('First words')`, 'sent now in Starting');
     await page.waitFor(`${screenText}.includes('Noted: First words')`, 'Claude took it');
     // Claude has ended: the refusal says so.
     await typeInTerminal(page, 'exit');
     await page.waitFor(`${screenText}.includes('process exited')`, 'Claude ended');
-    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Too late');
+    await writeNote(page, 'Too late');
     await page.eval(`${noteWith('Too late')}.querySelector('[data-note-send-now]').click()`);
     await page.waitFor(
       `${refusalOf('Too late')}.startsWith("Claude isn't running in this workspace")`,

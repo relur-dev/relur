@@ -1,5 +1,5 @@
 import { NOTE_MAX, type Note, QUEUED } from '@shared/notes';
-import { matchShortcut } from '@shared/shortcuts';
+import { formatChord, matchShortcut } from '@shared/shortcuts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubscription } from '@trpc/tanstack-react-query';
 import {
@@ -12,7 +12,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, isMac, Kbd, keyHint } from '../ui/controls';
 import { TrashIcon } from '../ui/icons';
@@ -36,11 +35,42 @@ function sentCollapsed(): string[] {
   }
 }
 
-/** Narrower than this, labels shorten (Add note becomes +, View response View). */
+/** Text typed in each workspace's box and not added yet (spec §6.15), kept in this window's storage. */
+const DRAFTS_KEY = 'notes-drafts';
+/** How many workspaces' boxes it remembers; the oldest drop out. */
+const DRAFTS_MAX = 200;
+
+function drafts(): [string, string][] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '[]');
+    if (!Array.isArray(value)) return [];
+    return value.filter(
+      (v): v is [string, string] =>
+        Array.isArray(v) && typeof v[0] === 'string' && typeof v[1] === 'string',
+    );
+  } catch {
+    return [];
+  }
+}
+
+const draftOf = (workspaceId: string) => drafts().find(([id]) => id === workspaceId)?.[1] ?? '';
+
+/** Keeps the box's text for the workspace; empty forgets it. */
+function keepDraft(workspaceId: string, text: string): void {
+  const rest = drafts().filter(([id]) => id !== workspaceId);
+  const next = text ? [...rest, [workspaceId, text] as [string, string]].slice(-DRAFTS_MAX) : rest;
+  remember(DRAFTS_KEY, next.length ? JSON.stringify(next) : null);
+}
+
+/** Narrower than this, labels shorten (View response becomes View, Send when done When done). */
 const COMPACT_WIDTH = 360;
 
-/** How long typing rests before an item is saved. */
+/** How long typing rests before an item, or the box's text, is saved. */
 const SAVE_MS = 300;
+
+/** ↵ and ⇧↵ in the box, as hint text: plain keys of a text field, not app shortcuts. */
+const ENTER = formatChord({ code: 'Enter' }, isMac);
+const SHIFT_ENTER = formatChord({ shift: true, code: 'Enter' }, isMac);
 
 /** Puts the Claude terminal in focus, as Esc in the other panels does. */
 const focusTerminal = () =>
@@ -82,26 +112,6 @@ const quiet = `inline-flex ${quietLook}`;
 /** The trash button of a row: turns `st-error` on hover. */
 const trash = `inline-flex size-6 shrink-0 items-center justify-center rounded-[5px] text-fg-subtle transition-colors duration-120 hover:bg-band-strong hover:text-st-error ${ringIn}`;
 
-/** A frameless 24px icon button of a row, `fg-subtle`, `fg` on hover. */
-const iconQuiet = `inline-flex size-6 shrink-0 items-center justify-center rounded-[5px] text-sm text-fg-subtle transition-colors duration-120 hover:bg-band-strong hover:text-fg ${ringIn}`;
-
-/** ⤢, the Responses panel's Full view mark: opens the item in the large editor (spec §6.15). */
-function ExpandButton({ onClick, className = '' }: { onClick: () => void; className?: string }) {
-  return (
-    <button
-      type="button"
-      data-note-expand
-      className={`${iconQuiet} ${className}`}
-      title={`Open in the large editor (${keyHint('noteEditor')})`}
-      aria-label="Open in the large editor"
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-    >
-      <span aria-hidden>⤢</span>
-    </button>
-  );
-}
-
 /** Where in its text a click on a preview landed, for the caret; null when not on the text. */
 function caretAt(event: { clientX: number; clientY: number; currentTarget: Element }) {
   const range = document.caretRangeFromPoint?.(event.clientX, event.clientY);
@@ -109,12 +119,43 @@ function caretAt(event: { clientX: number; clientY: number; currentTarget: Eleme
   return range.startContainer.nodeType === Node.TEXT_NODE ? range.startOffset : null;
 }
 
-/** ⌥⌘F on a queued or sent item, or a control in it: the large editor. */
-const expandKey = (onExpand: () => void) => (event: KeyboardEvent) => {
-  if (matchShortcut('noteEditor', event.nativeEvent, isMac) === -1) return;
-  event.preventDefault();
-  onExpand();
-};
+/**
+ * A text clamped to its first lines (spec §6.15): whether it is longer than
+ * them, and Show more's state, which shows all of it in place.
+ */
+function useClamp<T extends HTMLElement>(text: string) {
+  const ref = useRef<T>(null);
+  const [more, setMore] = useState(false);
+  const [long, setLong] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measured again when the text changes
+  useLayoutEffect(() => {
+    const element = ref.current;
+    // Expanded, it isn't clamped, so it stays long until clamped again.
+    if (!element || more) return;
+    const measure = () => setLong(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [text, more]);
+  return { ref, more, long, toggle: () => setMore((current) => !current) };
+}
+
+/** Show more / Show less under a clamped text. */
+function ShowMore({ more, onToggle }: { more: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      data-note-more
+      aria-expanded={more}
+      className={`self-start rounded-[3px] px-0.5 text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline ${ringIn}`}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onToggle}
+    >
+      {more ? 'Show less' : 'Show more'}
+    </button>
+  );
+}
 
 /** A refused send (spec §6.15): the reason in `st-permission` with its triangle. */
 function RefusalLine({ children }: { children: ReactNode }) {
@@ -132,15 +173,14 @@ function RefusalLine({ children }: { children: ReactNode }) {
 
 /**
  * An open item (spec §6.15): plain text until hovered or edited, saved as
- * you type. A long one shows its first four lines with "…" until it is
- * edited; editing, its field grows with the text up to half the panel's
- * height, then scrolls. Its checkbox and actions show on the item you're
- * on; ⌘↵ sends it, ⌥↵ holds it, ⌥⌘F opens the large editor, Esc leaves it.
- * Empty, it goes when it loses focus.
+ * you type. A long one shows its first four lines with Show more, which
+ * shows all of it in place; editing, its field grows with the text up to
+ * half the panel's height, then scrolls. Its checkbox and actions show on
+ * the item you're on; ⌘↵ sends it, ⌥↵ holds it, Esc leaves it. Empty, it
+ * goes when it loses focus.
  */
 const OpenNote = memo(function OpenNote({
   note,
-  focus,
   selected,
   selecting,
   highlighted,
@@ -149,11 +189,9 @@ const OpenNote = memo(function OpenNote({
   onSendNow,
   onHold,
   onDelete,
-  onExpand,
   onLeave,
 }: {
   note: Note;
-  focus: boolean;
   selected: boolean;
   /** Any item is ticked: every checkbox shows, per-item actions step aside. */
   selecting: boolean;
@@ -164,8 +202,6 @@ const OpenNote = memo(function OpenNote({
   onSendNow: (ids: string[]) => void;
   onHold: (ids: string[]) => void;
   onDelete: (ids: string[]) => void;
-  /** Opens it in the large editor (spec §6.15). */
-  onExpand: (id: string) => void;
   /** Esc in the field: the focus goes to the panel, so a second Esc closes it. */
   onLeave: () => void;
 }) {
@@ -190,10 +226,8 @@ const OpenNote = memo(function OpenNote({
   // Saved when the panel closes or the workspace changes, too.
   useEffect(() => save, [save]);
   const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    if (focus) ref.current?.focus();
-  }, [focus]);
   const filled = text.trim().length > 0;
+  const clamp = useClamp<HTMLSpanElement>(text);
   // Its preview gave way to the field: in focus, the caret where it was clicked.
   const caret = useRef<number | null>(null);
   const [opening, setOpening] = useState(false);
@@ -207,10 +241,6 @@ const OpenNote = memo(function OpenNote({
     caret.current = null;
     field.setSelectionRange(at, at);
   }, [opening]);
-  const expand = () => {
-    save();
-    onExpand(note.id);
-  };
   const sendNow = () => {
     save();
     onSendNow([note.id]);
@@ -225,11 +255,6 @@ const OpenNote = memo(function OpenNote({
       event.preventDefault();
       event.stopPropagation();
       onLeave();
-      return;
-    }
-    if (matchShortcut('noteEditor', event.nativeEvent, isMac) !== -1) {
-      event.preventDefault();
-      if (filled) expand();
       return;
     }
     const send = matchShortcut('noteSendNow', event.nativeEvent, isMac) !== -1;
@@ -247,8 +272,16 @@ const OpenNote = memo(function OpenNote({
       data-note-state={note.state}
       data-highlighted={highlighted ? 'true' : undefined}
       data-selecting={selecting ? 'true' : undefined}
-      className={`group/note flex gap-2 border-b border-line py-2 pr-2.5 pl-3 transition-colors duration-300 ${
-        highlighted ? 'bg-focus/10' : selected ? 'bg-band-strong' : editing ? '' : 'hover:bg-band'
+      // In focus itself after an action moved it here (spec §6.15).
+      tabIndex={-1}
+      className={`group/note flex gap-2 border-b border-line py-2 pr-2.5 pl-3 outline-none transition-colors duration-300 ${
+        highlighted
+          ? 'bg-focus/10'
+          : selected
+            ? 'bg-band-strong'
+            : editing
+              ? ''
+              : 'hover:bg-band focus:bg-band'
       }`}
     >
       <label
@@ -277,27 +310,38 @@ const OpenNote = memo(function OpenNote({
       </label>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         {filled && !editing ? (
-          // Not edited: its first four lines, "…" after them; a click edits it there.
-          // biome-ignore lint/a11y/useSemanticElements: it stands in for the field, which replaces it on focus
-          <div
-            data-note-text
-            data-note-preview
-            role="textbox"
-            tabIndex={0}
-            aria-label="Note"
-            className="min-h-[30px] cursor-text rounded-[5px] border border-transparent px-2 py-[5px] text-base leading-[19px] break-words whitespace-pre-wrap text-fg outline-none"
-            onMouseDown={(event) => {
-              caret.current = caretAt(event);
-            }}
-            onFocus={() => {
-              setEditing(true);
-              setOpening(true);
-            }}
-          >
-            {/* Clamped inside the padding, so no fifth line shows under the "…". */}
-            <span data-note-clamp className="line-clamp-4">
-              {text}
-            </span>
+          <div className="flex flex-col gap-0.5">
+            {/* Not edited: its first four lines, Show more for the rest; a click edits it there. */}
+            {/* biome-ignore lint/a11y/useSemanticElements: it stands in for the field, which replaces it on focus */}
+            <div
+              data-note-text
+              data-note-preview
+              role="textbox"
+              tabIndex={0}
+              aria-label="Note"
+              className="min-h-[30px] cursor-text rounded-[5px] border border-transparent px-2 py-[5px] text-base leading-[19px] break-words whitespace-pre-wrap text-fg outline-none"
+              onMouseDown={(event) => {
+                caret.current = caretAt(event);
+              }}
+              onFocus={() => {
+                setEditing(true);
+                setOpening(true);
+              }}
+            >
+              {/* Clamped inside the padding, so no fifth line shows under the "…". */}
+              <span
+                ref={clamp.ref}
+                data-note-clamp
+                className={clamp.more ? 'block' : 'line-clamp-4'}
+              >
+                {text}
+              </span>
+            </div>
+            {clamp.long ? (
+              <span className="px-1.5">
+                <ShowMore more={clamp.more} onToggle={clamp.toggle} />
+              </span>
+            ) : null}
           </div>
         ) : (
           <textarea
@@ -367,7 +411,6 @@ const OpenNote = memo(function OpenNote({
               {editing ? <Kbd>{keyHint('noteQueue')}</Kbd> : null}
             </button>
             <span className="flex-1" />
-            <ExpandButton onClick={expand} />
             <button
               type="button"
               data-note-delete
@@ -388,9 +431,9 @@ const OpenNote = memo(function OpenNote({
 
 /**
  * A held item (spec §6.15) in the Queued section: its text, read-only (its
- * first four lines, "…" after them), the Queued pill and, on the first, what
- * the items wait on; Send now sends it anyway, Cancel puts it back with the
- * open items, ⤢ shows all of it in the large editor.
+ * first four lines, Show more for the rest), the Queued pill and, on the
+ * first, what the items wait on; Send now sends it anyway, Cancel puts it
+ * back with the open items.
  */
 const HeldNote = memo(function HeldNote({
   note,
@@ -399,7 +442,6 @@ const HeldNote = memo(function HeldNote({
   refusal,
   onSendNow,
   onCancel,
-  onExpand,
 }: {
   note: Note;
   /** What held items wait on; null on all but the first. */
@@ -408,26 +450,27 @@ const HeldNote = memo(function HeldNote({
   refusal: Refusal | null;
   onSendNow: (ids: string[]) => void;
   onCancel: (ids: string[]) => void;
-  onExpand: (id: string) => void;
 }) {
   const gate = waiting?.startsWith('Waiting: Claude is at ') ?? false;
+  const clamp = useClamp<HTMLParagraphElement>(note.text);
   return (
     <li
       data-note={note.id}
       data-note-state="held"
       data-highlighted={highlighted ? 'true' : undefined}
-      // In focus itself back from the large editor (spec §6.15).
+      // In focus itself after an action, as its actions show only on the item you're on (spec §6.15).
       tabIndex={-1}
       className={`group/note flex gap-2 border-b border-line py-2 pr-2.5 pl-9 outline-none transition-colors duration-300 ${highlighted ? 'bg-focus/10' : 'hover:bg-band focus:bg-band'}`}
-      onKeyDown={expandKey(() => onExpand(note.id))}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
         <p
+          ref={clamp.ref}
           data-note-text
-          className="line-clamp-4 text-base leading-[1.45] break-words whitespace-pre-wrap text-fg select-text"
+          className={`${clamp.more ? '' : 'line-clamp-4'} text-base leading-[1.45] break-words whitespace-pre-wrap text-fg select-text`}
         >
           {note.text}
         </p>
+        {clamp.long ? <ShowMore more={clamp.more} onToggle={clamp.toggle} /> : null}
         <div
           data-note-queued
           className="flex min-w-0 items-center gap-[7px] text-[11.5px] text-fg-muted"
@@ -471,18 +514,15 @@ const HeldNote = memo(function HeldNote({
         >
           Cancel
         </button>
-        <ExpandButton
-          className="hidden group-focus-within/note:inline-flex group-hover/note:inline-flex"
-          onClick={() => onExpand(note.id)}
-        />
       </div>
     </li>
   );
 });
 
 /**
- * A sent item (spec §6.15): quieter, its time, and on hover or focus its
- * actions: View response, Copy, Move back, the large editor and delete.
+ * A sent item (spec §6.15): quieter, two lines with Show more for the rest,
+ * its time, and on hover or focus its actions: View response, Copy, Move
+ * back and delete.
  */
 const SentNote = memo(function SentNote({
   note,
@@ -492,7 +532,6 @@ const SentNote = memo(function SentNote({
   onViewResponse,
   onReopen,
   onDelete,
-  onExpand,
 }: {
   note: Note;
   sent: SentPrompt | null;
@@ -501,7 +540,6 @@ const SentNote = memo(function SentNote({
   onViewResponse: (entry: number) => void;
   onReopen: (ids: string[]) => void;
   onDelete: (ids: string[]) => void;
-  onExpand: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -509,6 +547,7 @@ const SentNote = memo(function SentNote({
     const timer = setTimeout(() => setCopied(false), 1500);
     return () => clearTimeout(timer);
   }, [copied]);
+  const clamp = useClamp<HTMLParagraphElement>(note.text);
   const entry = sent?.entry ?? null;
   const elsewhere = entry === null && (sent?.elsewhere ?? false);
   return (
@@ -516,18 +555,18 @@ const SentNote = memo(function SentNote({
       data-note={note.id}
       data-note-state="sent"
       data-highlighted={highlighted ? 'true' : undefined}
-      // In focus itself back from the large editor (spec §6.15).
+      // In focus itself after an action, as its actions show only on the item you're on (spec §6.15).
       tabIndex={-1}
       className={`group/note flex flex-col gap-1 outline-none transition-colors duration-300 ${highlighted ? 'bg-focus/10' : ''}`}
-      onKeyDown={expandKey(() => onExpand(note.id))}
     >
       <p
+        ref={clamp.ref}
         data-note-text
-        className="line-clamp-2 text-md leading-[1.45] whitespace-pre-wrap text-fg-muted select-text"
-        title={note.text}
+        className={`${clamp.more ? '' : 'line-clamp-2'} text-md leading-[1.45] break-words whitespace-pre-wrap text-fg-muted select-text`}
       >
         {note.text}
       </p>
+      {clamp.long ? <ShowMore more={clamp.more} onToggle={clamp.toggle} /> : null}
       <div className="flex h-6 min-w-0 items-center gap-1">
         <span
           data-note-sent-at
@@ -583,7 +622,6 @@ const SentNote = memo(function SentNote({
           >
             Move back
           </button>
-          <ExpandButton onClick={() => onExpand(note.id)} />
           <button
             type="button"
             data-note-delete
@@ -600,280 +638,209 @@ const SentNote = memo(function SentNote({
   );
 });
 
+/** The box's text as a note: without blank lines before it or whitespace after it. */
+const noteText = (text: string) => text.replace(/^(?:[ \t]*\n)+/, '').trimEnd();
+
 /**
- * The large editor (spec §6.15): one item over the whole workspace area, as
- * the Responses panel's Full view, its text in a column up to 900px wide. An
- * open item is edited there, saved as you type, with Send now (⌘↵) and When
- * done (⌥↵); a queued one is read-only with Send now and Cancel, a sent one
- * read-only with Copy. Done, Esc or ⌥⌘F go back to the panel.
+ * The box at the panel's foot (spec §6.15), as a chat's composer: ↵ adds
+ * its text as a new note, ⇧↵ types a new line, ⌘↵ adds it and sends it
+ * now, ⌥↵ adds it and holds it until Claude is done; an empty box adds
+ * nothing. It grows with its text up to 40% of the panel's height, then
+ * scrolls, and shrinks back once the note is added. Text not added yet is
+ * kept per workspace in this window's storage. Esc leaves it.
  */
-function NoteEditor({
-  note,
-  waiting,
-  refusal,
-  onText,
+function Composer({
+  workspaceId,
+  focusRequest,
+  onFocusHandled,
+  onAdded,
   onSendNow,
   onHold,
-  onCancel,
-  onClose,
+  onLeave,
 }: {
-  note: Note;
-  /** What held items wait on, for a queued one. */
-  waiting: string | null;
-  refusal: Refusal | null;
-  /** The text typed, at once, so the panel shows it too. */
-  onText: (id: string, text: string) => void;
-  /** These resolve true once sent or held: the editor then goes. */
-  onSendNow: (ids: string[]) => Promise<boolean>;
-  onHold: (ids: string[]) => Promise<boolean>;
-  onCancel: (ids: string[]) => void;
-  onClose: () => void;
+  workspaceId: string;
+  /** ⌥⌘N asked for the box, by when; null when none is waiting. */
+  focusRequest: number | null;
+  onFocusHandled: () => void;
+  /** A note was added: the list shows it and scrolls to it. */
+  onAdded: (id: string) => void;
+  onSendNow: (ids: string[]) => void;
+  onHold: (ids: string[]) => void;
+  onLeave: () => void;
 }) {
-  const editable = note.state === 'open';
-  const [text, setText] = useState(note.text);
-  const unsaved = useRef<string | null>(null);
+  const [text, setText] = useState(() => draftOf(workspaceId));
+  const [error, setError] = useState<string | null>(null);
+  // The text typed and not kept yet.
+  const unkept = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (unsaved.current === null) setText(note.text);
-  }, [note.text]);
-  const save = useCallback(() => {
+  const keep = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    const value = unsaved.current;
+    const value = unkept.current;
     if (value === null) return;
-    unsaved.current = null;
-    void trpcClient.notes.setText.mutate({ id: note.id, text: value }).catch(() => {
-      // the item was sent or deleted meanwhile
-    });
-  }, [note.id]);
-  useEffect(() => save, [save]);
+    unkept.current = null;
+    keepDraft(workspaceId, value);
+  }, [workspaceId]);
+  // Kept when the panel closes or the workspace changes, too.
+  useEffect(() => keep, [keep]);
+  const change = (value: string) => {
+    setText(value);
+    setError(null);
+    unkept.current = value;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(keep, SAVE_MS);
+  };
+
   const ref = useRef<HTMLTextAreaElement>(null);
-  // In focus when it opens, the caret at the end of an open item's text.
+  // ⌥⌘N, also from elsewhere in the workspace: the box in focus, once per request.
+  const lastFocus = useRef<number | null>(null);
   useLayoutEffect(() => {
+    if (focusRequest === null || focusRequest === lastFocus.current) return;
+    lastFocus.current = focusRequest;
     const field = ref.current;
-    if (!field) return;
-    field.focus();
-    if (editable) field.setSelectionRange(field.value.length, field.value.length);
-    else field.setSelectionRange(0, 0);
-  }, [editable]);
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-  const filled = text.trim().length > 0;
-  const close = () => {
-    save();
-    onClose();
+    if (field) {
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
+    onFocusHandled();
+  }, [focusRequest, onFocusHandled]);
+
+  const filled = noteText(text).length > 0;
+  const submit = (then: 'add' | 'send' | 'hold') => {
+    const value = noteText(text);
+    if (!value) return;
+    // Emptied at once, so a second ↵ adds nothing twice; back when adding fails.
+    change('');
+    keep();
+    void trpcClient.notes.add.mutate({ workspaceId, text: value }).then(
+      (note) => {
+        onAdded(note.id);
+        if (then === 'send') onSendNow([note.id]);
+        else if (then === 'hold') onHold([note.id]);
+      },
+      (failure: unknown) => {
+        change(value);
+        keep();
+        setError(message(failure));
+      },
+    );
   };
-  const sendNow = () => {
-    save();
-    void onSendNow([note.id]).then((ok) => ok && onClose());
-  };
-  const hold = () => {
-    save();
-    void onHold([note.id]).then((ok) => ok && onClose());
-  };
-  const onKeyDown = (event: KeyboardEvent) => {
-    // Esc goes back to the panel, never closes it (the panel's own Esc).
-    if (event.key === 'Escape' || matchShortcut('noteEditor', event.nativeEvent, isMac) !== -1) {
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Escape') {
+      // Leaves the box; the panel's own Esc closes it (spec §6.15).
       event.preventDefault();
       event.stopPropagation();
-      close();
+      keep();
+      onLeave();
       return;
     }
-    if (!editable) return;
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     const send = matchShortcut('noteSendNow', event.nativeEvent, isMac) !== -1;
-    const queue = !send && matchShortcut('noteQueue', event.nativeEvent, isMac) !== -1;
-    if (!send && !queue) return;
+    const hold = !send && matchShortcut('noteQueue', event.nativeEvent, isMac) !== -1;
+    const plain = !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey;
+    // ⇧↵ types a new line.
+    if (!send && !hold && !plain) return;
     event.preventDefault();
-    if (!filled) return;
-    if (send) sendNow();
-    else hold();
+    submit(send ? 'send' : hold ? 'hold' : 'add');
   };
-  const gate = waiting?.startsWith('Waiting: Claude is at ') ?? false;
+
   return (
-    <section
-      data-note-editor
-      data-note-state={note.state}
-      aria-label="Note"
-      className="absolute inset-0 z-30 flex min-h-0 flex-col bg-canvas"
-      onKeyDown={onKeyDown}
-    >
-      <div className="flex h-[34px] shrink-0 items-center gap-1 border-b border-line pr-1.5 pl-3.5">
-        <span className="text-base font-semibold">Note</span>
-        {note.state === 'held' ? (
-          <span className="ml-1.5 flex min-w-0 items-center gap-[7px] text-[11.5px] text-fg-muted">
-            <span className="flex h-[17px] shrink-0 items-center gap-1 rounded-[9px] border border-line-strong px-1.5 font-medium text-fg">
-              <span className="box-border size-[7px] rounded-full border-[1.3px] border-current" />
-              Queued
-            </span>
-            {waiting && waiting !== QUEUED ? (
-              <span
-                className={`min-w-0 truncate font-medium ${gate ? 'text-st-approval' : 'text-st-permission'}`}
-              >
-                {waiting}
-              </span>
-            ) : null}
-          </span>
-        ) : note.state === 'sent' ? (
-          <span className="ml-1.5 font-mono text-[11.5px] whitespace-nowrap text-fg-subtle">
-            Sent {sentTime(note.sentAt)}
-          </span>
-        ) : (
-          <span className="ml-1.5 truncate text-sm text-fg-subtle">Saved as you type</span>
-        )}
-        <span className="flex-1" />
-        {editable ? (
-          <>
-            <button
-              type="button"
-              data-note-send-now
-              className={`${button('secondary', 'sm')} rounded-[5px] ${ringOut}`}
-              disabled={!filled}
-              title={`Type it into Claude now, as a quick reply (${keyHint('noteSendNow')})`}
-              onClick={sendNow}
-            >
-              Send now <Kbd>{keyHint('noteSendNow')}</Kbd>
-            </button>
-            <button
-              type="button"
-              data-note-hold
-              className={quiet}
-              disabled={!filled}
-              title={`Hold it and send it when Claude finishes its turn (${keyHint('noteQueue')})`}
-              onClick={hold}
-            >
-              When done <Kbd>{keyHint('noteQueue')}</Kbd>
-            </button>
-          </>
-        ) : note.state === 'held' ? (
-          <>
-            <button
-              type="button"
-              data-note-send-now
-              className={quiet}
-              title="Send it now, without waiting"
-              onClick={sendNow}
-            >
-              Send now
-            </button>
-            <button
-              type="button"
-              data-note-cancel
-              className={quiet}
-              title="Don't send it; back to the unsent notes"
-              onClick={() => onCancel([note.id])}
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            data-note-copy
-            className={quiet}
-            title="Copy the text"
-            onClick={() =>
-              void trpcClient.clipboard.writeText
-                .mutate({ text: note.text })
-                .then(() => setCopied(true))
-            }
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        )}
-        <button
-          type="button"
-          data-note-editor-done
-          className={`${quiet} h-[26px] gap-1.5 px-2 text-md`}
-          title={`Back to the Notes panel (Esc, ${keyHint('noteEditor')})`}
-          onClick={close}
-        >
-          <span aria-hidden className="text-sm">
-            ⤡
-          </span>
-          Done
-        </button>
-      </div>
-      {refusal ? (
-        <div className="mx-auto w-full max-w-[900px] px-6 pt-3">
-          <RefusalLine>
-            <span className="min-w-0 flex-1">{refusal.message}</span>
-            {editable ? (
-              <button
-                type="button"
-                data-note-queue-instead
-                className={`shrink-0 rounded-[3px] px-0.5 text-sm font-medium text-fg underline underline-offset-2 ${ringIn}`}
-                title="Send it when Claude is done instead"
-                onClick={hold}
-              >
-                Queue instead
-              </button>
-            ) : null}
-          </RefusalLine>
-        </div>
+    <div data-notes-composer className="shrink-0 border-t border-line bg-canvas p-2.5">
+      {error ? (
+        <p role="alert" className="mb-1.5 px-0.5 text-sm text-st-error select-text">
+          ✕ {error}
+        </p>
       ) : null}
-      <div className="mx-auto flex min-h-0 w-full max-w-[900px] flex-1 flex-col px-6 py-4">
+      <div className="flex flex-col rounded-[5px] border border-line-strong bg-term focus-within:border-focus">
         <textarea
           ref={ref}
-          data-note-editor-text
-          value={editable ? text : note.text}
-          readOnly={!editable}
+          data-notes-box
+          value={text}
           maxLength={NOTE_MAX}
+          rows={1}
           placeholder="A thought for Claude…"
-          aria-label="Note"
-          className={`min-h-0 w-full flex-1 resize-none rounded-[5px] border border-line bg-term px-3 py-2.5 text-base leading-[1.55] outline-none placeholder:text-fg-subtle focus:border-focus ${editable ? 'text-fg' : 'text-fg-muted'}`}
-          onChange={(event) => {
-            setText(event.target.value);
-            unsaved.current = event.target.value;
-            onText(note.id, event.target.value);
-            if (timer.current) clearTimeout(timer.current);
-            timer.current = setTimeout(save, SAVE_MS);
-          }}
+          aria-label="New note"
+          className="max-h-[40cqh] min-h-[30px] w-full resize-none bg-transparent px-2.5 pt-[7px] pb-1 text-base leading-[19px] text-fg outline-none [field-sizing:content] placeholder:text-fg-subtle"
+          onChange={(event) => change(event.target.value)}
+          onBlur={keep}
+          onKeyDown={onKeyDown}
         />
+        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <span className="flex-1" />
+          <button
+            type="button"
+            data-notes-box-hold
+            className={quiet}
+            disabled={!filled}
+            title={`Add it and send it when Claude finishes its turn (${keyHint('noteQueue')})`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => submit('hold')}
+          >
+            When done
+          </button>
+          <button
+            type="button"
+            data-notes-box-send
+            className={quiet}
+            disabled={!filled}
+            title={`Add it and type it into Claude now, as a quick reply (${keyHint('noteSendNow')})`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => submit('send')}
+          >
+            Send now
+          </button>
+          <button
+            type="button"
+            data-notes-box-add
+            className={`${button('primary', 'sm')} rounded-[5px] outline-none focus-visible:shadow-[0_0_0_2px_var(--color-term),0_0_0_3.5px_var(--color-focus)]`}
+            disabled={!filled}
+            title={`Add it as a note (${ENTER}; ${SHIFT_ENTER} for a new line)`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => submit('add')}
+          >
+            Add
+          </button>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
-/** Sent items in runs that went out in the same prompt, newest first. */
+/** Sent items in runs that went out in the same prompt, in the order they were sent. */
 function bySend(sent: readonly Note[]): Note[][] {
+  // The list has them newest first.
   const runs: Note[][] = [];
   for (const note of sent) {
     const last = runs.at(-1);
     if (last && note.sendId && last[0]?.sendId === note.sendId) last.push(note);
     else runs.push([note]);
   }
-  return runs;
+  return runs.reverse();
 }
 
 /**
  * A workspace's Notes panel (spec §6.15): a scratchpad of items written
  * while Claude works, each sent when ready: now, as a quick reply, or held
  * until Claude finishes its turn; several go as one prompt, each its own
- * point. Unsent items first, then the Queued section, then Sent, which
- * collapses. Its left edge resizes it.
+ * point. In a chat's order, above the box that adds them: Sent (which
+ * collapses), then the Queued section, then the unsent items, the newest
+ * last. Its left edge resizes it.
  */
 export function NotesPanel({
   workspaceId,
   narrow,
-  addRequest,
-  onAddHandled,
+  focusRequest,
+  onFocusHandled,
   highlight,
   onViewResponse,
   onClose,
-  overlay,
 }: {
   workspaceId: string;
   narrow: boolean;
-  /** The workspace area, where the large editor goes over the terminal and the panels. */
-  overlay: HTMLElement | null;
-  /** Add note asked for (⌥⌘N), by when: a new item, in focus; null when none is waiting. */
-  addRequest: number | null;
-  /** The request was handled: it is cleared, so opening the panel again adds nothing. */
-  onAddHandled: () => void;
+  /** ⌥⌘N asked for the box, by when: it gets the focus; null when none is waiting. */
+  focusRequest: number | null;
+  /** The request was handled: it is cleared, so opening the panel again doesn't take the focus. */
+  onFocusHandled: () => void;
   /** Items to show: a Responses entry's "from notes" label; `at` tells requests apart. */
   highlight: { ids: string[]; at: number } | null;
   /** Opens the Responses panel at this entry (0-based). */
@@ -895,8 +862,7 @@ export function NotesPanel({
     ),
   );
   const refresh = useCallback(
-    () =>
-      void queryClient.invalidateQueries({ queryKey: trpc.notes.list.queryKey({ workspaceId }) }),
+    () => queryClient.invalidateQueries({ queryKey: trpc.notes.list.queryKey({ workspaceId }) }),
     [queryClient, trpc, workspaceId],
   );
   const notes = view.data?.notes ?? [];
@@ -920,8 +886,42 @@ export function NotesPanel({
     });
   }, []);
 
+  const listRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
+  /**
+   * After an action, the focus is never lost (spec §6.15): when the control
+   * that had it went with the item's move (to Queued, Sent or back to the
+   * open items) or with the item, it lands on the item in its new place, or
+   * on the box when the item is gone. Focus elsewhere stays where it is.
+   * The move can render before the action answers (the change comes by the
+   * subscription) or after, so it is checked after every render of the list
+   * from the action's start until the focus is lost or goes elsewhere.
+   */
+  const focusAfter = useRef<{ id: string | undefined; until: number } | null>(null);
+  const checkFocus = useCallback(() => {
+    const pending = focusAfter.current;
+    if (!pending) return;
+    if (Date.now() > pending.until) {
+      focusAfter.current = null;
+      return;
+    }
+    const active = document.activeElement;
+    const lost = !active || active === document.body || !active.isConnected;
+    if (!lost) {
+      // Still in the panel: the move may not have rendered yet.
+      if (!asideRef.current?.contains(active)) focusAfter.current = null;
+      return;
+    }
+    focusAfter.current = null;
+    const item = pending.id
+      ? listRef.current?.querySelector<HTMLElement>(`[data-note="${CSS.escape(pending.id)}"]`)
+      : null;
+    (item ?? asideRef.current?.querySelector<HTMLElement>('[data-notes-box]'))?.focus();
+  }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: checked after each render of new data
+  useLayoutEffect(() => checkFocus(), [view.data, checkFocus]);
+
   const [refusals, setRefusals] = useState<Record<string, Refusal>>({});
-  const [focusId, setFocusId] = useState<string | null>(null);
   /** Runs an action on items: true once it went through, false with its refusal shown. */
   const run = useCallback(
     (ids: string[], action: () => Promise<unknown>): Promise<boolean> => {
@@ -930,11 +930,16 @@ export function NotesPanel({
         for (const id of ids) delete next[id];
         return next;
       });
+      focusAfter.current = { id: ids.at(-1), until: Date.now() + 5_000 };
+      const settled = (ok: boolean) =>
+        refresh().then(() => {
+          requestAnimationFrame(checkFocus);
+          return ok;
+        });
       return action().then(
         () => {
           setSelected((current) => new Set([...current].filter((id) => !ids.includes(id))));
-          refresh();
-          return true;
+          return settled(true);
         },
         (error: unknown) => {
           const refusal = { message: message(error), ids };
@@ -942,12 +947,11 @@ export function NotesPanel({
             ...current,
             ...Object.fromEntries(ids.map((id) => [id, refusal])),
           }));
-          refresh();
-          return false;
+          return settled(false);
         },
       );
     },
-    [refresh],
+    [refresh, checkFocus],
   );
   const onSendNow = useCallback(
     (ids: string[]) => run(ids, () => trpcClient.notes.sendNow.mutate({ workspaceId, ids })),
@@ -969,57 +973,6 @@ export function NotesPanel({
     (ids: string[]) => run(ids, () => trpcClient.notes.delete.mutate({ workspaceId, ids })),
     [run, workspaceId],
   );
-  // The large editor (spec §6.15): one item over the workspace area.
-  const [editorId, setEditorId] = useState<string | null>(null);
-  const editorNote = editorId ? (notes.find((n) => n.id === editorId) ?? null) : null;
-  // A deleted item takes its editor with it.
-  useEffect(() => {
-    if (editorId && view.data && !editorNote) setEditorId(null);
-  }, [editorId, editorNote, view.data]);
-  const onExpand = useCallback((id: string) => setEditorId(id), []);
-  // What the editor types shows in the panel at once; it saves on its own.
-  const onEditorText = useCallback(
-    (id: string, text: string) =>
-      queryClient.setQueryData(trpc.notes.list.queryKey({ workspaceId }), (current) =>
-        current
-          ? { ...current, notes: current.notes.map((n) => (n.id === id ? { ...n, text } : n)) }
-          : current,
-      ),
-    [queryClient, trpc, workspaceId],
-  );
-  /**
-   * Back from the editor: the item in focus again in the panel, where it still
-   * is (spec §6.15). An open one's field; a queued or sent one takes the focus
-   * itself, as its actions show only on the item you're on.
-   */
-  const closeEditor = useCallback(() => {
-    const id = editorId;
-    setEditorId(null);
-    requestAnimationFrame(() => {
-      const item = listRef.current?.querySelector<HTMLElement>(
-        `[data-note="${CSS.escape(id ?? '')}"]`,
-      );
-      const target =
-        item?.querySelector<HTMLElement>('[data-note-preview], textarea[data-note-text]') ??
-        item ??
-        asideRef.current;
-      target?.focus();
-    });
-  }, [editorId]);
-  const add = useCallback(() => {
-    void trpcClient.notes.add.mutate({ workspaceId }).then((note) => {
-      setFocusId(note.id);
-      refresh();
-    });
-  }, [workspaceId, refresh]);
-  // ⌥⌘N, also from elsewhere in the workspace: a new item, once per request.
-  const lastAdd = useRef<number | null>(null);
-  useEffect(() => {
-    if (addRequest === null || addRequest === lastAdd.current) return;
-    lastAdd.current = addRequest;
-    add();
-    onAddHandled();
-  }, [addRequest, add, onAddHandled]);
 
   // The Sent section, collapsed or not, per workspace.
   const [sentOpen, setSentOpen] = useState(() => !sentCollapsed().includes(workspaceId));
@@ -1032,9 +985,53 @@ export function NotesPanel({
     remember(SENT_COLLAPSED_KEY, next.length ? JSON.stringify(next) : null);
   };
 
+  // The list, as a chat's: it opens at the newest, follows a note added from
+  // the box, and stays at the newest while the box grows or shrinks.
+  const atEnd = useRef(true);
+  const opened = useRef(false);
+  const scrollToEnd = useCallback(() => {
+    const end = () => {
+      const list = listRef.current;
+      if (list) list.scrollTop = list.scrollHeight;
+      atEnd.current = true;
+    };
+    end();
+    // Again once a long note's Show more has shown, a render later.
+    requestAnimationFrame(end);
+  }, []);
+  // A note added from the box, until it is listed (the change can come
+  // before the add answers, or after).
+  const [added, setAdded] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (!view.data) return;
+    if (!opened.current) {
+      opened.current = true;
+      scrollToEnd();
+    }
+    if (added && view.data.notes.some((n) => n.id === added)) {
+      setAdded(null);
+      scrollToEnd();
+    }
+  }, [view.data, added, scrollToEnd]);
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const observer = new ResizeObserver(() => {
+      if (atEnd.current) scrollToEnd();
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [scrollToEnd]);
+  const onAdded = useCallback(
+    (id: string) => {
+      setAdded(id);
+      void refresh();
+    },
+    [refresh],
+  );
+
   // From a Responses entry's label: its items in view, marked for a moment.
   const [marked, setMarked] = useState<Set<string>>(new Set());
-  const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!highlight) return;
     setMarked(new Set(highlight.ids));
@@ -1052,7 +1049,6 @@ export function NotesPanel({
       ?.scrollIntoView({ block: 'nearest' });
   }, [marked, view.data]);
 
-  const asideRef = useRef<HTMLElement>(null);
   const { width, handle } = usePanelWidth(WIDTH_KEY, asideRef, narrow ? PANEL_MIN_WIDTH : 360);
   const compact = width < COMPACT_WIDTH;
   const close = () => {
@@ -1085,25 +1081,10 @@ export function NotesPanel({
       tabIndex={-1}
       onKeyDown={onKeyDown}
       style={{ width }}
-      // A size container: an item's field grows to half the panel's height (50cqh).
+      // A size container: an item's field grows to half the panel's height
+      // (50cqh), the box to 40% of it.
       className="relative flex min-h-0 shrink-0 flex-col border-l border-line bg-canvas outline-none [container-type:size]"
     >
-      {editorNote && overlay
-        ? createPortal(
-            <NoteEditor
-              key={editorNote.id}
-              note={editorNote}
-              waiting={editorNote.state === 'held' ? waiting : null}
-              refusal={refusals[editorNote.id] ?? null}
-              onText={onEditorText}
-              onSendNow={onSendNow}
-              onHold={onHold}
-              onCancel={onCancel}
-              onClose={closeEditor}
-            />,
-            overlay,
-          )
-        : null}
       <div
         data-notes-resize
         title="Drag to resize"
@@ -1116,21 +1097,6 @@ export function NotesPanel({
           {counts}
         </span>
         <span className="flex-1" />
-        <button
-          type="button"
-          data-note-add
-          className={`inline-flex h-[26px] shrink-0 items-center gap-[7px] rounded-[5px] px-2 text-md whitespace-nowrap text-fg transition-colors duration-120 hover:bg-band-strong ${ringIn}`}
-          title={`Add note (${keyHint('addNote')})`}
-          aria-label="Add note"
-          onClick={add}
-        >
-          <span className="text-[14px] leading-none text-fg-muted">+</span>
-          {compact ? null : (
-            <>
-              Add note <Kbd>{keyHint('addNote')}</Kbd>
-            </>
-          )}
-        </button>
         <button
           type="button"
           className={`inline-flex size-[26px] shrink-0 items-center justify-center rounded-[5px] text-base text-fg-muted transition-colors duration-120 hover:bg-band-strong hover:text-fg ${ringIn}`}
@@ -1146,75 +1112,35 @@ export function NotesPanel({
           ✕ {view.error.message}
         </p>
       ) : null}
-      <div ref={listRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div
+        ref={listRef}
+        data-notes-list
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        onScroll={(event) => {
+          const list = event.currentTarget;
+          atEnd.current = list.scrollHeight - list.scrollTop - list.clientHeight < 4;
+        }}
+      >
         {view.data && notes.length === 0 ? (
           <div
             data-notes-empty
-            className="flex flex-1 flex-col items-start justify-center gap-3 px-7 pt-6 pb-20"
+            className="flex flex-1 flex-col items-start justify-center px-7 pt-6 pb-10"
           >
             <p className="text-md leading-[1.55] text-pretty text-fg-muted">
               Jot down thoughts while Claude works. They stay private until you send them, one at a
               time or together as one prompt.
             </p>
-            <button
-              type="button"
-              className={`${button('secondary', 'md')} rounded-[5px] ${ringOut}`}
-              onClick={add}
-            >
-              Add note <Kbd>{keyHint('addNote')}</Kbd>
-            </button>
           </div>
         ) : null}
-        {open.length > 0 ? (
-          <ul data-notes-open>
-            {open.map((n) => (
-              <OpenNote
-                key={n.id}
-                note={n}
-                focus={focusId === n.id}
-                selected={chosen.includes(n.id)}
-                selecting={selecting}
-                highlighted={marked.has(n.id)}
-                refusal={refusals[n.id] ?? null}
-                onSelect={onSelect}
-                onSendNow={onSendNow}
-                onHold={onHold}
-                onDelete={onDelete}
-                onExpand={onExpand}
-                onLeave={leaveNote}
-              />
-            ))}
-          </ul>
-        ) : null}
-        {held.length > 0 ? (
-          <section data-notes-queued-section>
-            <h3 className="flex h-[30px] shrink-0 items-center gap-[7px] px-3.5 pt-2.5 text-[11.5px] font-semibold text-fg-subtle">
-              Queued <span className="font-mono font-normal">{held.length}</span>
-              <span className="ml-1 h-px flex-1 bg-line" />
-            </h3>
-            <ul data-notes-queued>
-              {held.map((n, i) => (
-                <HeldNote
-                  key={n.id}
-                  note={n}
-                  waiting={i === 0 ? waiting : null}
-                  highlighted={marked.has(n.id)}
-                  refusal={refusals[n.id] ?? null}
-                  onSendNow={onSendNow}
-                  onCancel={onCancel}
-                  onExpand={onExpand}
-                />
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {/* Pushes a short list down to the box, as in a chat. */}
+        <div className="flex-1" />
         {sent.length > 0 ? (
           <section data-notes-sent data-collapsed={sentOpen ? 'false' : 'true'}>
             <button
               type="button"
               data-notes-sent-toggle
               aria-expanded={sentOpen}
-              className={`mt-2.5 flex h-[34px] w-full items-center gap-[7px] px-3.5 text-left text-[11.5px] font-semibold text-fg-subtle hover:text-fg-muted ${ringIn}`}
+              className={`flex h-[34px] w-full items-center gap-[7px] px-3.5 text-left text-[11.5px] font-semibold text-fg-subtle hover:text-fg-muted ${ringIn}`}
               title={sentOpen ? 'Collapse the sent notes' : 'Show the sent notes'}
               onClick={toggleSent}
             >
@@ -1250,7 +1176,6 @@ export function NotesPanel({
                           onViewResponse={onViewResponse}
                           onReopen={onReopen}
                           onDelete={onDelete}
-                          onExpand={onExpand}
                         />
                       ))}
                     </ul>
@@ -1259,6 +1184,46 @@ export function NotesPanel({
               </ul>
             ) : null}
           </section>
+        ) : null}
+        {held.length > 0 ? (
+          <section data-notes-queued-section>
+            <h3 className="flex h-[30px] shrink-0 items-center gap-[7px] px-3.5 pt-2.5 text-[11.5px] font-semibold text-fg-subtle">
+              Queued <span className="font-mono font-normal">{held.length}</span>
+              <span className="ml-1 h-px flex-1 bg-line" />
+            </h3>
+            <ul data-notes-queued>
+              {held.map((n, i) => (
+                <HeldNote
+                  key={n.id}
+                  note={n}
+                  waiting={i === 0 ? waiting : null}
+                  highlighted={marked.has(n.id)}
+                  refusal={refusals[n.id] ?? null}
+                  onSendNow={onSendNow}
+                  onCancel={onCancel}
+                />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {open.length > 0 ? (
+          <ul data-notes-open className={sent.length + held.length > 0 ? 'mt-2.5' : ''}>
+            {open.map((n) => (
+              <OpenNote
+                key={n.id}
+                note={n}
+                selected={chosen.includes(n.id)}
+                selecting={selecting}
+                highlighted={marked.has(n.id)}
+                refusal={refusals[n.id] ?? null}
+                onSelect={onSelect}
+                onSendNow={onSendNow}
+                onHold={onHold}
+                onDelete={onDelete}
+                onLeave={leaveNote}
+              />
+            ))}
+          </ul>
         ) : null}
       </div>
       {selecting || filled.length > 1 ? (
@@ -1307,6 +1272,16 @@ export function NotesPanel({
           ) : null}
         </div>
       ) : null}
+      <Composer
+        key={workspaceId}
+        workspaceId={workspaceId}
+        focusRequest={focusRequest}
+        onFocusHandled={onFocusHandled}
+        onAdded={onAdded}
+        onSendNow={onSendNow}
+        onHold={onHold}
+        onLeave={leaveNote}
+      />
     </aside>
   );
 }
