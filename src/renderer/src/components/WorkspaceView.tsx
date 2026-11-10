@@ -24,7 +24,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ConversationAids, NavigatorState } from '../terminal/conversation';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, iconButton, isMac, Kbd, keyHint } from '../ui/controls';
-import { ChangesIcon, EditorIcon, NotesIcon, ResponsesIcon, TrashIcon } from '../ui/icons';
+import {
+  AttachIcon,
+  ChangesIcon,
+  EditorIcon,
+  NotesIcon,
+  ResponsesIcon,
+  TrashIcon,
+} from '../ui/icons';
 import { takeRequest, takeResponseEntry } from '../ui/open-requests';
 import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
@@ -425,6 +432,29 @@ export function WorkspaceView({
     window.addEventListener('keydown', listener, true);
     return () => window.removeEventListener('keydown', listener, true);
   }, [toggleNotes, setNotesOpen]);
+  // Add files (spec §6.16): the system's picker, then the paths into the
+  // terminal shown, as a drop would put them; ⇧⌘A as the button.
+  const [filesRequest, setFilesRequest] = useState<{ paths: string[]; at: number } | null>(null);
+  const filesHandled = useCallback(() => setFilesRequest(null), []);
+  const canAddFiles = !!active && !showDoc && active.kind !== 'setup';
+  const canAddFilesRef = useRef(canAddFiles);
+  canAddFilesRef.current = canAddFiles;
+  const addFiles = useCallback(async () => {
+    if (!canAddFilesRef.current) return;
+    const paths = await trpcClient.sessions.pickFiles.mutate();
+    if (paths.length > 0) setFilesRequest({ paths, at: Date.now() });
+  }, []);
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => {
+      if (matchShortcut('addFiles', e, isMac) === -1) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void addFiles();
+    };
+    window.addEventListener('keydown', listener, true);
+    return () => window.removeEventListener('keydown', listener, true);
+  }, [addFiles]);
   // A sent note's View response: the Claude tab with the Responses panel at its entry.
   const claudeSession = sessions.find((s) => s.kind === 'claude') ?? null;
   const viewResponse = (index: number) => {
@@ -734,6 +764,23 @@ export function WorkspaceView({
           <div data-view-buttons className="flex items-center gap-1">
             <button
               type="button"
+              data-add-files
+              className={narrow ? iconButton : button('ghost', 'sm')}
+              disabled={!canAddFiles}
+              aria-label="Add files"
+              title={`Add files: their paths into ${active?.kind === 'claude' ? "Claude's prompt" : 'the shell'}, not sent; or drop them on the terminal (${keyHint('addFiles')})`}
+              onClick={() => void addFiles()}
+            >
+              {narrow ? (
+                <AttachIcon />
+              ) : (
+                <>
+                  Add files <Kbd>{keyHint('addFiles')}</Kbd>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
               data-notes-toggle
               className={
                 narrow
@@ -937,6 +984,9 @@ export function WorkspaceView({
               key={`${active.id}:${active.generation}`}
               sessionId={active.id}
               resuming={active.status === 'suspended' || active.resuming}
+              files={active.kind === 'claude' ? 'claude' : 'shell'}
+              filesRequest={filesRequest}
+              onFilesHandled={filesHandled}
               conversation={
                 active.kind === 'claude'
                   ? { workspaceId: workspace.id, onState: onNavigator, onAids: setAids }

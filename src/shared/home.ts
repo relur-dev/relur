@@ -359,6 +359,27 @@ export function replyRefusal(
 }
 
 /**
+ * Why dropped or chosen files can't be added to Claude's prompt now (spec
+ * §6.16); null when they can. The quick reply's facts, but the paths go in at
+ * the cursor, so a draft doesn't stop them, nor does a merged workspace.
+ */
+export function insertRefusal(
+  w: Pick<Workspace, 'state' | 'unfinished'>,
+  facts: QuickReplyFacts,
+): string | null {
+  const asIf = { ...facts, draft: false };
+  switch (quickReply(w, 'idle', asIf)) {
+    case 'field':
+      return null;
+    case 'open':
+      return 'Claude is asking for permission: answer it, then add the files';
+    case 'question':
+      return 'Claude is asking a question: answer it, then add the files';
+  }
+  return replyRefusal(w, 'idle', asIf);
+}
+
+/**
  * "Bash" from "Claude needs your permission to use Bash", else the message;
  * nothing for Claude Code's "Claude needs your permission" without a tool (its
  * question tool's notice, which the card shows as the question instead).

@@ -251,6 +251,27 @@ export class SuspendService {
   }
 
   /**
+   * Whether text inserted at the cursor of this Claude's prompt needs a space
+   * before it (spec §6.16): a draft whose character before the cursor isn't
+   * one, or a draft the app is unsure of.
+   */
+  spaceBefore(sessionId: string): boolean {
+    const draft = this.facts.get(sessionId)?.draft;
+    if (!draft || !holdsDraft(draft)) return false;
+    if (draft.unsure) return true;
+    return draft.cursor > 0 && !/\s/.test(draft.text[draft.cursor - 1] ?? '');
+  }
+
+  /**
+   * A main checkout's Claude as its hooks tell it (spec §9.8): its state, and
+   * whether its question tool waits. Null for a workspace's or an unknown one.
+   */
+  mainClaude(sessionId: string): { state: WorkspaceState; asking: boolean } | null {
+    const main = this.facts.get(sessionId)?.main;
+    return main ? { state: main.state, asking: main.asking } : null;
+  }
+
+  /**
    * Calls `listener` when a Claude's prompt starts or stops holding a draft,
    * or shows for the first time: held notes go once nothing is typed there
    * any more (spec §6.15).

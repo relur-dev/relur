@@ -19,5 +19,6 @@
   "restore",
   "markers",
   "notes",
-  "merge"
+  "merge",
+  "drop"
 ]

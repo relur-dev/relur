@@ -35,6 +35,13 @@ export const NotesIcon = () => (
   </Icon>
 );
 
+/** Add files: a paper clip. */
+export const AttachIcon = () => (
+  <Icon>
+    <path d="M10.5 4.5 5.8 9.2a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4.2-4.2" />
+  </Icon>
+);
+
 /** Open in editor: a square with an arrow out of it. */
 export const EditorIcon = () => (
   <Icon>

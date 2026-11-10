@@ -239,7 +239,13 @@ export function HomeView({
           </p>
         ) : null}
         <div className="min-h-0 flex-1">
-          {session ? <TerminalView key={session.id} sessionId={session.id} /> : null}
+          {session ? (
+            <TerminalView
+              key={session.id}
+              sessionId={session.id}
+              files={session.kind === 'claude' ? 'claude' : 'shell'}
+            />
+          ) : null}
         </div>
       </div>
     </div>

@@ -9,8 +9,9 @@ import type {
   TerminalMark,
   TerminalServerMessage,
 } from '@shared/terminal-protocol';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConversationAids, type NavigatorState } from '../terminal/conversation';
+import { carriesFiles, droppedPaths } from '../terminal/file-drop';
 import { openTerminalPort } from '../terminal/ports';
 import { isMouseReport, watchPrompt } from '../terminal/prompt-screen';
 import { mouseWheelHandler } from '../terminal/wheel';
@@ -59,8 +60,19 @@ export function TerminalView({
   conversation,
   resuming = false,
   focusOnConnect = true,
+  files,
+  filesRequest = null,
+  onFilesHandled,
 }: {
   sessionId: string;
+  /**
+   * Takes dropped files (spec §6.16): into Claude's prompt (`claude`) or as a
+   * shell's quoted paths (`shell`). Left out, a drop does nothing.
+   */
+  files?: 'claude' | 'shell';
+  /** Files chosen with Add files, to insert as a drop would; `at` tells requests apart. */
+  filesRequest?: { paths: string[]; at: number } | null;
+  onFilesHandled?: () => void;
   /** Whether it takes the focus once connected; read then, so a late connection follows it. */
   focusOnConnect?: boolean;
   /**
@@ -77,6 +89,7 @@ export function TerminalView({
   };
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
   const aidsRef = useRef<ConversationAids | null>(null);
   const [nav, setNav] = useState<NavigatorState>({
     count: 0,
@@ -235,6 +248,7 @@ export function TerminalView({
     onAidsRef.current?.(aids);
     // Scripted checks read the buffer and the aids' markers.
     Object.assign(container, { xterm: term, aids });
+    termRef.current = term;
     // Marks apply where the output has got to, so they wait for earlier writes.
     const addMark = (mark: TerminalMark) =>
       term.write('', () => {
@@ -388,16 +402,121 @@ export function TerminalView({
         webgl = null;
         releaseContext();
       }
+      termRef.current = null;
       term.dispose();
     };
   }, [sessionId, fontReady, workspaceId]);
+
+  // Dropped and chosen files (spec §6.16): the main process checks Claude
+  // and types them there; a shell's text is pasted here, so xterm wraps it as
+  // a paste only where the shell asked for that.
+  const [dropOver, setDropOver] = useState(false);
+  const dragDepth = useRef(0);
+  // A drag that ends elsewhere (cancelled with Esc, dropped outside the
+  // window) may send no dragleave; dragover repeats while it stays here.
+  const dragTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(dragTimer.current), []);
+  const [refusal, setRefusal] = useState<{ text: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!refusal) return;
+    const timer = setTimeout(() => setRefusal(null), 5000);
+    return () => clearTimeout(timer);
+  }, [refusal]);
+  const insertFiles = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) return;
+      setRefusal(null);
+      try {
+        const result = await trpcClient.sessions.insertFiles.mutate({ sessionId, paths });
+        if ('paste' in result) termRef.current?.paste(result.paste);
+        termRef.current?.focus();
+      } catch (error) {
+        setRefusal({
+          text: error instanceof Error ? error.message : String(error),
+          at: Date.now(),
+        });
+      }
+    },
+    [sessionId],
+  );
+  const onFilesHandledRef = useRef(onFilesHandled);
+  onFilesHandledRef.current = onFilesHandled;
+  useEffect(() => {
+    if (!filesRequest) return;
+    onFilesHandledRef.current?.();
+    void insertFiles(filesRequest.paths);
+  }, [filesRequest, insertFiles]);
+  const takes = (e: React.DragEvent) => files !== undefined && carriesFiles(e);
+  const leaveDrag = () => {
+    clearTimeout(dragTimer.current);
+    dragDepth.current = 0;
+    setDropOver(false);
+  };
 
   return (
     // The padding sits outside the terminal's own parent: the fit addon measures
     // that parent's border-box width, padding included. Claude tabs keep a 36px
     // gutter for prompt numbers (components.md).
-    <div className={`relative h-full w-full bg-term pt-2 ${workspaceId ? 'pl-9' : 'pl-3.5'}`}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: a drop target for files; Add files is the keyboard's way (spec §6.16)
+    <div
+      className={`relative h-full w-full bg-term pt-2 ${workspaceId ? 'pl-9' : 'pl-3.5'}`}
+      onDragEnter={(e) => {
+        if (!takes(e)) return;
+        dragDepth.current += 1;
+        setDropOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        setDropOver(true);
+        clearTimeout(dragTimer.current);
+        dragTimer.current = setTimeout(leaveDrag, 1500);
+      }}
+      onDragLeave={(e) => {
+        if (!takes(e)) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) leaveDrag();
+      }}
+      onDrop={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        leaveDrag();
+        void insertFiles(droppedPaths(e));
+      }}
+    >
       <div ref={containerRef} data-terminal={sessionId} className="h-full w-full bg-term" />
+      {dropOver ? (
+        <div
+          data-drop-target={files}
+          className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center bg-focus/5 pb-6 ring-2 ring-focus ring-inset"
+        >
+          <span className="rounded-full border border-line-strong bg-raised px-3 py-1 text-md text-fg shadow-overlay">
+            {files === 'claude' ? "Add to Claude's prompt" : 'Insert the paths'}
+          </span>
+        </div>
+      ) : null}
+      {refusal ? (
+        <div
+          key={refusal.at}
+          role="alert"
+          data-drop-refusal
+          className="absolute inset-x-0 bottom-6 z-20 flex justify-center px-4"
+        >
+          <span className="flex max-w-full items-center gap-2 rounded-md border border-line-strong bg-raised py-1 pr-1 pl-3 text-md text-fg shadow-overlay">
+            <span className="min-w-0 select-text">{refusal.text}</span>
+            <button
+              type="button"
+              className="size-5 shrink-0 rounded text-fg-muted hover:bg-selected hover:text-fg"
+              aria-label="Dismiss"
+              title="Dismiss"
+              onClick={() => setRefusal(null)}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      ) : null}
       {resuming ? (
         <div
           data-resuming

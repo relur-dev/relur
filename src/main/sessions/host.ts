@@ -461,6 +461,23 @@ export class SessionHost {
     session.pty.write(data);
   }
 
+  /**
+   * Types text into a running session as if the user had: the input
+   * listeners see it too (the draft in Claude's prompt, spec §9.8), as for
+   * dropped files (§6.16). Nothing while it is suspended or resumes.
+   */
+  typeAsUser(id: string, data: string): void {
+    const session = this.session(id);
+    if (this.closed || session.info.status !== 'running' || session.info.resuming) return;
+    this.write(id, data);
+    this.events.emit('input', session.info, data);
+  }
+
+  /** How much the session has printed: unchanged while its output is quiet. */
+  outputEnd(id: string): number {
+    return this.session(id).scrollback.end;
+  }
+
   resize(id: string, cols: number, rows: number): void {
     const session = this.session(id);
     if (session.info.status !== 'running' || !session.pty) return;

@@ -41,6 +41,7 @@ import type { RemoteFound, RemoteWatch } from '../projects/remote-watch';
 import { chromiumSandboxOff } from '../sandbox';
 import { openExternalSafe } from '../security';
 import type { CliLinkEvent, CliLinkService } from '../services/cli-link';
+import { insertFiles } from '../services/insert-files';
 import type { ProfileService } from '../services/profiles';
 import type { ProjectService } from '../services/projects';
 import { replyFacts, replyRefusalOf } from '../services/reply';
@@ -1250,6 +1251,43 @@ export function createAppRouter({
           }),
         )
         .mutation(({ input }) => host.resize(input.sessionId, input.cols, input.rows)),
+      /**
+       * Dropped or chosen files into a terminal (spec §6.16): Claude gets them
+       * at its prompt, never sent; a shell's text comes back for its view to paste.
+       */
+      insertFiles: publicProcedure
+        .input(sessionId.extend({ paths: z.array(z.string().min(1).max(4096)).min(1).max(200) }))
+        .mutation(({ input }) =>
+          insertFiles(
+            {
+              ...replyDeps,
+              host,
+              wake: (info) => terminals.wake?.(info) ?? Promise.resolve(),
+              mainClaude: (id) => suspend.mainClaude(id),
+              spaceBefore: (id) => suspend.spaceBefore(id),
+            },
+            input.sessionId,
+            input.paths,
+          ),
+        ),
+      /** Add files (spec §6.16): the system's picker, several files (and folders on macOS). */
+      pickFiles: publicProcedure.mutation(async ({ ctx }) => {
+        const win = windowOf(ctx.windowId);
+        const options = {
+          title: 'Add files',
+          buttonLabel: 'Add',
+          properties: [
+            'openFile' as const,
+            'multiSelections' as const,
+            // Linux pickers take either files or folders, not both.
+            ...(process.platform === 'darwin' ? (['openDirectory'] as const) : []),
+          ],
+        };
+        const result = win
+          ? await dialog.showOpenDialog(win, options)
+          : await dialog.showOpenDialog(options);
+        return result.canceled ? [] : result.filePaths;
+      }),
       stop: publicProcedure.input(sessionId).mutation(({ input }) => host.stop(input.sessionId)),
       close: publicProcedure.input(sessionId).mutation(({ input }) => host.remove(input.sessionId)),
     }),

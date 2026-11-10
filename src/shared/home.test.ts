@@ -7,6 +7,7 @@ import {
   type HomeSection,
   homeSection,
   homeSections,
+  insertRefusal,
   mergedLabel,
   offersMerge,
   openPrs,
@@ -602,6 +603,39 @@ describe('replyRefusal (spec §6.7, §6.15)', () => {
       "Claude is starting and doesn't show its prompt yet",
     );
     expect(replyRefusal(ws('error'), 'idle', facts())).toMatch(/error/);
+  });
+});
+
+describe('insertRefusal (spec §6.16)', () => {
+  const running = { status: 'running' as const, resuming: false };
+  const facts = (over: Partial<Parameters<typeof insertRefusal>[1]> = {}) => ({
+    claude: running,
+    draft: false,
+    question: false,
+    atPrompt: false,
+    ...over,
+  });
+
+  it('adds files at Claude’s prompt, also over a draft and while Claude works', () => {
+    expect(insertRefusal(ws('done'), facts())).toBeNull();
+    expect(insertRefusal(ws('done'), facts({ draft: true }))).toBeNull();
+    expect(insertRefusal(ws('working'), facts())).toBeNull();
+    expect(
+      insertRefusal(ws('done'), facts({ claude: { status: 'suspended', resuming: false } })),
+    ).toBeNull();
+  });
+
+  it('refuses at a permission request or a question, and where Claude doesn’t wait', () => {
+    expect(insertRefusal(ws('needs-permission'), facts())).toBe(
+      'Claude is asking for permission: answer it, then add the files',
+    );
+    expect(insertRefusal(ws('working'), facts({ question: true }))).toBe(
+      'Claude is asking a question: answer it, then add the files',
+    );
+    expect(insertRefusal(ws('done'), facts({ claude: null }))).toBe(
+      "Claude isn't running in this workspace",
+    );
+    expect(insertRefusal(ws('starting'), facts())).toMatch(/starting/);
   });
 });
 

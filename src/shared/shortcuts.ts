@@ -141,6 +141,12 @@ export const SHORTCUTS = {
     label: 'In a note or the Notes box: send it when Claude is done',
     chords: [{ alt: true, code: 'Enter' }],
   },
+  addFiles: {
+    group: 'Workspaces',
+    label: "Add files: their paths into Claude's prompt or the shell, not sent",
+    // Ctrl+Shift+A on Linux and Windows: no shell or desktop key there.
+    chords: [{ mod: true, shift: true, code: 'KeyA' }],
+  },
   changesFileStep: {
     group: 'Workspaces',
     label: 'Changes panel: previous / next file',

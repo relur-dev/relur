@@ -1,7 +1,7 @@
 import type { PreloadBridge } from '@shared/bridge';
 import { TERMINAL_PORT_CHANNEL, type TerminalPortInfo } from '@shared/terminal-protocol';
 import { type ServerMessage, TRPC_CHANNEL } from '@shared/trpc-ipc/protocol';
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const bridge: PreloadBridge = {
   trpc: {
@@ -11,6 +11,7 @@ const bridge: PreloadBridge = {
       ipcRenderer.on(TRPC_CHANNEL, (_event, message: ServerMessage) => listener(message));
     },
   },
+  pathForFile: (file) => webUtils.getPathForFile(file),
 };
 
 contextBridge.exposeInMainWorld('bridge', bridge);

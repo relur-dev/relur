@@ -82,7 +82,7 @@ export const SECTIONS: { title: string; pages: string[] }[] = [
   },
   {
     title: 'Working with Claude',
-    pages: ['copy-response', 'notes', 'prompt-navigator', 'resume'],
+    pages: ['add-files', 'copy-response', 'notes', 'prompt-navigator', 'resume'],
   },
   { title: 'Command line tool', pages: ['cli'] },
   { title: 'Keyboard shortcuts', pages: ['shortcuts'] },

@@ -395,6 +395,7 @@ export function ProjectView({
             key={`${active.id}:${active.generation}`}
             sessionId={active.id}
             resuming={active.status === 'suspended' || active.resuming}
+            files={active.kind === 'claude' ? 'claude' : 'shell'}
           />
         </div>
       ) : tab === WORKFLOW_TAB ? (
