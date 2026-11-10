@@ -21,6 +21,7 @@
  */
 import './lib/clean-env';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
@@ -228,6 +229,21 @@ async function writeNote(page: Cdp, text: string, how: 'enter' | 'button' = 'ent
     `${openCount} === ${before + 1} && ${box}.value === ''`,
     `"${text.slice(0, 30)}" added, the box empty`,
   );
+}
+
+/** Where an element's centre is on the page. */
+const centreOf = (page: Cdp, selector: string) =>
+  page.eval<{ x: number; y: number }>(`(() => {
+    const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+
+/** Drags files from the system over a point, then drops them there unless `drop` is false. */
+async function dragFiles(page: Cdp, at: { x: number; y: number }, files: string[], drop = true) {
+  const data = { items: [], files, dragOperationsMask: 1 };
+  await page.send('Input.dispatchDragEvent', { type: 'dragEnter', ...at, data });
+  await page.send('Input.dispatchDragEvent', { type: 'dragOver', ...at, data });
+  if (drop) await page.send('Input.dispatchDragEvent', { type: 'drop', ...at, data });
 }
 
 /** Whether the notes list shows its end, as an expression. */
@@ -671,6 +687,55 @@ async function main() {
     await page.eval(`${noteWith('First words')}.querySelector('[data-note-send-now]').click()`);
     await page.waitFor(`${notesIn('sent')}.includes('First words')`, 'sent now in Starting');
     await page.waitFor(`${screenText}.includes('Noted: First words')`, 'Claude took it');
+
+    // Files into the box (spec §6.16): dropped, chosen with its Add files and
+    // with ⇧⌘A in it; at the caret, as Claude's prompt would get them, and
+    // nothing typed into Claude. Sent, the note gives Claude the paths.
+    const tree = execFileSync('git', ['-C', web, 'worktree', 'list', '--porcelain'], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .map((l) => l.replace(/^worktree /, ''))
+      .find((l) => l.endsWith('NOTE-2-fresh'));
+    assert.ok(tree, 'the second workspace’s worktree');
+    fs.mkdirSync(path.join(tree, 'src'));
+    fs.writeFileSync(path.join(tree, 'src', 'a.ts'), 'x');
+    const farLog = path.join(fx.root, 'my docs', 'log 1.txt');
+    fs.mkdirSync(path.dirname(farLog));
+    fs.writeFileSync(farLog, 'x');
+    await app.main.eval(`(() => {
+      const { dialog } = process.mainModule.require('electron');
+      globalThis.__filePicker = { answer: [] };
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: globalThis.__filePicker.answer });
+    })()`);
+    const answerPicker = (paths: string[]) =>
+      app?.main.eval(`globalThis.__filePicker.answer = ${JSON.stringify(paths)}`);
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'Look at' });
+    const boxAt = await centreOf(page, '[data-notes-box]');
+    await dragFiles(page, boxAt, [path.join(tree, 'src', 'a.ts')], false);
+    await page.waitFor(has('[data-drop-target="note"]'), "the box's drop highlight");
+    await screenshot(page, screenshotDir, 'n6-drop-on-box.png');
+    await dragFiles(page, boxAt, [path.join(tree, 'src', 'a.ts')]);
+    await page.waitFor(`${box}.value === 'Look at @src/a.ts '`, 'the dropped file in the box');
+    await page.waitFor(`!${has('[data-drop-target]')}`, 'no highlight after the drop');
+    await answerPicker([farLog]);
+    await page.eval(`document.querySelector('[data-notes-box-files]').click()`);
+    await page.waitFor(
+      `${box}.value === ${JSON.stringify(`Look at @src/a.ts '${farLog}' `)}`,
+      'the chosen file in the box',
+    );
+    await answerPicker([path.join(tree, 'src')]);
+    await page.waitFor(`document.activeElement === ${box}`, 'the box in focus again');
+    await pressShortcut(page, 'addFiles');
+    const noted = `Look at @src/a.ts '${farLog}' @src/`;
+    await page.waitFor(`${box}.value === ${JSON.stringify(`${noted} `)}`, '⇧⌘A in the box');
+    assert.equal(await page.eval(promptText), '', "nothing typed into Claude's prompt");
+    await pressShortcut(page, 'noteSendNow');
+    await page.waitFor(
+      `${screenText}.replaceAll('\\n', '').includes(${JSON.stringify(`Noted: ${noted}`)})`,
+      'Claude got the paths with the note',
+    );
     // Claude has ended: the refusal says so.
     await typeInTerminal(page, 'exit');
     await page.waitFor(`${screenText}.includes('process exited')`, 'Claude ended');

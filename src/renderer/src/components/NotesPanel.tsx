@@ -12,9 +12,10 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useFileDrop } from '../terminal/file-drop';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, isMac, Kbd, keyHint } from '../ui/controls';
-import { TrashIcon } from '../ui/icons';
+import { AttachIcon, TrashIcon } from '../ui/icons';
 import { PANEL_MIN_WIDTH, usePanelWidth } from '../ui/panel-width';
 import { remember } from '../ui/remember';
 
@@ -647,7 +648,9 @@ const noteText = (text: string) => text.replace(/^(?:[ \t]*\n)+/, '').trimEnd();
  * now, ⌥↵ adds it and holds it until Claude is done; an empty box adds
  * nothing. It grows with its text up to 40% of the panel's height, then
  * scrolls, and shrinks back once the note is added. Text not added yet is
- * kept per workspace in this window's storage. Esc leaves it.
+ * kept per workspace in this window's storage. Esc leaves it. Files dropped
+ * on it or chosen with its Add files (⇧⌘A in it) go in as their paths at the
+ * caret, as Claude's prompt would get them (spec §6.16).
  */
 function Composer({
   workspaceId,
@@ -705,6 +708,32 @@ function Composer({
     onFocusHandled();
   }, [focusRequest, onFocusHandled]);
 
+  // Files (spec §6.16): their paths at the caret, a space first after a word.
+  const insertPaths = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      const inserted = await trpcClient.notes.pathsText.mutate({ workspaceId, paths });
+      const field = ref.current;
+      const value = field?.value ?? '';
+      const start = field?.selectionStart ?? value.length;
+      const before = value.slice(0, start);
+      const lead = before !== '' && !/\s$/.test(before) ? ' ' : '';
+      const at = start + lead.length + inserted.length;
+      change(before + lead + inserted + value.slice(field?.selectionEnd ?? start));
+      requestAnimationFrame(() => {
+        ref.current?.focus();
+        ref.current?.setSelectionRange(at, at);
+      });
+    } catch (failure) {
+      setError(message(failure));
+    }
+  };
+  const pickFiles = async () => {
+    const paths = await trpcClient.sessions.pickFiles.mutate();
+    await insertPaths(paths);
+  };
+  const drop = useFileDrop(true, (paths) => void insertPaths(paths));
+
   const filled = noteText(text).length > 0;
   const submit = (then: 'add' | 'send' | 'hold') => {
     const value = noteText(text);
@@ -726,6 +755,11 @@ function Composer({
     );
   };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (matchShortcut('addFiles', event.nativeEvent, isMac) !== -1) {
+      event.preventDefault();
+      void pickFiles();
+      return;
+    }
     if (event.key === 'Escape') {
       // Leaves the box; the panel's own Esc closes it (spec §6.15).
       event.preventDefault();
@@ -751,7 +785,20 @@ function Composer({
           ✕ {error}
         </p>
       ) : null}
-      <div className="flex flex-col rounded-[5px] border border-line-strong bg-term focus-within:border-focus">
+      <div
+        {...drop.handlers}
+        className="relative flex flex-col rounded-[5px] border border-line-strong bg-term focus-within:border-focus"
+      >
+        {drop.over ? (
+          <div
+            data-drop-target="note"
+            className="pointer-events-none absolute -inset-px z-10 flex items-center justify-center rounded-[5px] bg-focus/5 ring-2 ring-focus ring-inset"
+          >
+            <span className="rounded-full border border-line-strong bg-raised px-2.5 py-0.5 text-sm text-fg shadow-overlay">
+              Add to the note
+            </span>
+          </div>
+        ) : null}
         <textarea
           ref={ref}
           data-notes-box
@@ -766,6 +813,17 @@ function Composer({
           onKeyDown={onKeyDown}
         />
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <button
+            type="button"
+            data-notes-box-files
+            className={quiet}
+            aria-label="Add files"
+            title={`Add files: their paths into the note (${keyHint('addFiles')}); or drop them on the box`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => void pickFiles()}
+          >
+            <AttachIcon />
+          </button>
           <span className="flex-1" />
           <button
             type="button"

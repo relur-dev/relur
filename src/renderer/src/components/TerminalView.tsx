@@ -11,7 +11,7 @@ import type {
 } from '@shared/terminal-protocol';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConversationAids, type NavigatorState } from '../terminal/conversation';
-import { carriesFiles, droppedPaths } from '../terminal/file-drop';
+import { useFileDrop } from '../terminal/file-drop';
 import { openTerminalPort } from '../terminal/ports';
 import { isMouseReport, watchPrompt } from '../terminal/prompt-screen';
 import { mouseWheelHandler } from '../terminal/wheel';
@@ -410,12 +410,6 @@ export function TerminalView({
   // Dropped and chosen files (spec §6.16): the main process checks Claude
   // and types them there; a shell's text is pasted here, so xterm wraps it as
   // a paste only where the shell asked for that.
-  const [dropOver, setDropOver] = useState(false);
-  const dragDepth = useRef(0);
-  // A drag that ends elsewhere (cancelled with Esc, dropped outside the
-  // window) may send no dragleave; dragover repeats while it stays here.
-  const dragTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(dragTimer.current), []);
   const [refusal, setRefusal] = useState<{ text: string; at: number } | null>(null);
   useEffect(() => {
     if (!refusal) return;
@@ -446,47 +440,18 @@ export function TerminalView({
     onFilesHandledRef.current?.();
     void insertFiles(filesRequest.paths);
   }, [filesRequest, insertFiles]);
-  const takes = (e: React.DragEvent) => files !== undefined && carriesFiles(e);
-  const leaveDrag = () => {
-    clearTimeout(dragTimer.current);
-    dragDepth.current = 0;
-    setDropOver(false);
-  };
+  const drop = useFileDrop(files !== undefined, (paths) => void insertFiles(paths));
 
   return (
     // The padding sits outside the terminal's own parent: the fit addon measures
     // that parent's border-box width, padding included. Claude tabs keep a 36px
     // gutter for prompt numbers (components.md).
-    // biome-ignore lint/a11y/noStaticElementInteractions: a drop target for files; Add files is the keyboard's way (spec §6.16)
     <div
       className={`relative h-full w-full bg-term pt-2 ${workspaceId ? 'pl-9' : 'pl-3.5'}`}
-      onDragEnter={(e) => {
-        if (!takes(e)) return;
-        dragDepth.current += 1;
-        setDropOver(true);
-      }}
-      onDragOver={(e) => {
-        if (!takes(e)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-        setDropOver(true);
-        clearTimeout(dragTimer.current);
-        dragTimer.current = setTimeout(leaveDrag, 1500);
-      }}
-      onDragLeave={(e) => {
-        if (!takes(e)) return;
-        dragDepth.current -= 1;
-        if (dragDepth.current <= 0) leaveDrag();
-      }}
-      onDrop={(e) => {
-        if (!takes(e)) return;
-        e.preventDefault();
-        leaveDrag();
-        void insertFiles(droppedPaths(e));
-      }}
+      {...drop.handlers}
     >
       <div ref={containerRef} data-terminal={sessionId} className="h-full w-full bg-term" />
-      {dropOver ? (
+      {drop.over ? (
         <div
           data-drop-target={files}
           className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center bg-focus/5 pb-6 ring-2 ring-focus ring-inset"

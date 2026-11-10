@@ -448,6 +448,8 @@ export function WorkspaceView({
     const listener = (e: KeyboardEvent) => {
       if (matchShortcut('addFiles', e, isMac) === -1) return;
       if (document.querySelector('dialog[open]')) return;
+      // In the Notes box, its own Add files takes it (spec §6.16).
+      if (document.activeElement?.closest('[data-notes-composer]')) return;
       e.preventDefault();
       e.stopPropagation();
       void addFiles();

@@ -143,7 +143,7 @@ export const SHORTCUTS = {
   },
   addFiles: {
     group: 'Workspaces',
-    label: "Add files: their paths into Claude's prompt or the shell, not sent",
+    label: "Add files: their paths into Claude's prompt, the shell or the Notes box, not sent",
     // Ctrl+Shift+A on Linux and Windows: no shell or desktop key there.
     chords: [{ mod: true, shift: true, code: 'KeyA' }],
   },

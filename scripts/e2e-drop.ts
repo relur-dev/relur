@@ -196,6 +196,13 @@ async function main() {
     await submitDialog(page);
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the workspace created', 30_000);
     await page.waitFor(`${promptText} === ''`, "Claude's empty prompt", 30_000);
+    // A first prompt: Claude is Done and waits at its prompt.
+    await typeInTerminal(page, 'hello');
+    await page.waitFor(
+      `/\\nDone/.test(document.querySelector('nav button[title^="DROP-1 Drop files"]')?.title ?? '')`,
+      'Claude done',
+    );
+    await page.waitFor(`${promptText} === ''`, "Claude's empty prompt again");
     const cwdFile = path.join(fx.root, 'claude-cwd.txt');
     const worktree = fs.readFileSync(cwdFile, 'utf8');
     fs.mkdirSync(path.join(worktree, 'src'));
@@ -223,7 +230,13 @@ async function main() {
         .map((p) => p.split('\x1b[201~')[0])
         .join('');
     const waitPasted = async (from: number, text: string, what: string) => {
-      for (let i = 0; i < 100 && pasted(from) !== text; i++) await sleep(100);
+      for (let i = 0; i < 100 && pasted(from) !== text; i++) {
+        const refused = await page.eval<string | null>(
+          `document.querySelector('[data-drop-refusal]')?.innerText ?? null`,
+        );
+        if (refused) throw new Error(`${what}: refused: ${refused}`);
+        await sleep(100);
+      }
       assert.equal(pasted(from), text, what);
     };
     // Keys before the drop: focus reports and the like.

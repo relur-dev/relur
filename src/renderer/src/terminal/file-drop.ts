@@ -1,8 +1,9 @@
 /**
  * Files dragged from the system onto the window (spec §6.16). Only the places
- * that take them (a terminal) accept a drop; elsewhere the pointer shows that
- * a drop does nothing, and a drop does nothing.
+ * that take them (a terminal, the Notes box) accept a drop; elsewhere the
+ * pointer shows that a drop does nothing, and a drop does nothing.
  */
+import { useEffect, useRef, useState } from 'react';
 
 /** A drag that carries files from the system (not text or a tab). */
 export const carriesFiles = (e: DragEvent | React.DragEvent) =>
@@ -35,4 +36,51 @@ export function refuseStrayDrops(): () => void {
     window.removeEventListener('dragover', over, true);
     window.removeEventListener('drop', drop, true);
   };
+}
+
+/**
+ * A place that takes dropped files (spec §6.16): `over` while files are
+ * dragged over it, for its highlight; `onPaths` with the dropped files'
+ * paths. A drag that ends elsewhere (cancelled with Esc, dropped outside the
+ * window) may send no dragleave; dragover repeats while it stays, so
+ * `over` also ends 1.5 s after the last one.
+ */
+export function useFileDrop(accepts: boolean, onPaths: (paths: string[]) => void) {
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const leave = () => {
+    clearTimeout(timer.current);
+    depth.current = 0;
+    setOver(false);
+  };
+  const takes = (e: React.DragEvent) => accepts && carriesFiles(e);
+  const handlers = {
+    onDragEnter: (e: React.DragEvent) => {
+      if (!takes(e)) return;
+      depth.current += 1;
+      setOver(true);
+    },
+    onDragOver: (e: React.DragEvent) => {
+      if (!takes(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setOver(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(leave, 1500);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!takes(e)) return;
+      depth.current -= 1;
+      if (depth.current <= 0) leave();
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (!takes(e)) return;
+      e.preventDefault();
+      leave();
+      onPaths(droppedPaths(e));
+    },
+  };
+  return { over, handlers };
 }

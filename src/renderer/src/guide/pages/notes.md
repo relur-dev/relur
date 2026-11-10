@@ -4,11 +4,13 @@ While Claude works, thoughts come up: something to add, something to check next,
 
 **Notes** <kbd>{{key:notes}}</kbd> at the right of the workspace's tab bar opens the panel, on any tab. The number beside it counts the notes you haven't sent yet; the panel's header says how many of them are queued. <kbd>{{key:addNote}}</kbd> opens it with its box ready for typing, from anywhere in the workspace.
 
-![The Notes panel beside Claude's terminal: at the top two notes sent together as one prompt; one note queued for when Claude is done; two unsent notes; then All 2, as one prompt with Send now and Send when done; and at the bottom the box, with a thought being typed and When done, Send now and Add beside it.](images/notes-panel.webp)
+![The Notes panel beside Claude's terminal: at the top two notes sent together as one prompt; one note queued for when Claude is done; two unsent notes; then All 2, as one prompt with Send now and Send when done; and at the bottom the box, with a thought being typed, a paper clip to add files, and When done, Send now and Add beside it.](images/notes-panel.webp)
 
 ## Writing notes
 
 Notes are written in the box at the bottom of the panel, as in a chat. Press <kbd>{{mac}}↵{{/mac}}{{other}}Enter{{/other}}</kbd> to add what you typed as a new note; <kbd>{{mac}}⇧↵{{/mac}}{{other}}Shift+Enter{{/other}}</kbd> starts a new line instead. <kbd>{{key:noteSendNow}}</kbd> adds it and sends it to Claude now, and <kbd>{{key:noteQueue}}</kbd> adds it and queues it for when Claude is done (see [Sending](#sending)). The buttons beside the box, **Add**, **Send now** and **When done**, do the same. An empty box adds nothing.
+
+To mention files, drop them on the box from {{mac}}Finder{{/mac}}{{other}}your file manager{{/other}}, or choose them with its paper clip, **Add files** (<kbd>{{key:addFiles}}</kbd> while you're typing there). Their paths go in where the caret is, the way [Claude's prompt would get them](add-files#what-claude-gets): a file in the workspace as `@src/app.ts`, which gives Claude the file when the note is sent, any other as its full path. Nothing goes to Claude until you send the note.
 
 The box grows with what you type or paste, such as a log or an error, up to about 40% of the panel's height, then scrolls; it shrinks back once the note is added. What you've typed and not added yet stays in the box when you close the panel or switch workspaces, and after a restart.
 

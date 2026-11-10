@@ -15,6 +15,10 @@ While you drag files over the terminal, it's outlined and says **Add to Claude's
 
 Paths go into Claude's prompt only while it waits there or works, the same times a [quick reply](home#quick-reply) can go. While Claude asks for permission or asks you a question in its menu, a drop types nothing, so it can't pick an option by accident, and the terminal says why: **Claude is asking for permission: answer it, then add the files**. Answer Claude, then drop the files again. A [suspended](suspend) Claude resumes first.
 
+## In a note
+
+The [Notes](notes) box at the bottom of the Notes panel takes files the same way: drop them on it, or choose them with its paper clip (<kbd>{{key:addFiles}}</kbd> while you're typing in it). Their paths go into the note, and Claude gets them when you send it. An image from elsewhere goes as its path then, not as an attached image; Claude can still open it.
+
 ## Shell tabs
 
 Dropped on a shell tab, or on Home's or a project's terminal, files go in as their full paths, quoted when needed, as in any terminal. Nothing runs until you press <kbd>↵</kbd>.

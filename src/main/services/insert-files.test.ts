@@ -6,7 +6,7 @@ import type { SessionInfo } from '@shared/terminal-protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openStateDb } from '../db/state-db';
 import { WorkspaceRecords } from '../db/workspaces';
-import { insertFiles } from './insert-files';
+import { insertFiles, notePathsText } from './insert-files';
 
 let dir: string;
 beforeEach(() => {
@@ -112,6 +112,21 @@ describe('insertFiles (spec §6.16)', () => {
     const { deps } = setup('done');
     await expect(insertFiles(deps, 'c1', [path.join(dir, 'gone')])).rejects.toThrow(
       'Those files no longer exist',
+    );
+  });
+});
+
+describe('notePathsText (spec §6.15, §6.16)', () => {
+  it('gives the note the paths as Claude would get them, at any state', () => {
+    const { deps, worktree } = setup('needs-permission');
+    expect(
+      notePathsText(deps.records, 'ws_a', [
+        path.join(worktree, 'src', 'a.ts'),
+        path.join(dir, 'shot 1.png'),
+      ]),
+    ).toBe(`@src/a.ts '${dir}/shot 1.png' `);
+    expect(() => notePathsText(deps.records, 'ws_gone', [path.join(dir, 'shot 1.png')])).toThrow(
+      'This workspace no longer exists',
     );
   });
 });

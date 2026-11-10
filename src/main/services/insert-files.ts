@@ -4,6 +4,7 @@ import { type ClaudeRoots, claudePastes, type DroppedFile, shellText } from '@sh
 import { insertRefusal } from '@shared/home';
 import type { WorkspaceState } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
+import type { Workspace } from '@shared/workspaces';
 import type { SessionHost } from '../sessions/host';
 import { type ReplyDeps, replyFacts } from './reply';
 
@@ -45,12 +46,32 @@ export function droppedFiles(paths: string[]): DroppedFile[] {
 /** Where a Claude session's `@path`s are relative to, and which folders get them. */
 function claudeRoots(deps: InsertFilesDeps, session: SessionInfo): ClaudeRoots {
   const record = session.workspaceId ? deps.records.get(session.workspaceId) : null;
-  if (record) {
-    const roots = record.repos.map((r) => real(r.worktreePath));
-    return { cwd: real(record.worktreePath), roots };
-  }
+  if (record) return workspaceRoots(record);
   // A main checkout's Claude: its checkout; Claude in the home folder: none.
   return { cwd: real(session.cwd), roots: session.projectId ? [real(session.cwd)] : [] };
+}
+
+/** A workspace's Claude: its folder is the main worktree, its roots every repository's. */
+const workspaceRoots = (w: Pick<Workspace, 'worktreePath' | 'repos'>): ClaudeRoots => ({
+  cwd: real(w.worktreePath),
+  roots: w.repos.map((r) => real(r.worktreePath)),
+});
+
+/**
+ * Files dropped on or chosen for the Notes box (spec §6.15, §6.16): the text
+ * that goes into the note, as Claude's prompt would get them, so a sent note
+ * gives Claude the same `@path`s. Nothing is checked: the note isn't sent.
+ */
+export function notePathsText(
+  records: Pick<ReplyDeps['records'], 'get'>,
+  workspaceId: string,
+  paths: string[],
+): string {
+  const record = records.get(workspaceId);
+  if (!record) throw new Error('This workspace no longer exists');
+  const files = droppedFiles(paths);
+  if (files.length === 0) throw new Error('Those files no longer exist');
+  return claudePastes(files, workspaceRoots(record), false).join('');
 }
 
 /**

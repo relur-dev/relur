@@ -41,7 +41,7 @@ import type { RemoteFound, RemoteWatch } from '../projects/remote-watch';
 import { chromiumSandboxOff } from '../sandbox';
 import { openExternalSafe } from '../security';
 import type { CliLinkEvent, CliLinkService } from '../services/cli-link';
-import { insertFiles } from '../services/insert-files';
+import { insertFiles, notePathsText } from '../services/insert-files';
 import type { ProfileService } from '../services/profiles';
 import type { ProjectService } from '../services/projects';
 import { replyFacts, replyRefusalOf } from '../services/reply';
@@ -1398,6 +1398,10 @@ export function createAppRouter({
      */
     /** Notes per workspace (spec §6.15). */
     notes: router({
+      /** Files dropped on or chosen for the Notes box, as the note's text (spec §6.16). */
+      pathsText: publicProcedure
+        .input(workspaceId.extend({ paths: z.array(z.string().min(1).max(4096)).min(1).max(200) }))
+        .mutation(({ input }) => notePathsText(workspaceRecords, input.workspaceId, input.paths)),
       /** The panel's items, what held ones wait on, and where each sent prompt is. */
       list: publicProcedure.input(workspaceId).query(({ input }) => notes.view(input.workspaceId)),
       changes: publicProcedure.input(workspaceId).subscription(({ input, signal }) =>
