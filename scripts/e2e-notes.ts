@@ -5,6 +5,9 @@
  * other held until Claude is done and sent then by itself; both move to Sent,
  * and each View response opens the Responses panel at its own entry, which
  * has the "from notes" label. The Delete dialog mentions an unsent item.
+ * Then the panel's keys: Esc leaves a note and a second Esc closes the panel,
+ * ⌥↵ holds a note, ⌘↵ refused over a draft offers Queue instead; the footer's
+ * "All n, as one prompt", and the Sent section staying collapsed.
  * Runs with a throwaway HOME and a fake `claude` that writes its transcript
  * as Claude Code does (uuids, a queued prompt as an attachment).
  *
@@ -306,6 +309,68 @@ async function main() {
     );
     await pressKey(page, 'Escape');
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog closed');
+
+    // 9. The panel's keys and footer (spec §6.15). With two unsent notes the
+    // footer offers all of them as one prompt; Esc in a note leaves it, a
+    // second Esc closes the panel.
+    await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
+    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Held by key');
+    assert.match(
+      await page.eval<string>(`document.querySelector('[data-notes-footer]')?.innerText ?? ''`),
+      /All 2, as one prompt/,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`document.activeElement?.matches('[data-notes-panel]')`, 'the note left');
+    assert.equal(await page.eval(has('[data-notes-panel]')), true, 'still open after one Esc');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('[data-notes-panel]')`, 'a second Esc closes it');
+    await pressShortcut(page, 'notes');
+    await page.waitFor(has('[data-notes-panel]'), 'the panel again');
+    // The Sent section collapses, and stays so when the panel opens again.
+    await page.eval(`document.querySelector('[data-notes-sent-toggle]').click()`);
+    await page.waitFor(
+      `document.querySelector('[data-notes-sent]')?.dataset.collapsed === 'true' && !document.querySelector('[data-notes-sent] [data-note]')`,
+      'Sent collapsed',
+    );
+    await pressShortcut(page, 'notes');
+    await page.waitFor(`!document.querySelector('[data-notes-panel]')`, 'closed');
+    await pressShortcut(page, 'notes');
+    await page.waitFor(
+      `document.querySelector('[data-notes-sent]')?.dataset.collapsed === 'true'`,
+      'still collapsed',
+    );
+    await page.eval(`document.querySelector('[data-notes-sent-toggle]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-notes-sent] [data-note]')`, 'Sent open');
+    // A draft in the terminal: ⌥↵ holds a note, waiting on it; ⌘↵ is refused
+    // and Queue instead holds that one too. Both go once the draft is sent.
+    await typeInTerminal(page, 'draft', false);
+    await sleep(300);
+    await page.eval(`${noteWith('Held by key')}.querySelector('[data-note-text]').focus()`);
+    await pressShortcut(page, 'noteQueue');
+    await page.waitFor(
+      `${noteWith('Held by key')}?.dataset.noteState === 'held' && ${noteWith('Held by key')}.querySelector('[data-note-queued]').textContent.includes('an unsent prompt in the terminal')`,
+      '⌥↵ held it, waiting on the draft',
+    );
+    await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
+    await pressShortcut(page, 'noteSendNow');
+    await page.waitFor(
+      `!!${noteWith('A last thought')}?.querySelector('[data-note-queue-instead]')`,
+      '⌘↵ refused over the draft',
+    );
+    await page.eval(
+      `${noteWith('A last thought')}.querySelector('[data-note-queue-instead]').click()`,
+    );
+    await page.waitFor(
+      `${noteWith('A last thought')}?.dataset.noteState === 'held'`,
+      'Queue instead held it',
+    );
+    await screenshot(page, screenshotDir, 'n4-queued-by-key.png');
+    await typeInTerminal(page, '');
+    await page.waitFor(
+      `${notesIn('sent')}.includes('Held by key') && ${notesIn('sent')}.includes('A last thought')`,
+      'both sent once the draft went',
+      20_000,
+    );
 
     console.log(`e2e-notes: ok (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {

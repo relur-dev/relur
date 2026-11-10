@@ -856,20 +856,30 @@ exec sleep 600
     );
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(`${panelResponses} === 1`, 'the Responses panel');
-    assert.equal(
-      await page.eval<string>(`${responsesPanel}.querySelector('[data-response-part]').innerHTML`),
-      '<p>Answer <strong>one</strong>.</p>\n',
-    );
+    // Collapsed: the prompt, the time, and Claude's latest words as plain text
+    // (Copy shows on hover).
     const first = await page.eval<string>(
       `${responsesPanel}.querySelector('[data-response="1"]').innerText`,
     );
-    assert.match(first, /^▸\n1\n› Fix the login\n.+\nCopy\n+Answer one\.$/, JSON.stringify(first));
+    assert.match(first, /^▶\n1\n› Fix the login\n.+\nAnswer one\.$/, JSON.stringify(first));
     await page.eval(`${responsesPanel}.querySelector('[data-response-copy]').click()`);
     await mainProcess.waitFor('globalThis.__copied.length === 3', 'the panel copy');
     // One entry: Expand all and Collapse all are there too (spec §6.8).
     const onlyEntry = `${responsesPanel}.querySelector('[data-response="1"]').dataset.expanded`;
     await clickButtonText(page, 'Expand all', responsesPanel);
     await page.waitFor(`${onlyEntry} === 'true'`, 'Expand all with one entry');
+    // Expanded, its text as Markdown.
+    assert.equal(
+      await page.eval<string>(`${responsesPanel}.querySelector('[data-response-part]').innerHTML`),
+      '<p>Answer <strong>one</strong>.</p>\n',
+    );
+    // One toggle: Collapse all while an entry is expanded.
+    assert.equal(
+      await page.eval<string>(
+        `${responsesPanel}.querySelector('[data-responses-toggle-all]').innerText`,
+      ),
+      'Collapse all',
+    );
     await clickButtonText(page, 'Collapse all', responsesPanel);
     await page.waitFor(`${onlyEntry} === 'false'`, 'Collapse all with one entry');
     // It follows the transcript: a new response shows without reopening.
@@ -1005,12 +1015,19 @@ exec sleep 600
     await typeInTerminal(page, 'prompt');
     await typeInTerminal(page, 'stop');
     await page.waitFor(`${panelResponses} === 3`, 'a full-screen response in the panel');
+    await page.eval(
+      `${responsesPanel}.querySelector('[data-response="3"] [data-response-header]').click()`,
+    );
+    await page.waitFor(
+      `!!${responsesPanel}.querySelector('[data-response="3"] [data-response-body]')`,
+      'entry 3 expanded',
+    );
     assert.equal(
       await page.eval<string | null>(
         `${responsesPanel}.querySelector('[data-response="3"] [data-response-body]').getAttribute('title')`,
       ),
-      'Expand',
-      'nothing to scroll to: a click only expands it',
+      null,
+      'nothing to scroll to: its text is no link to the terminal',
     );
     await page.eval(
       `${responsesPanel}.querySelector('[data-response="3"] [data-response-copy]').click()`,
@@ -1042,12 +1059,13 @@ exec sleep 600
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     const entry = (n: number) => `${responsesPanel}.querySelector('[data-response="${n}"]')`;
     await page.waitFor(
-      `${panelResponses} === 5 && ${entry(5)}.querySelectorAll('[data-response-part]').length === 3`,
+      `${panelResponses} === 5 && !!${entry(5)}.querySelector('[data-response-parts="3"]')`,
       'the entry with three parts',
     );
+    // Collapsed, its last part in two lines.
     assert.equal(
-      await page.eval<number>(`${entry(5)}.querySelectorAll('[data-response-divider]').length`),
-      2,
+      await page.eval<string>(`${entry(5)}.querySelector('[data-response-summary]').textContent`),
+      'Done: two fixes.',
     );
     assert.match(
       await page.eval<string>(`${entry(5)}.querySelector('[data-response-header]').innerText`),
@@ -1070,6 +1088,15 @@ exec sleep 600
     );
     await page.eval(`${entry(5)}.querySelector('[data-response-header]').click()`);
     await page.waitFor(`!!${entry(5)}.querySelector('[data-response-copy-last]')`, 'expanded');
+    assert.equal(
+      await page.eval<number>(`${entry(5)}.querySelectorAll('[data-response-part]').length`),
+      3,
+    );
+    // A marker (n/3) and rule at each part; the ones after the first are the dividers.
+    assert.equal(
+      await page.eval<number>(`${entry(5)}.querySelectorAll('[data-response-divider]').length`),
+      2,
+    );
     const copiedBefore = await mainProcess.eval<number>('globalThis.__copied.length');
     await page.eval(`${entry(5)}.querySelector('[data-response-copy]').click()`);
     await mainProcess.waitFor(`globalThis.__copied.length === ${copiedBefore + 1}`, 'Copy');
@@ -1093,7 +1120,7 @@ exec sleep 600
     await page.waitFor(`!!${entry(6)}.querySelector('[data-response-interrupted]')`, 'Interrupted');
     assert.match(
       await page.eval<string>(`${entry(6)}.innerText`),
-      /› Explain the build\nInterrupted[\s\S]*The build has three steps\. First/,
+      /› Explain the build\n[\s\S]*Interrupted\n[\s\S]*The build has three steps\. First/,
     );
     assert.equal(
       await page.eval<number>(
@@ -1260,6 +1287,9 @@ exec sleep 600
       'the response after the hand-back',
     );
     // It joins the entry of the prompt before it, under a label.
+    await page.eval(
+      `[...document.querySelectorAll('[data-responses-panel] [data-response-header]')].at(-1).click()`,
+    );
     assert.match(
       await page.eval<string>(
         `[...document.querySelectorAll('[data-responses-panel] [data-response-header]')].at(-1).innerText`,

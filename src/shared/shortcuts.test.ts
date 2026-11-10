@@ -57,17 +57,26 @@ describe('shortcuts', () => {
   });
 
   it('gives each chord one shortcut per platform', () => {
+    // A dialog is modal, so its keys never meet the window's: the two sets
+    // are checked apart (⌘↵ is Confirm there and a note's Send now here).
     for (const mac of [true, false]) {
-      const seen = new Map<string, string>();
-      for (const [id, shortcut] of Object.entries(SHORTCUTS) as [string, Shortcut][]) {
-        if (shortcut.platform && shortcut.platform !== (mac ? 'mac' : 'other')) continue;
-        for (const chord of chordsOf(shortcut, mac)) {
-          const shown = formatChord(chord, mac);
-          expect(seen.get(shown), `${shown}: ${id}`).toBeUndefined();
-          seen.set(shown, id);
+      for (const dialogs of [true, false]) {
+        const seen = new Map<string, string>();
+        for (const [id, shortcut] of Object.entries(SHORTCUTS) as [string, Shortcut][]) {
+          if (shortcut.platform && shortcut.platform !== (mac ? 'mac' : 'other')) continue;
+          if ((shortcut.group === 'Dialogs') !== dialogs) continue;
+          for (const chord of chordsOf(shortcut, mac)) {
+            const shown = formatChord(chord, mac);
+            expect(seen.get(shown), `${shown}: ${id}`).toBeUndefined();
+            seen.set(shown, id);
+          }
         }
       }
     }
+    expect(formatShortcut(SHORTCUTS.noteSendNow, true)).toBe('⌘↵');
+    expect(formatShortcut(SHORTCUTS.noteSendNow, false)).toBe('Ctrl+Enter');
+    expect(formatShortcut(SHORTCUTS.noteQueue, true)).toBe('⌥↵');
+    expect(formatShortcut(SHORTCUTS.noteQueue, false)).toBe('Alt+Enter');
     expect(formatShortcut(SHORTCUTS.responses, true)).toBe('⇧⌘R');
     expect(formatShortcut(SHORTCUTS.notes, true)).toBe('⇧⌘K');
     expect(formatShortcut(SHORTCUTS.notes, false)).toBe('Ctrl+Shift+K');

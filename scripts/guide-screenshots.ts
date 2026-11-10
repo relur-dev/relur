@@ -20,6 +20,7 @@ import path from 'node:path';
 import { appConfigDir } from '../src/main/paths';
 import { createFixture } from '../src/main/test-support/git-fixtures';
 import { envVar } from '../src/shared/brand';
+import { composePrompt } from '../src/shared/notes';
 import {
   type Cdp,
   CMD,
@@ -608,21 +609,93 @@ async function main() {
     });
     await pressKey(page, 'KeyD', CMD | MOD.shift);
 
-    // 3. The Responses panel.
+    // 3. The Notes panel: two notes sent together while Claude works (its
+    // answer then written to the transcript, so they lead to it), one queued
+    // for when Claude is done, and two unsent, the first being edited.
+    await pressKey(page, 'KeyK', CMD | MOD.shift);
+    await page.waitFor(`!!document.querySelector('[data-notes-panel]')`, 'the Notes panel');
+    const noteWith = (text: string) =>
+      `[...document.querySelectorAll('[data-note]')].find((n) => (n.querySelector('[data-note-text]')?.value ?? n.querySelector('[data-note-text]')?.textContent ?? '').trim() === ${JSON.stringify(text)})`;
+    const addNote = async (text: string) => {
+      const count = `document.querySelectorAll('[data-notes-open] [data-note]').length`;
+      const before = await page.eval<number>(count);
+      await pressKey(page, 'KeyN', CMD | MOD.alt);
+      await page.waitFor(
+        `${count} === ${before + 1} && document.activeElement?.matches('[data-note-text]')`,
+        'a new note',
+      );
+      await page.send('Input.insertText', { text });
+      await sleep(700);
+    };
+    const together = [
+      'Use a sliding window, not a fixed one.',
+      'Keep it in memory for now; Redis later.',
+    ];
+    for (const text of together) await addNote(text);
+    for (const text of together) {
+      await page.eval(`${noteWith(text)}.querySelector('[data-note-select]').click()`);
+    }
+    await page.eval(`document.querySelector('[data-notes-send-selected]').click()`);
+    await page.waitFor(
+      `document.querySelectorAll('[data-notes-sent] [data-note]').length === 2`,
+      'the two notes sent',
+    );
+    fs.appendFileSync(
+      path.join(home, 'transcripts', 'ABC-142.jsonl'),
+      `${[
+        { type: 'user', message: { role: 'user', content: composePrompt(together) } },
+        {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'text',
+                text: "Switched to a sliding window over the last 60 seconds, kept in a `Map` keyed by IP. A Redis store can replace it later without changing the middleware's signature.",
+              },
+            ],
+          },
+          timestamp: new Date().toISOString(),
+        },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n')}\n`,
+    );
+    await page.waitFor(
+      `!${noteWith(together[0] as string)}?.querySelector('[data-note-view-response]')?.disabled`,
+      'View response',
+      20_000,
+    );
+    await addNote('When the tests pass, add a line to the PR about the 5-per-minute limit.');
+    await page.eval(
+      `${noteWith('When the tests pass, add a line to the PR about the 5-per-minute limit.')}.querySelector('[data-note-hold]').click()`,
+    );
+    await page.waitFor(`!!document.querySelector('[data-notes-queued] [data-note]')`, 'queued');
+    const editing =
+      "Count only failed logins? A user who mistypes once and then gets in shouldn't burn an attempt.";
+    await addNote(editing);
+    await addNote('Add a test for two users behind the same proxy (X-Forwarded-For).');
+    await page.eval(`${noteWith(editing)}.querySelector('[data-note-text]').focus()`);
+    await sleep(800);
+    await shoot('notes-panel', null);
+    await pressKey(page, 'KeyK', CMD | MOD.shift);
+    await page.waitFor(`!document.querySelector('[data-notes-panel]')`, 'the Notes panel closed');
+
+    // 4. The Responses panel, with the notes' entry.
     await pressKey(page, 'KeyR', CMD | MOD.shift);
     await page.waitFor(
-      `document.querySelectorAll('[data-responses-panel] [data-response]').length === 3`,
+      `document.querySelectorAll('[data-responses-panel] [data-response]').length === 4`,
       'the Responses panel',
     );
-    // Entries open collapsed (spec §6.8): the newest is expanded for the picture.
+    // Entries open collapsed (spec §6.8): the first is expanded for the picture.
     await page.eval(
-      `[...document.querySelectorAll('[data-responses-panel] [data-response-header]')].at(-1).click()`,
+      `document.querySelector('[data-responses-panel] [data-response="1"] [data-response-header]').click()`,
     );
     await sleep(800);
     await shoot('responses-panel', null);
     await pressKey(page, 'KeyR', CMD | MOD.shift);
 
-    // 4. The memory panel.
+    // 5. The memory panel.
     await page.waitFor(`!!document.querySelector('footer [data-memory]')`, 'Memory', 20_000);
     const openMemory = async () => {
       if (await page.eval<boolean>(`!document.querySelector('[data-memory-panel]')`)) {
@@ -643,7 +716,7 @@ async function main() {
     await page.eval(`document.querySelector('footer [data-memory]').click()`);
     await page.waitFor(`!document.querySelector('[data-memory-panel]')`, 'the panel to close');
 
-    // 5. A workflow gate, and a workspace across repositories.
+    // 6. A workflow gate, and a workspace across repositories.
     await openRow('ABC-139');
     await heading('Checkout page redesign');
     await page.waitFor(`!!document.querySelector('[data-review]')`, 'the gate');
@@ -657,7 +730,7 @@ async function main() {
       below: 6,
     });
 
-    // 6. The project view: its Board, and the suspended workspace's card.
+    // 7. The project view: its Board, and the suspended workspace's card.
     await page.eval(
       `document.querySelector('[data-project="api-service"] [data-nav-focus]').click()`,
     );

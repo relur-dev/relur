@@ -129,6 +129,18 @@ export const SHORTCUTS = {
     // Ctrl+Alt+N on Linux and Windows: no shell or desktop key there (spec §6.6).
     chords: [{ mod: true, alt: true, code: 'KeyN' }],
   },
+  noteSendNow: {
+    group: 'Workspaces',
+    label: 'In a note: send it now',
+    // Ctrl+Enter and Alt+Enter type nothing in a text field on Linux, and
+    // aren't shell keys; ⌘↵ is also Confirm, but only in dialogs (spec §6.15).
+    chords: [{ mod: true, code: 'Enter' }],
+  },
+  noteQueue: {
+    group: 'Workspaces',
+    label: 'In a note: send it when Claude is done',
+    chords: [{ alt: true, code: 'Enter' }],
+  },
   changesFileStep: {
     group: 'Workspaces',
     label: 'Changes panel: previous / next file',

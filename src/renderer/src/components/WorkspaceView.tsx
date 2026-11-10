@@ -256,7 +256,10 @@ export function WorkspaceView({
     (open: boolean) => onNotesOpen(workspace.id, open),
     [onNotesOpen, workspace.id],
   );
-  const [addNote, setAddNote] = useState(0);
+  // ⌥⌘N's request, by when it was made; cleared once the panel has added the item,
+  // so the panel opening again later doesn't add another.
+  const [addNote, setAddNote] = useState<number | null>(null);
+  const addNoteHandled = useCallback(() => setAddNote(null), []);
   const [notesHighlight, setNotesHighlight] = useState<{ ids: string[]; at: number } | null>(null);
   const [responsesFull, setResponsesFull] = useState(false);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
@@ -417,7 +420,7 @@ export function WorkspaceView({
       }
       if (narrowRef.current) setResponsesOpen(false);
       setNotesOpen(true);
-      setAddNote((n) => n + 1);
+      setAddNote(Date.now());
     };
     window.addEventListener('keydown', listener, true);
     return () => window.removeEventListener('keydown', listener, true);
@@ -942,6 +945,7 @@ export function WorkspaceView({
             alternate={alternate}
             narrow={narrow}
             running={workspace.state === 'working' || atMenu(workspace.state)}
+            asking={workspace.state === 'needs-permission'}
             full={responsesFull}
             onToggleFull={() => {
               setResponsesFull((full) => !full);
@@ -959,6 +963,7 @@ export function WorkspaceView({
             workspaceId={workspace.id}
             narrow={narrow}
             addRequest={addNote}
+            onAddHandled={addNoteHandled}
             highlight={notesHighlight}
             onViewResponse={viewResponse}
             onClose={() => setNotesOpen(false)}
