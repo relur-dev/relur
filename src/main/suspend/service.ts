@@ -117,6 +117,8 @@ export class SuspendService {
   private readonly readyTimers = new Map<string, NodeJS.Timeout>();
   private timer: NodeJS.Timeout | null = null;
   private readonly draftListeners = new Set<(info: SessionInfo) => void>();
+  /** Callers waiting for a Claude in Starting to show its prompt, by session. */
+  private readonly promptWaiters = new Map<string, ((shown: boolean) => void)[]>();
   private readonly minuteMs: number;
   private readonly readyMs: number;
   private readonly settleMs: number;
@@ -163,6 +165,7 @@ export class SuspendService {
         const had = this.hasDraft(info.id);
         this.facts.delete(info.id);
         if (had) this.draftChanged(info);
+        this.releasePrompt(info.id, false);
         this.clearReady(info.id);
         this.release(info.id);
       }),
@@ -283,6 +286,44 @@ export class SuspendService {
 
   private draftChanged(info: SessionInfo): void {
     for (const listener of this.draftListeners) listener(info);
+    if (this.atPrompt(info.id)) this.releasePrompt(info.id, true);
+  }
+
+  /**
+   * Resolves once this Claude shows its prompt as `atPrompt` tells it (spec
+   * §6.7), true then; false when it ends or `ms` pass first. A view reports
+   * the input box once Claude's output has settled (about 150 ms after it is
+   * drawn), and SessionStart and that report come in either order: a quick
+   * reply, Send now or a drop just after the prompt shows waits for them
+   * rather than being refused.
+   */
+  whenAtPrompt(sessionId: string, ms: number): Promise<boolean> {
+    if (this.atPrompt(sessionId)) return Promise.resolve(true);
+    if (!this.facts.has(sessionId)) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const done = (shown: boolean) => {
+        clearTimeout(timer);
+        resolve(shown);
+      };
+      const timer = setTimeout(() => {
+        const list = this.promptWaiters.get(sessionId) ?? [];
+        this.promptWaiters.set(
+          sessionId,
+          list.filter((w) => w !== done),
+        );
+        resolve(false);
+      }, ms);
+      const list = this.promptWaiters.get(sessionId) ?? [];
+      list.push(done);
+      this.promptWaiters.set(sessionId, list);
+    });
+  }
+
+  private releasePrompt(sessionId: string, shown: boolean): void {
+    const list = this.promptWaiters.get(sessionId);
+    if (!list) return;
+    this.promptWaiters.delete(sessionId);
+    for (const done of list) done(shown);
   }
 
   private setDraft(info: SessionInfo, facts: Facts, draft: PromptDraft): void {

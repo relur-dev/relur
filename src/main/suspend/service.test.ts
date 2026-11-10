@@ -80,6 +80,9 @@ class FakeHost {
   resumed(id: string) {
     this.events.emit('resume', this.set(id, { status: 'running', resuming: true }));
   }
+  exit(id: string) {
+    this.events.emit('exit', this.set(id, { status: 'exited' }));
+  }
 }
 
 let host: FakeHost;
@@ -419,6 +422,33 @@ describe('SuspendService (spec §9.8)', () => {
     host.resumed('a');
     expect(service.atPrompt('a')).toBe(false);
     off();
+  });
+
+  it('lets an action wait for the prompt that is on screen but not reported yet', async () => {
+    host.add('a');
+    states.ws_a = workspace('starting');
+    hook('SessionStart', { workspaceId: 'ws_a' });
+    // The box is drawn; the view reports it once Claude's output settles.
+    const seen = service.whenAtPrompt('a', 1000);
+    host.shows('a', '');
+    await expect(seen).resolves.toBe(true);
+    // Reported before SessionStart: resolved by that.
+    host.add('b');
+    states.ws_b = workspace('starting');
+    host.shows('b', '');
+    const started = service.whenAtPrompt('b', 1000);
+    hook('SessionStart', { workspaceId: 'ws_b' });
+    await expect(started).resolves.toBe(true);
+    // Nothing comes: false after the wait; an exit ends it at once.
+    host.add('c');
+    states.ws_c = workspace('starting');
+    const never = service.whenAtPrompt('c', 1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(never).resolves.toBe(false);
+    const ended = service.whenAtPrompt('c', 1000);
+    host.exit('c');
+    await expect(ended).resolves.toBe(false);
+    await expect(service.whenAtPrompt('a', 1000)).resolves.toBe(true);
   });
 
   it('resumes a suspended session when a window shows it', async () => {

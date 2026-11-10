@@ -29,6 +29,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ### Fixed
 
+- **Right after a new workspace opens**, a quick reply, Send now or a dropped file is no longer refused with "Claude is starting and doesn't show its prompt yet" while Claude's prompt is already on screen: Relur waits a moment for its own look at the screen instead.
 - **Quitting stops background git.** A background `git fetch` (for behind and conflicts, or the PR check) could hang on a dead ssh connection, after the Mac slept, and keep running after Relur quit, so the Dock still showed Relur. Every git call to a remote now gives up after 30 seconds (Push and cloning a skill source after 2 minutes), stopping the ssh it started too, and quitting, by ⌘Q, Restart now, logging out or a signal, stops every git Relur started.
 - **git never waits for an answer it can't get.** ssh runs in batch mode, so a host key you haven't accepted yet (a first connection to `ssh.bitbucket.org`, say) or a key that needs its passphrase fails at once, with a reason that says what to do: run `git fetch` once in a terminal. Push, Create and Existing branch show it where you started them; background fetches write it to `app.log`.
 - **A message reaches a Claude that just started.** In a new workspace, or after Relur started again, Claude waits at its prompt before you've sent it anything; the Board's quick reply and a note's **Send now** said Claude wasn't waiting, and a queued note never went. They now go once Claude shows its prompt, never into its folder-trust question.

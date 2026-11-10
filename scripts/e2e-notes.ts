@@ -746,6 +746,27 @@ async function main() {
       'refused: Claude has ended',
     );
 
+    // Right after opening (spec §6.7): Send now from the box as soon as the
+    // new Claude's prompt is on screen, before the view's report of it can
+    // have reached the main process. It waits for that report, not refused.
+    await clickLabel(page, 'New workspace in web');
+    await page.waitFor(has('dialog[open] #ws-task'), 'New workspace');
+    await typeInField(page, '#ws-task', 'NOTE-3 Quick', false);
+    await sleep(600);
+    await submitDialog(page);
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the third workspace', 30_000);
+    // The note is ready in the box while Claude starts; Send now goes the
+    // moment its prompt shows.
+    await focusBox(page);
+    await page.send('Input.insertText', { text: 'Straight away' });
+    await page.waitFor(
+      `${promptText} === '' && !document.querySelector('[data-notes-box-send]').click()`,
+      "its Claude's empty input box, and Send now at once",
+      30_000,
+    );
+    await page.waitFor(`${notesIn('sent')}.includes('Straight away')`, 'sent right after opening');
+    await page.waitFor(`${screenText}.includes('Noted: Straight away')`, 'Claude took it at once');
+
     console.log(`e2e-notes: ok (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {
     const shown = await app?.page.eval<string>(`document.body.innerText`).catch(() => '');

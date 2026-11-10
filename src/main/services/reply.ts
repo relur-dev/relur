@@ -19,7 +19,16 @@ export interface ReplyDeps {
   hasDraft: (sessionId: string) => boolean;
   /** Claude shows its prompt after its SessionStart (spec §9.8). */
   atPrompt: (sessionId: string) => boolean;
+  /** Waits up to `ms` for `atPrompt` to become true (see `settledReplyFacts`). */
+  whenAtPrompt?: (sessionId: string, ms: number) => Promise<boolean>;
 }
+
+/**
+ * How long a reply waits for a Claude in Starting to be seen at its prompt:
+ * the view reports the input box about 150 ms after it is drawn, and
+ * SessionStart may come just after that.
+ */
+export const PROMPT_SEEN_WAIT_MS = 1000;
 
 export interface ReplyFacts extends QuickReplyFacts {
   workspace: Workspace;
@@ -48,6 +57,25 @@ export function replyFacts(deps: ReplyDeps, workspaceId: string): ReplyFacts | n
     atPrompt: claude ? deps.atPrompt(claude.id) : false,
     question: cachedConversation(deps.records.transcriptPath(workspaceId)).pending !== null,
   };
+}
+
+/**
+ * `replyFacts` for an action the user just took (spec §6.7): a Claude in
+ * Starting that runs but isn't seen at its prompt yet gets a moment, since
+ * its prompt may already be on screen with its report on the way; the facts
+ * are read again after it. Any other case is decided at once.
+ */
+export async function settledReplyFacts(
+  deps: ReplyDeps,
+  workspaceId: string,
+): Promise<ReplyFacts | null> {
+  const facts = replyFacts(deps, workspaceId);
+  if (!facts?.claudeId || !deps.whenAtPrompt) return facts;
+  const { claude } = facts;
+  if (facts.workspace.state !== 'starting' || facts.atPrompt) return facts;
+  if (claude?.status !== 'running' || claude.resuming) return facts;
+  await deps.whenAtPrompt(facts.claudeId, PROMPT_SEEN_WAIT_MS);
+  return replyFacts(deps, workspaceId);
 }
 
 /** The quick reply's offer for these facts, as the card's column would give it. */

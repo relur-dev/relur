@@ -10,7 +10,7 @@ import {
 import { cachedConversation } from '../claude/last-words';
 import type { TranscriptResponse } from '../claude/transcript';
 import type { NoteRecords, NoteSend } from '../db/notes';
-import { type ReplyDeps, replyFacts, replyRefusalOf } from '../services/reply';
+import { type ReplyDeps, replyFacts, replyRefusalOf, settledReplyFacts } from '../services/reply';
 
 export interface NotesDeps extends ReplyDeps {
   notes: NoteRecords;
@@ -170,7 +170,8 @@ export class NotesService {
    * suspended Claude resumes first.
    */
   async sendNow(workspaceId: string, ids: readonly string[]): Promise<void> {
-    const facts = replyFacts(this.deps, workspaceId);
+    // Just after the prompt shows, its report may still be on the way.
+    const facts = await settledReplyFacts(this.deps, workspaceId);
     if (!facts) throw new Error('This workspace no longer exists');
     const refusal = replyRefusalOf(facts);
     if (refusal) throw new Error(refusal);

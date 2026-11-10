@@ -44,7 +44,7 @@ import type { CliLinkEvent, CliLinkService } from '../services/cli-link';
 import { insertFiles, notePathsText } from '../services/insert-files';
 import type { ProfileService } from '../services/profiles';
 import type { ProjectService } from '../services/projects';
-import { replyFacts, replyRefusalOf } from '../services/reply';
+import { replyRefusalOf, settledReplyFacts } from '../services/reply';
 import type { TerminalService } from '../services/terminals';
 import type { WorkspaceService } from '../services/workspaces';
 import { attachToWindow } from '../sessions/electron';
@@ -166,6 +166,7 @@ export function createAppRouter({
     sessions: () => host.list(),
     hasDraft: (id: string) => suspend.hasDraft(id),
     atPrompt: (id: string) => suspend.atPrompt(id),
+    whenAtPrompt: (id: string, ms: number) => suspend.whenAtPrompt(id, ms),
   };
   const noteIds = z.array(z.string().min(1).max(100)).min(1).max(500);
   const sessionId = z.object({ sessionId: z.string().min(1) });
@@ -811,7 +812,7 @@ export function createAppRouter({
       quickReply: publicProcedure
         .input(z.object({ workspaceId: IdSchema, text: z.string().trim().min(1).max(20_000) }))
         .mutation(async ({ input }) => {
-          const facts = replyFacts(replyDeps, input.workspaceId);
+          const facts = await settledReplyFacts(replyDeps, input.workspaceId);
           if (!facts) throw new Error('This workspace no longer exists');
           const refusal = replyRefusalOf(facts);
           if (refusal) throw new Error(refusal);

@@ -6,7 +6,7 @@ import type { WorkspaceState } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import type { Workspace } from '@shared/workspaces';
 import type { SessionHost } from '../sessions/host';
-import { type ReplyDeps, replyFacts } from './reply';
+import { PROMPT_SEEN_WAIT_MS, type ReplyDeps, settledReplyFacts } from './reply';
 
 export interface InsertFilesDeps extends ReplyDeps {
   host: Pick<SessionHost, 'list' | 'typeAsUser' | 'outputEnd'>;
@@ -78,11 +78,16 @@ export function notePathsText(
  * Why files can't go into this Claude's prompt now (spec §6.16), by the quick
  * reply's facts; null when they can.
  */
-function claudeRefusal(deps: InsertFilesDeps, session: SessionInfo): string | null {
+async function claudeRefusal(deps: InsertFilesDeps, session: SessionInfo): Promise<string | null> {
   if (session.workspaceId) {
-    const facts = replyFacts(deps, session.workspaceId);
+    const facts = await settledReplyFacts(deps, session.workspaceId);
     if (!facts) return 'This workspace no longer exists';
     return insertRefusal(facts.workspace, facts);
+  }
+  // A main checkout's Claude just after its prompt shows: as settledReplyFacts.
+  const starting = deps.mainClaude(session.id)?.state ?? 'starting';
+  if (starting === 'starting' && session.status === 'running' && !session.resuming) {
+    await deps.whenAtPrompt?.(session.id, PROMPT_SEEN_WAIT_MS);
   }
   const main = deps.mainClaude(session.id);
   return insertRefusal(
@@ -138,7 +143,7 @@ export async function insertFiles(
   if (session.kind === 'shell' || session.kind === 'home') return { paste: shellText(files) };
   if (session.kind !== 'claude') throw new Error("Files can't be added here");
 
-  const refusal = claudeRefusal(deps, session);
+  const refusal = await claudeRefusal(deps, session);
   if (refusal) throw new Error(refusal);
   if (session.status === 'suspended' || session.resuming) {
     await deps.wake(session);

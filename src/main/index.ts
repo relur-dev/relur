@@ -693,6 +693,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       sessions: () => host.list(),
       hasDraft: (id) => suspend.hasDraft(id),
       atPrompt: (id) => suspend.atPrompt(id),
+      whenAtPrompt: (id, ms) => suspend.whenAtPrompt(id, ms),
       send: (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
       onDraftChange: (listener) =>
         suspend.onDraftChange((info) => {

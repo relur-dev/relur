@@ -40,7 +40,14 @@ function setup(state: WorkspaceState = 'working') {
     resuming: false,
     generation: 0,
   } as SessionInfo;
-  const ctx = { draft: false, atPrompt: false, fail: null as string | null, sessions: [claude] };
+  const ctx = {
+    draft: false,
+    atPrompt: false,
+    /** The prompt is on screen and its report comes while Send now waits. */
+    reportComing: false,
+    fail: null as string | null,
+    sessions: [claude],
+  };
   const draftListeners = new Set<(workspaceId: string) => void>();
   /** The draft in Claude's prompt changes, as the suspend service reports it. */
   const setDraft = (draft: boolean) => {
@@ -54,6 +61,10 @@ function setup(state: WorkspaceState = 'working') {
     sessions: () => ctx.sessions,
     hasDraft: () => ctx.draft,
     atPrompt: () => ctx.atPrompt,
+    whenAtPrompt: async () => {
+      if (ctx.reportComing) ctx.atPrompt = true;
+      return ctx.atPrompt;
+    },
     onDraftChange: (listener) => {
       draftListeners.add(listener);
       return () => draftListeners.delete(listener);
@@ -157,6 +168,15 @@ describe('NotesService (spec §6.15)', () => {
     expect(sent).toEqual(['First thing']);
     await service.sendNow('ws_a', [b.id]);
     expect(sent).toEqual(['First thing', 'Right away']);
+  });
+
+  it('waits for the report of a prompt already on screen rather than refusing', async () => {
+    const { notes, service, sent, ctx } = setup('starting');
+    stop = () => service.stop();
+    ctx.reportComing = true;
+    const a = notes.add('ws_a', 'Right after opening');
+    await service.sendNow('ws_a', [a.id]);
+    expect(sent).toEqual(['Right after opening']);
   });
 
   it('names the real reason when Claude is not running', async () => {
