@@ -148,8 +148,8 @@ exec sleep 600
     app = await launchApp({ env: withDisplayEnv({ ...fx.env }), dev: devMode, electronArgs });
     const page = app.page;
     await page.waitFor(
-      `document.querySelector('[data-home-overview]')?.dataset.homeOverview === 'empty'`,
-      'All clear',
+      `document.querySelector('[data-board-empty]')?.dataset.boardEmpty === 'no-workspaces'`,
+      'No workspaces yet',
     );
 
     const ws: Record<string, { id: string; tree: string }> = {};
