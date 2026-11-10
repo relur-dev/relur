@@ -5,6 +5,8 @@
  * Claude's full-screen mode. After every switch the page has one terminal,
  * every prompt marker shown is that terminal's own (one of its numbers,
  * never another workspace's), and the terminal was repainted when shown.
+ * In dark mode the terminal area is never white and has no broken image
+ * while switching, and a lost WebGL context gives the DOM renderer at once.
  * A full-screen session with more output than the replay keeps comes back
  * from another profile still in the alternate screen, with no marks (D9).
  * Runs with a throwaway HOME and a fake `claude`.
@@ -250,6 +252,62 @@ exec sleep 600
     await mainProcess.eval(
       `process.mainModule.require('electron').nativeTheme.themeSource = 'dark'`,
     );
+    await page.waitFor(`document.documentElement.dataset.theme === 'dark'`, 'dark');
+
+    // Never white, never a broken image (spec §6.3): every frame while
+    // switching workspaces in dark mode, the terminal area has no image
+    // without a loaded source, and neither it nor anything in it is white.
+    await page.eval(`(() => {
+      window.__terminalArea = [];
+      const white = (el) => /^rgba?\\(255, 255, 255(, 1)?\\)$/.test(getComputedStyle(el).backgroundColor);
+      const sample = () => {
+        for (const area of document.querySelectorAll('[data-terminal]')) {
+          const wrapper = area.parentElement;
+          for (const img of wrapper.querySelectorAll('img')) {
+            if (!img.complete || img.naturalWidth === 0) window.__terminalArea.push('an image without a loaded source');
+          }
+          for (const el of [wrapper, area, ...area.querySelectorAll('.xterm, .xterm-viewport, .xterm-screen, canvas')]) {
+            if (white(el)) window.__terminalArea.push('white: ' + (el.className || el.tagName));
+          }
+        }
+        if (window.__terminalArea) window.__terminalFrame = requestAnimationFrame(sample);
+      };
+      sample();
+    })()`);
+    for (let i = 0; i < 10; i++) {
+      await open(i % 2 ? 'AAA-1' : 'BBB-2');
+      await sleep(i % 3 ? 60 : 250);
+    }
+    await check('BBB-2', 'Beta', ['1'], true);
+    const terminalArea = await page.eval<string[]>(
+      `(() => { cancelAnimationFrame(window.__terminalFrame); const seen = window.__terminalArea; window.__terminalArea = null; return [...new Set(seen)]; })()`,
+    );
+    assert.deepEqual(terminalArea, [], 'the terminal area while switching in dark mode');
+
+    // A lost WebGL context (the GPU process restarting) switches the shown
+    // terminal to its DOM renderer at once, with its text, rather than after
+    // xterm's 3 s wait for Chromium to restore it.
+    await check('AAA-1', 'Alpha', ['1', '2', '3'], true);
+    const shownTerminal = `[...document.querySelectorAll('[data-terminal]')].find((t) => t.offsetParent)`;
+    if ((await page.eval<string>(`${shownTerminal}.dataset.renderer`)) === 'webgl') {
+      await page.eval(`(() => {
+        const canvas = [...${shownTerminal}.querySelectorAll('.xterm-screen > canvas')].find((c) => !c.className);
+        canvas.getContext('webgl2').getExtension('WEBGL_lose_context').loseContext();
+      })()`);
+      await page.waitFor(
+        `${shownTerminal}.dataset.renderer === 'dom' && ${shownTerminal}.querySelector('.xterm-rows')?.textContent.includes('answer 5 to third')`,
+        'the DOM renderer with the text, at once after a lost context',
+        1_000,
+      );
+      assert.equal(
+        await page.eval(
+          `[...${shownTerminal}.querySelectorAll('canvas')].filter((c) => !c.className).length`,
+        ),
+        0,
+        'no lost canvas left',
+      );
+      await screenshot(page, screenshotDir, 'terminals-lost-context.png');
+    }
 
     // Full screen in Alpha: no markers there, and Beta still shows its own.
     await check('AAA-1', 'Alpha', ['1', '2', '3'], true);

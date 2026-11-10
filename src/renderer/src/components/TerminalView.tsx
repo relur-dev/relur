@@ -154,15 +154,32 @@ export function TerminalView({
         container.dataset.repaints = String(Number(container.dataset.repaints ?? 0) + 1);
       });
     };
+    // A lost WebGL context (the GPU process restarting, after switching apps
+    // or with too many contexts) leaves its canvas empty, or Chromium's
+    // broken-image icon on white, until Chromium restores it, and xterm waits
+    // 3 s for that. The terminal switches to its DOM renderer at once instead
+    // (spec §6.3); the next view of it starts with WebGL again.
+    const toDom = () => {
+      if (!webgl) return;
+      const addon = webgl;
+      webgl = null;
+      addon.dispose();
+      container.dataset.renderer = 'dom';
+      repaint();
+    };
+    const onContextLost = () => toDom();
+    container.addEventListener('webglcontextlost', onContextLost, true);
+    // The canvas the addon draws on, to free its GPU context when the view goes
+    // rather than at garbage collection (Chromium keeps 16 at most).
+    let glCanvas: HTMLCanvasElement | null = null;
+    const releaseContext = () =>
+      glCanvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
     try {
       const addon = new WebglAddon();
-      addon.onContextLoss(() => {
-        addon.dispose();
-        webgl = null;
-        container.dataset.renderer = 'dom';
-        repaint();
-      });
+      addon.onContextLoss(toDom);
+      const before = new Set(container.querySelectorAll('canvas'));
       term.loadAddon(addon);
+      glCanvas = [...container.querySelectorAll('canvas')].find((c) => !before.has(c)) ?? null;
       webgl = addon;
       container.dataset.renderer = 'webgl';
     } catch {
@@ -341,6 +358,12 @@ export function TerminalView({
       aids?.dispose();
       aidsRef.current = null;
       onAidsRef.current?.(null);
+      container.removeEventListener('webglcontextlost', onContextLost, true);
+      // Released before disposing; the loss it reports is no longer handled.
+      if (webgl) {
+        webgl = null;
+        releaseContext();
+      }
       term.dispose();
     };
   }, [sessionId, fontReady, workspaceId]);
@@ -350,7 +373,7 @@ export function TerminalView({
     // that parent's border-box width, padding included. Claude tabs keep a 36px
     // gutter for prompt numbers (components.md).
     <div className={`relative h-full w-full bg-term pt-2 ${workspaceId ? 'pl-9' : 'pl-3.5'}`}>
-      <div ref={containerRef} data-terminal={sessionId} className="h-full w-full" />
+      <div ref={containerRef} data-terminal={sessionId} className="h-full w-full bg-term" />
       {resuming ? (
         <div
           data-resuming

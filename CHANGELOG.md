@@ -28,6 +28,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 - **Quitting stops background git.** A background `git fetch` (for behind and conflicts, or the PR check) could hang on a dead ssh connection, after the Mac slept, and keep running after Relur quit, so the Dock still showed Relur. Every git call to a remote now gives up after 30 seconds (Push and cloning a skill source after 2 minutes), stopping the ssh it started too, and quitting, by ⌘Q, Restart now, logging out or a signal, stops every git Relur started.
 - **git never waits for an answer it can't get.** ssh runs in batch mode, so a host key you haven't accepted yet (a first connection to `ssh.bitbucket.org`, say) or a key that needs its passphrase fails at once, with a reason that says what to do: run `git fetch` once in a terminal. Push, Create and Existing branch show it where you started them; background fetches write it to `app.log`.
+- **No more white terminal after switching apps or workspaces.** When macOS restarted the GPU process (after switching back to Relur, say), the terminal could show white with a broken-image icon for a second or two until its graphics came back. It now redraws its text at once without them, on its own dark background, and each terminal frees its graphics when it goes, so they no longer pile up.
 
 ## [0.6.2] - 2026-11-09
 
