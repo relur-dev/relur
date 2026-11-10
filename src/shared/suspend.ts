@@ -123,48 +123,6 @@ export function suspendDue(
   return now - eligibleSince >= delayMin * minuteMs;
 }
 
-/**
- * Escape sequences a terminal view sends: strings (OSC, DCS, APC, PM, SOS: the
- * terminal's answers to queries), X10 mouse reports (ESC [ M and three bytes),
- * CSI with any parameter bytes (SGR mouse reports `ESC [ < 35 ; 10 ; 5 M`,
- * focus `ESC [ I`, arrows), SS3 keys and Alt+key.
- */
-const SEQUENCES =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: escape sequences start with ESC.
-  /\x1b[\]P_^X][\s\S]*?(?:\x07|\x1b\\)|\x1b\[M[\s\S]{3}|\x1b\[[0-?]*[ -/]*[@-~]|\x1bO.|\x1b./g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: control keys aren't text.
-const TEXT = /[^\x00-\x1f\x7f]/;
-
-/**
- * Whether keys from a terminal view type text into Claude's prompt (a draft,
- * spec §9.8): printable characters, pasted text included. Escape sequences
- * (arrow keys, the paste markers, Alt+key, Esc, mouse reports and the
- * terminal's answers to queries), Enter, Backspace and other control keys
- * (⌃C) aren't.
- */
-export function typesText(data: string): boolean {
-  return TEXT.test(data.replace(SEQUENCES, ''));
-}
-
-// biome-ignore lint/suspicious/noControlCharactersInRegex: the paste markers start with ESC.
-const PASTE = /\x1b\[200~[\s\S]*?\x1b\[201~/g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ESC ↵ is a new line in the prompt.
-const NEW_LINE = /\x1b\r/g;
-
-/**
- * Whether Claude's prompt holds a draft after these keys (spec §9.8): typed
- * text makes one; ↵ sends what is there (a prompt or a command such as
- * /model) and ends it, while ⇧↵ (ESC ↵) and pasted line breaks only add lines.
- */
-export function draftAfter(draft: boolean, data: string): boolean {
-  const keys = data
-    .replace(PASTE, (pasted) => (typesText(pasted) ? 'x' : ''))
-    .replace(NEW_LINE, 'x');
-  const sent = keys.lastIndexOf('\r');
-  if (sent >= 0) return typesText(keys.slice(sent + 1));
-  return draft || typesText(keys);
-}
-
 /** Why a running Claude isn't suspended, for app.log and a Board card's tooltip (spec §9.8). */
 export const BLOCKER_TEXT: Record<SuspendBlocker, string> = {
   off: 'suspension is off',

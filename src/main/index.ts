@@ -693,6 +693,11 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       sessions: () => host.list(),
       hasDraft: (id) => suspend.hasDraft(id),
       send: (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
+      onDraftChange: (listener) =>
+        suspend.onDraftChange((info) => {
+          if (info.workspaceId) listener(info.workspaceId);
+        }),
+      onSessionsChange: (listener) => host.onChange(listener),
     });
     status.onConversation(({ workspaceId, event, text }) => {
       if (event !== 'SessionStart') notes.conversation(workspaceId, event, text);

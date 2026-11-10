@@ -17,6 +17,10 @@ export interface NotesDeps extends ReplyDeps {
   notes: NoteRecords;
   /** Types the prompt into the workspace's Claude, as the quick reply does (spec §6.7). */
   send: (workspaceId: string, prompt: string) => Promise<void>;
+  /** A Claude's prompt started or stopped holding a draft (spec §9.8). */
+  onDraftChange?: (listener: (workspaceId: string) => void) => () => void;
+  /** A Claude session started, exited, was suspended or resumed. */
+  onSessionsChange?: (listener: () => void) => () => void;
 }
 
 /** A sent item's prompt, as the Notes panel shows it (spec §6.15). */
@@ -36,7 +40,10 @@ export interface NotesView {
   sends: SentPrompt[];
 }
 
-/** How often held items look again while one waits on a draft in the terminal. */
+/**
+ * How often held items look again while some wait: for what sends no event,
+ * such as Claude's question tool, which shows only in the transcript.
+ */
 const RECHECK_MS = 2_000;
 
 /**
@@ -61,6 +68,13 @@ export class NotesService {
   start(): void {
     this.offs.push(this.deps.records.onChange(() => this.checkHeld()));
     this.offs.push(this.deps.notes.onChange((workspaceId) => this.checkHeld(workspaceId)));
+    // A draft cleared in the terminal (⌫, ⌃U, ⌃C…): held items go at once,
+    // also when Claude was done already and nothing else changes.
+    if (this.deps.onDraftChange) {
+      this.offs.push(this.deps.onDraftChange((workspaceId) => this.checkHeld(workspaceId)));
+    }
+    if (this.deps.onSessionsChange)
+      this.offs.push(this.deps.onSessionsChange(() => this.checkHeld()));
     this.checkHeld();
   }
 
@@ -127,7 +141,6 @@ export class NotesService {
     }
   }
 
-  /** A draft in the terminal sends no event when it clears: held items look again now and then. */
   private recheckWhile(held: boolean): void {
     if (held && !this.timer) this.timer = setInterval(() => this.checkHeld(), RECHECK_MS);
     if (!held && this.timer) {

@@ -6,7 +6,8 @@
  * and each View response opens the Responses panel at its own entry, which
  * has the "from notes" label. The Delete dialog mentions an unsent item.
  * Then the panel's keys: Esc leaves a note and a second Esc closes the panel,
- * ⌥↵ holds a note, ⌘↵ refused over a draft offers Queue instead; the footer's
+ * ⌥↵ holds a note, ⌘↵ refused over a draft offers Queue instead, and both go
+ * by themselves once the draft is deleted with ⌫; the footer's
  * "All n, as one prompt", and the Sent section staying collapsed.
  * Runs with a throwaway HOME and a fake `claude` that writes its transcript
  * as Claude Code does (uuids, a queued prompt as an attachment).
@@ -341,9 +342,11 @@ async function main() {
     );
     await page.eval(`document.querySelector('[data-notes-sent-toggle]').click()`);
     await page.waitFor(`!!document.querySelector('[data-notes-sent] [data-note]')`, 'Sent open');
-    // A draft in the terminal: ⌥↵ holds a note, waiting on it; ⌘↵ is refused
-    // and Queue instead holds that one too. Both go once the draft is sent.
-    await typeInTerminal(page, 'draft', false);
+    // A draft in the terminal while Claude is done: ⌥↵ holds a note, waiting
+    // on it; ⌘↵ is refused and Queue instead holds that one too. Both go by
+    // themselves once the draft is deleted with ⌫, without ↵.
+    const draft = 'half a thought';
+    await typeInTerminal(page, draft, false);
     await sleep(300);
     await page.eval(`${noteWith('Held by key')}.querySelector('[data-note-text]').focus()`);
     await pressShortcut(page, 'noteQueue');
@@ -364,12 +367,26 @@ async function main() {
       `${noteWith('A last thought')}?.dataset.noteState === 'held'`,
       'Queue instead held it',
     );
+    await page.waitFor(
+      `[...document.querySelectorAll('[data-note-queued]')].some((q) => q.textContent.includes('an unsent prompt in the terminal'))`,
+      'the waiting line names the draft',
+    );
     await screenshot(page, screenshotDir, 'n4-queued-by-key.png');
-    await typeInTerminal(page, '');
+    await typeInTerminal(page, '', false);
+    for (let i = 1; i < draft.length; i++) await pressKey(page, 'Backspace');
+    await sleep(1_000);
+    assert.deepEqual(
+      await page.eval(
+        `[${noteWith('Held by key')}?.dataset.noteState, ${noteWith('A last thought')}?.dataset.noteState]`,
+      ),
+      ['held', 'held'],
+      'one character of the draft left: still waiting',
+    );
+    await pressKey(page, 'Backspace');
     await page.waitFor(
       `${notesIn('sent')}.includes('Held by key') && ${notesIn('sent')}.includes('A last thought')`,
-      'both sent once the draft went',
-      20_000,
+      'both sent by themselves once the draft was deleted',
+      5_000,
     );
 
     console.log(`e2e-notes: ok (${devMode ? 'dev server' : 'production build'})`);

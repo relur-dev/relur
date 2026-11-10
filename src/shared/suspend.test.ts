@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { BRAND } from './brand';
 import type { WorkspaceState } from './status';
 import {
-  draftAfter,
   type SuspendFacts,
   suspendBlocker,
   suspendClockNote,
@@ -10,7 +9,6 @@ import {
   suspendDelay,
   suspendDue,
   suspendedNote,
-  typesText,
 } from './suspend';
 
 const idle: SuspendFacts = {
@@ -84,42 +82,6 @@ describe('suspendDue', () => {
   });
 });
 
-describe('typesText', () => {
-  it.each([['a'], ['fix the bug'], ['é'], ['\x1b[200~pasted\x1b[201~'], ['1']])(
-    'counts %j as typed text',
-    (data) => {
-      expect(typesText(data)).toBe(true);
-    },
-  );
-
-  it.each([
-    ['\x1b[A'],
-    ['\x1b[B'],
-    ['\x1bOA'],
-    ['\x1b'],
-    ['\x03'],
-    ['\r'],
-    ['\x7f'],
-    ['\x1b\r'],
-    ['\x1b[Z'],
-    ['\x1bb'],
-    ['\x1b[200~\x1b[201~'],
-    // Mouse reports: Claude Code turns on SGR (1006) and any-motion (1003) tracking.
-    ['\x1b[<35;10;5M'],
-    ['\x1b[<0;10;5M\x1b[<0;10;5m'],
-    ['\x1b[<64;1;1M'],
-    ['\x1b[M #!'],
-    // Focus reports and the terminal's answers to queries.
-    ['\x1b[I\x1b[O'],
-    ['\x1b[?1;2c'],
-    ['\x1b]11;rgb:0000/0000/0000\x1b\\'],
-    ['\x1b]10;rgb:ffff/ffff/ffff\x07'],
-    ['\x1bP>|xterm.js(6.0.0)\x1b\\'],
-  ])('ignores %j', (data) => {
-    expect(typesText(data)).toBe(false);
-  });
-});
-
 describe('suspendClockNote', () => {
   const clock = { workspaceId: 'w', blocker: null, dueAt: null } as const;
   it('says why a session is kept running', () => {
@@ -146,29 +108,6 @@ describe('suspendedNote', () => {
   it('counts sessions', () => {
     expect(suspendedNote(1)).toBe('1 session suspended');
     expect(suspendedNote(3)).toBe('3 sessions suspended');
-  });
-});
-
-describe('draftAfter', () => {
-  it('starts a draft with typed text and ends it with ↵', () => {
-    expect(draftAfter(false, 'f')).toBe(true);
-    expect(draftAfter(true, '\x1b[D')).toBe(true);
-    expect(draftAfter(true, '\r')).toBe(false);
-    // A command such as /model sends no prompt hook, but ↵ sent it.
-    expect(draftAfter(false, '/model sonnet\r')).toBe(false);
-    expect(draftAfter(false, 'one\rtwo')).toBe(true);
-  });
-
-  it('ignores the mouse moving over the terminal', () => {
-    expect(draftAfter(false, '\x1b[<35;40;12M')).toBe(false);
-    expect(draftAfter(true, '\x1b[<35;40;12M')).toBe(true);
-    expect(draftAfter(false, '\x1b[<35;40;12Mx')).toBe(true);
-  });
-
-  it('keeps it through ⇧↵ and pasted line breaks', () => {
-    expect(draftAfter(true, '\x1b\r')).toBe(true);
-    expect(draftAfter(false, '\x1b[200~line one\rline two\x1b[201~')).toBe(true);
-    expect(draftAfter(false, '\x1b[200~\x1b[201~')).toBe(false);
   });
 });
 

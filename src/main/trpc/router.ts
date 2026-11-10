@@ -1364,8 +1364,13 @@ export function createAppRouter({
           const offNotes = noteRecords.onChange((id) => {
             if (id === input.workspaceId) listener(true);
           });
-          // What held items wait on follows the workspace's state.
+          // What held items wait on follows the workspace's state, its
+          // Claude session and a draft in its prompt (spec §6.15).
           const offRecords = workspaceRecords.onChange(() => listener(true));
+          const offSessions = host.onChange(() => listener(true));
+          const offDraft = suspend.onDraftChange((info) => {
+            if (info.workspaceId === input.workspaceId) listener(true);
+          });
           // A sent prompt is found once Claude Code writes it to the transcript.
           const offTranscript = watchTranscript(
             () => workspaceRecords.transcriptPath(input.workspaceId),
@@ -1374,6 +1379,8 @@ export function createAppRouter({
           return () => {
             offNotes();
             offRecords();
+            offSessions();
+            offDraft();
             offTranscript();
           };
         }, signal),

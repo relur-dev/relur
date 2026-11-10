@@ -15,7 +15,7 @@ Claude is suspended once all of this has held for the whole time you chose. If o
 - **You aren't looking at it:** no window shows the workspace, in any of its tabs. A minimized or hidden window doesn't count.
 - **Claude is waiting:** Done, Waiting for input, Awaiting approval, interrupted with <kbd>Esc</kbd>, or resumed and waiting at its prompt. Never while it's Working, asks for permission or has asked a question.
 - **Nothing runs in the background:** no background command or agent of Claude's (the sidebar's **1 running** or **2 in background**). A dev server Claude started keeps the workspace running.
-- **You haven't started typing:** text typed into Claude's prompt and not yet sent keeps it running until you send it with <kbd>↵</kbd>, a prompt or a command such as `/model`. Arrow keys, <kbd>Esc</kbd> and the like don't count, nor does moving or clicking the mouse over the terminal. Text you typed and deleted again still counts until then.
+- **You haven't started typing:** text typed into Claude's prompt and not yet sent keeps it running until you send it with <kbd>↵</kbd>, a prompt or a command such as `/model`. Text you delete again (<kbd>⌫</kbd>, <kbd>Ctrl+U</kbd>, <kbd>Ctrl+C</kbd>, <kbd>Esc</kbd> <kbd>Esc</kbd> and the like) no longer counts, nor does moving the mouse over the terminal. After <kbd>↑</kbd>, which may bring back an earlier prompt, it counts until you send or clear the prompt with <kbd>Ctrl+C</kbd>.
 - **There is a conversation to resume:** Claude saves its conversation when you send the first prompt. A Claude you haven't sent anything yet keeps running, as there would be nothing to resume.
 - **It isn't kept running:** see below.
 

@@ -27,7 +27,7 @@ A held note waits for a finished turn that it won't answer by accident:
 
 - When Claude **asks for permission** or **asks you a question** in its menu, it hasn't finished: answer it, and the notes go when that turn ends.
 - When Claude **ends its turn with a question**, the note says **Waiting: Claude asked something**. Your note was written before the question, so it isn't sent as the answer. Answer Claude, and the notes go after its next turn; or press **Send now** to send them anyway.
-- At a workflow gate, after you pressed <kbd>Esc</kbd>, or while you have something typed in Claude's prompt, the note waits too, and says why.
+- At a workflow gate, after you pressed <kbd>Esc</kbd>, or while you have something typed in Claude's prompt, the note waits too, and says why. Send or delete what you typed (<kbd>⌫</kbd>, <kbd>Ctrl+U</kbd>, <kbd>Ctrl+C</kbd>), and the note goes at once.
 - A suspended Claude isn't woken up for a held note: it goes once you open the workspace and Claude is done.
 
 ## Sent notes

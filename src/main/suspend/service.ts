@@ -1,8 +1,8 @@
 import fs from 'node:fs';
+import { EMPTY_PROMPT, holdsDraft, type PromptDraft, promptAfter } from '@shared/prompt-draft';
 import { atMenu, type WorkspaceState } from '@shared/status';
 import {
   BLOCKER_TEXT,
-  draftAfter,
   RESUME_READY_MS,
   type SuspendBlocker,
   type SuspendClock,
@@ -70,8 +70,8 @@ export interface SuspendDeps {
 interface Facts {
   /** SessionStart arrived since it was started or resumed. */
   started: boolean;
-  /** Typed text not yet sent as a prompt (spec §9.8). */
-  draft: boolean;
+  /** What Claude's prompt holds, from the keys typed into its view (spec §9.8). */
+  draft: PromptDraft;
   /** From hook payloads; given back with `--permission-mode` on resume. */
   permissionMode: string | null;
   /** From the status line; given back with `--model` on resume. */
@@ -106,6 +106,7 @@ export class SuspendService {
   private readonly waiters = new Map<string, (() => void)[]>();
   private readonly readyTimers = new Map<string, NodeJS.Timeout>();
   private timer: NodeJS.Timeout | null = null;
+  private readonly draftListeners = new Set<(info: SessionInfo) => void>();
   private readonly minuteMs: number;
   private readonly readyMs: number;
   private readonly settleMs: number;
@@ -123,7 +124,7 @@ export class SuspendService {
         if (info.kind !== 'claude') return;
         this.facts.set(info.id, {
           started: false,
-          draft: false,
+          draft: EMPTY_PROMPT,
           permissionMode: null,
           model: null,
           transcript: null,
@@ -137,7 +138,7 @@ export class SuspendService {
       host.onResume((info) => {
         const facts = this.factsOf(info);
         facts.started = false;
-        facts.draft = false;
+        this.setDraft(info, facts, EMPTY_PROMPT);
         facts.eligibleSince = null;
         facts.blocker = undefined;
         // Ready at SessionStart, or after 20 s without one.
@@ -147,7 +148,9 @@ export class SuspendService {
         );
       }),
       host.onExit((info) => {
+        const had = this.hasDraft(info.id);
         this.facts.delete(info.id);
+        if (had) this.draftChanged(info);
         this.clearReady(info.id);
         this.release(info.id);
       }),
@@ -184,7 +187,7 @@ export class SuspendService {
       facts.saved = false;
     }
     if (message.event === 'UserPromptSubmit' && !isBackgroundHandBack(str(payload.prompt))) {
-      facts.draft = false;
+      this.setDraft(info, facts, EMPTY_PROMPT);
     }
     if (message.event === 'SessionStart') {
       facts.started = true;
@@ -217,7 +220,27 @@ export class SuspendService {
    * §9.8): Home's quick reply never types over it (§6.7).
    */
   hasDraft(sessionId: string): boolean {
-    return this.facts.get(sessionId)?.draft ?? false;
+    const draft = this.facts.get(sessionId)?.draft;
+    return draft ? holdsDraft(draft) : false;
+  }
+
+  /**
+   * Calls `listener` when a Claude's prompt starts or stops holding a draft:
+   * held notes go once nothing is typed there any more (spec §6.15).
+   */
+  onDraftChange(listener: (info: SessionInfo) => void): () => void {
+    this.draftListeners.add(listener);
+    return () => this.draftListeners.delete(listener);
+  }
+
+  private draftChanged(info: SessionInfo): void {
+    for (const listener of this.draftListeners) listener(info);
+  }
+
+  private setDraft(info: SessionInfo, facts: Facts, draft: PromptDraft): void {
+    const had = holdsDraft(facts.draft);
+    facts.draft = draft;
+    if (holdsDraft(draft) !== had) this.draftChanged(info);
   }
 
   /** The workspaces whose Claude's prompt holds a draft (spec §6.7, quick reply). */
@@ -391,7 +414,7 @@ export class SuspendService {
     const base = {
       delayMin,
       started: facts.started,
-      draft: facts.draft,
+      draft: holdsDraft(facts.draft),
       resuming: info.resuming,
       conversation: this.saved(facts),
     };
@@ -450,7 +473,7 @@ export class SuspendService {
       ? this.deps.workspace(info.workspaceId)?.state
       : facts.main?.state;
     // Keys that answer a permission prompt or a question aren't a draft (spec §10.2).
-    if (!atMenu(state)) facts.draft = draftAfter(facts.draft, data);
+    if (!atMenu(state)) this.setDraft(info, facts, promptAfter(facts.draft, data, this.now()));
     const main = facts.main;
     if (!main) return;
     if (main.state === 'working' && data === '\x1b' && !main.waiting) main.state = 'interrupted';
@@ -478,7 +501,7 @@ export class SuspendService {
     if (!facts) {
       facts = {
         started: false,
-        draft: false,
+        draft: EMPTY_PROMPT,
         permissionMode: null,
         model: null,
         transcript: null,

@@ -41,19 +41,29 @@ function setup(state: WorkspaceState = 'working') {
     generation: 0,
   } as SessionInfo;
   const ctx = { draft: false, fail: null as string | null, sessions: [claude] };
+  const draftListeners = new Set<(workspaceId: string) => void>();
+  /** The draft in Claude's prompt changes, as the suspend service reports it. */
+  const setDraft = (draft: boolean) => {
+    ctx.draft = draft;
+    for (const listener of draftListeners) listener('ws_a');
+  };
   const service = new NotesService({
     notes,
     records,
     decorate: (w) => w,
     sessions: () => ctx.sessions,
     hasDraft: () => ctx.draft,
+    onDraftChange: (listener) => {
+      draftListeners.add(listener);
+      return () => draftListeners.delete(listener);
+    },
     send: async (_id, prompt) => {
       if (ctx.fail) throw new Error(ctx.fail);
       sent.push(prompt);
     },
   });
   service.start();
-  return { records, notes, service, sent, ctx, transcript };
+  return { records, notes, service, sent, ctx, transcript, setDraft };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -108,17 +118,17 @@ describe('NotesService (spec §6.15)', () => {
     expect(sent).toEqual(['Later']);
   });
 
-  it('never types over a draft; it goes once the draft is gone', async () => {
-    const { records, notes, service, sent, ctx } = setup('done');
+  it('never types over a draft; it goes as soon as the draft is gone', async () => {
+    const { records, notes, service, sent, setDraft } = setup('done');
     stop = () => service.stop();
-    ctx.draft = true;
+    setDraft(true);
     const a = notes.add('ws_a', 'Wait for the draft');
     notes.hold('ws_a', [a.id]);
     await settle();
     expect(sent).toEqual([]);
     expect(service.view('ws_a').waiting).toBe('Waiting: an unsent prompt in the terminal');
-    ctx.draft = false;
-    service.checkHeld();
+    // Claude was done already: the draft clearing is the only change.
+    setDraft(false);
     await settle();
     expect(sent).toEqual(['Wait for the draft']);
     expect(records.get('ws_a')?.state).toBe('done');

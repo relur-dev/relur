@@ -328,6 +328,24 @@ describe('SuspendService (spec §9.8)', () => {
     expect(host.suspended).toEqual(['a', 'b', 'c']);
   });
 
+  it('reports a draft that starts and one cleared again by ⌫, ⌃U or ⌃C', () => {
+    host.add('a');
+    states.ws_a = workspace('done');
+    const seen: boolean[] = [];
+    const off = service.onDraftChange((info) => seen.push(service.hasDraft(info.id)));
+    host.type('a', 'half a thought');
+    host.type('a', '\x7f'.repeat(13));
+    expect(seen).toEqual([true]);
+    host.type('a', '\x7f');
+    expect(service.hasDraft('a')).toBe(false);
+    host.type('a', 'again');
+    host.type('a', '\x15');
+    host.type('a', 'and again');
+    host.type('a', '\x03');
+    expect(seen).toEqual([true, false, true, false, true, false]);
+    off();
+  });
+
   it('resumes a suspended session when a window shows it', async () => {
     host.add('a', { status: 'suspended' });
     host.add('b', { status: 'suspended' });
