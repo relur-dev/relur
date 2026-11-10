@@ -262,6 +262,8 @@ export function WorkspaceView({
   const addNoteHandled = useCallback(() => setAddNote(null), []);
   const [notesHighlight, setNotesHighlight] = useState<{ ids: string[]; at: number } | null>(null);
   const [responsesFull, setResponsesFull] = useState(false);
+  // The workspace area: the Notes panel's large editor goes over it (spec §6.15).
+  const [area, setArea] = useState<HTMLDivElement | null>(null);
   // The Changes panel's full view (spec §6.4), reset when the panel closes.
   const [changesFull, setChangesFull] = useState(false);
   useEffect(() => {
@@ -913,7 +915,7 @@ export function WorkspaceView({
           ✕ {error}
         </p>
       ) : null}
-      <div className="flex min-h-0 flex-1">
+      <div ref={setArea} data-workspace-area className="relative flex min-h-0 flex-1">
         {/* Hidden, not removed, in the Responses panel's full view: the terminal keeps its state. */}
         <div
           className={`min-h-0 min-w-0 flex-1 flex-col bg-term ${(responsesShown && responsesFull) || (changesOpen && changesFull) ? 'hidden' : 'flex'}`}
@@ -967,6 +969,7 @@ export function WorkspaceView({
             highlight={notesHighlight}
             onViewResponse={viewResponse}
             onClose={() => setNotesOpen(false)}
+            overlay={area}
           />
         ) : null}
         {changesOpen && !(responsesShown && responsesFull) ? (

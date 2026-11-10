@@ -484,6 +484,105 @@ async function main() {
       5_000,
     );
 
+    // Room for long notes: a pasted log grows the field at once, up to half
+    // the panel's height, then it scrolls; left, the note shows its first
+    // four lines and "…". ⌥⌘F opens it in the large editor, Done goes back;
+    // ⤢ opens it again, Esc goes back; edited there and sent from there.
+    const log = Array.from({ length: 60 }, (_, i) => `log line ${i + 1}: request took 12 ms`).join(
+      '\n',
+    );
+    await writeNote(page, () => pressShortcut(page, 'addNote'), log);
+    const field = await page.eval<{ height: number; scroll: number; panel: number }>(
+      `(() => { const f = document.activeElement; return { height: f.clientHeight, scroll: f.scrollHeight, panel: document.querySelector('[data-notes-panel]').clientHeight }; })()`,
+    );
+    assert.ok(field.height > 150, `the field grew with the paste (${field.height}px)`);
+    assert.ok(
+      field.height <= field.panel / 2 + 2,
+      `at most half the panel (${JSON.stringify(field)})`,
+    );
+    assert.ok(field.scroll > field.height + 100, 'then it scrolls');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!!${noteWith(log)}?.querySelector('[data-note-preview]')`, 'its preview');
+    const preview = await page.eval<{ height: number; scroll: number; clamp: string }>(
+      `(() => { const p = ${noteWith(log)}.querySelector('[data-note-preview] [data-note-clamp]'); return { height: p.clientHeight, scroll: p.scrollHeight, clamp: getComputedStyle(p).webkitLineClamp }; })()`,
+    );
+    assert.equal(preview.clamp, '4', 'four lines, then "…"');
+    assert.ok(preview.height < 100 && preview.scroll > preview.height, JSON.stringify(preview));
+    await screenshot(page, screenshotDir, 'n5-long-note.png');
+    const editor = '[data-note-editor]';
+    const editorText = `document.querySelector('[data-note-editor-text]')`;
+    await page.eval(`${noteWith(log)}.querySelector('[data-note-text]').focus()`);
+    await page.waitFor(`document.activeElement?.matches('textarea[data-note-text]')`, 'editing it');
+    await pressShortcut(page, 'noteEditor');
+    await page.waitFor(
+      `${editorText}?.value === ${JSON.stringify(log)} && document.activeElement === ${editorText}`,
+      '⌥⌘F opened it in the large editor, in focus',
+    );
+    assert.equal(await page.eval(`document.querySelector('${editor}').dataset.noteState`), 'open');
+    await screenshot(page, screenshotDir, 'n6-editor.png');
+    await page.eval(`document.querySelector('[data-note-editor-done]').click()`);
+    await page.waitFor(`!document.querySelector('${editor}')`, 'Done went back');
+    await page.waitFor(
+      `!!document.activeElement?.closest('[data-notes-panel] [data-note]')`,
+      'the note in focus again',
+    );
+    await page.eval(`${noteWith(log)}.querySelector('[data-note-expand]').click()`);
+    await page.waitFor(`document.activeElement === ${editorText}`, '⤢ opened it');
+    const added = '\nlast line added in the editor';
+    await page.send('Input.insertText', { text: added });
+    await sleep(700);
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('${editor}')`, 'Esc went back');
+    assert.equal(await page.eval(has('[data-notes-panel]')), true, 'the panel stays open');
+    await page.waitFor(`!!${noteWith(log + added)}`, 'the edit shows in the panel');
+    await page.eval(`${noteWith(log + added)}.querySelector('[data-note-expand]').click()`);
+    await page.waitFor(
+      `${editorText}?.value === ${JSON.stringify(log + added)}`,
+      'kept when opened again',
+    );
+    await page.eval(`document.querySelector('${editor} [data-note-send-now]').click()`);
+    await page.waitFor(`!document.querySelector('${editor}')`, 'sent: the editor goes');
+    await page.waitFor(`${notesIn('sent')}.includes(${JSON.stringify(log + added)})`, 'in Sent');
+    for (let i = 0; i < 50 && !fs.readFileSync(transcript, 'utf8').includes('last line added'); i++)
+      await sleep(100);
+    assert.ok(
+      fs.readFileSync(transcript, 'utf8').includes('last line added in the editor'),
+      'Claude got the edited text',
+    );
+    // A sent note opens read-only, with Copy.
+    await page.eval(`${noteWith(log + added)}.querySelector('[data-note-expand]').click()`);
+    await page.waitFor(
+      `document.querySelector('${editor}')?.dataset.noteState === 'sent' && ${editorText}.readOnly && !!document.querySelector('${editor} [data-note-copy]')`,
+      'a sent note read-only with Copy',
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('${editor}')`, 'back from the sent note');
+    // A queued note opens read-only, with Send now and Cancel.
+    await typeInTerminal(page, 'x', false);
+    await page.waitFor(`${promptText} === 'x'`, 'a draft to hold it');
+    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Queued and long enough');
+    await pressShortcut(page, 'noteQueue');
+    await page.waitFor(
+      `${noteWith('Queued and long enough')}?.dataset.noteState === 'held'`,
+      'queued',
+    );
+    await page.eval(
+      `${noteWith('Queued and long enough')}.querySelector('[data-note-expand]').click()`,
+    );
+    await page.waitFor(
+      `document.querySelector('${editor}')?.dataset.noteState === 'held' && ${editorText}.readOnly && !!document.querySelector('${editor} [data-note-cancel]')`,
+      'a queued note read-only with Cancel',
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('${editor}')`, 'back from the queued note');
+    await typeInTerminal(page, '', false);
+    await pressKey(page, 'Backspace');
+    await page.waitFor(
+      `${notesIn('sent')}.includes('Queued and long enough')`,
+      'the queued note sent once the draft went',
+      5_000,
+    );
+
     // A fresh workspace: its Claude waits at its prompt in Starting, before
     // any prompt. Send now types a note there, and a held one goes at once.
     await clickLabel(page, 'New workspace in web');

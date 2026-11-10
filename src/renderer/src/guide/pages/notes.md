@@ -8,7 +8,9 @@ While Claude works, thoughts come up: something to add, something to check next,
 
 ## Writing notes
 
-The panel holds a list of notes. **Add note** starts a new one at the end. A note is plain text of any length, and it's saved as you type: nothing to press. Notes read as plain text until you point at one or click into it. A note you leave empty goes away when you click elsewhere. <kbd>Esc</kbd> in a note leaves it; a second <kbd>Esc</kbd> closes the panel.
+The panel holds a list of notes. **Add note** starts a new one at the end. A note is plain text of any length, and it's saved as you type: nothing to press. Notes read as plain text until you point at one or click into it. A note you leave empty goes away when you click elsewhere.
+
+There's room for long thoughts and pasted text, such as a log or an error: while you write, a note's box grows with it up to half the panel's height, then scrolls. When you're not editing it, a long note shows its first four lines and "…"; click it to edit it there. For more room, **⤢** on the note you're on, or <kbd>{{key:noteEditor}}</kbd> while you're in it, opens it in a large editor over the workspace, with **Send now** and **When done**. What you type there is saved as you type, as in the panel. **Done** or <kbd>Esc</kbd> takes you back. Queued and sent notes open there too, read-only, to read all of them; a sent one has **Copy**. <kbd>Esc</kbd> in a note leaves it; a second <kbd>Esc</kbd> closes the panel.
 
 Notes are private until you send them: {{app}} keeps them in its own database, not in the worktree, so Claude can't read them. They stay across restarts and while Claude is [suspended](suspend), and they're deleted with the workspace. The **Delete** dialog tells you how many unsent notes would go with it.
 

@@ -141,6 +141,14 @@ export const SHORTCUTS = {
     label: 'In a note: send it when Claude is done',
     chords: [{ alt: true, code: 'Enter' }],
   },
+  noteEditor: {
+    group: 'Workspaces',
+    label: 'In a note: open it in the large editor, or back',
+    // F for full view, as the Responses panel's ⇧⌘F; Ctrl+Alt+F on Linux and
+    // Windows, as ⌥⌘N is Ctrl+Alt+N: it types nothing in a text field and
+    // isn't a desktop key, unlike Alt+letters (menus) or Ctrl+Shift+U (IBus).
+    chords: [{ mod: true, alt: true, code: 'KeyF' }],
+  },
   changesFileStep: {
     group: 'Workspaces',
     label: 'Changes panel: previous / next file',
