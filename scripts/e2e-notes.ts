@@ -511,6 +511,17 @@ async function main() {
     await screenshot(page, screenshotDir, 'n5-long-note.png');
     const editor = '[data-note-editor]';
     const editorText = `document.querySelector('[data-note-editor-text]')`;
+    /**
+     * Back from the editor: it goes, and a frame later its note has the focus
+     * again. Keys for the terminal wait for that, or the note takes them.
+     */
+    const backFromEditor = async (what: string) => {
+      await page.waitFor(`!document.querySelector('${editor}')`, what);
+      await page.waitFor(
+        `!!document.activeElement?.closest('[data-notes-panel] [data-note]')`,
+        `${what}: the note in focus again`,
+      );
+    };
     await page.eval(`${noteWith(log)}.querySelector('[data-note-text]').focus()`);
     await page.waitFor(`document.activeElement?.matches('textarea[data-note-text]')`, 'editing it');
     await pressShortcut(page, 'noteEditor');
@@ -521,11 +532,7 @@ async function main() {
     assert.equal(await page.eval(`document.querySelector('${editor}').dataset.noteState`), 'open');
     await screenshot(page, screenshotDir, 'n6-editor.png');
     await page.eval(`document.querySelector('[data-note-editor-done]').click()`);
-    await page.waitFor(`!document.querySelector('${editor}')`, 'Done went back');
-    await page.waitFor(
-      `!!document.activeElement?.closest('[data-notes-panel] [data-note]')`,
-      'the note in focus again',
-    );
+    await backFromEditor('Done went back');
     await page.eval(`${noteWith(log)}.querySelector('[data-note-expand]').click()`);
     await page.waitFor(`document.activeElement === ${editorText}`, '⤢ opened it');
     const added = '\nlast line added in the editor';
@@ -556,7 +563,7 @@ async function main() {
       'a sent note read-only with Copy',
     );
     await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('${editor}')`, 'back from the sent note');
+    await backFromEditor('back from the sent note');
     // A queued note opens read-only, with Send now and Cancel.
     await typeInTerminal(page, 'x', false);
     await page.waitFor(`${promptText} === 'x'`, 'a draft to hold it');
@@ -574,7 +581,7 @@ async function main() {
       'a queued note read-only with Cancel',
     );
     await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('${editor}')`, 'back from the queued note');
+    await backFromEditor('back from the queued note');
     await typeInTerminal(page, '', false);
     await pressKey(page, 'Backspace');
     await page.waitFor(

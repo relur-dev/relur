@@ -286,7 +286,13 @@ async function main() {
         );
       }
     };
-    const screenText = `(() => { const b = (${shownTerminal}).xterm.buffer.active; let s = ''; for (let y = 0; y < b.length; y++) s += b.getLine(y).translateToString(true) + '\\n'; return s; })()`;
+    /**
+     * The shown terminal's text, a line wrapped at the terminal's width joined
+     * again: a long answer may wrap inside "as asked" (at 1600 px, answer 4's
+     * line breaks between "as" and "asked"), and counting them must not depend
+     * on the width.
+     */
+    const screenText = `(() => { const b = (${shownTerminal}).xterm.buffer.active; let s = ''; for (let y = 0; y < b.length; y++) { const wraps = !!b.getLine(y + 1)?.isWrapped; s += b.getLine(y).translateToString(!wraps) + (wraps ? '' : '\\n'); } return s; })()`;
     /** Sends a prompt and waits for its answer. */
     const send = async (prompt: string) => {
       const before = await page.eval<number>(`(${screenText}).split('as asked').length`);

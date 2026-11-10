@@ -416,7 +416,9 @@ const HeldNote = memo(function HeldNote({
       data-note={note.id}
       data-note-state="held"
       data-highlighted={highlighted ? 'true' : undefined}
-      className={`group/note flex gap-2 border-b border-line py-2 pr-2.5 pl-9 transition-colors duration-300 ${highlighted ? 'bg-focus/10' : 'hover:bg-band'}`}
+      // In focus itself back from the large editor (spec §6.15).
+      tabIndex={-1}
+      className={`group/note flex gap-2 border-b border-line py-2 pr-2.5 pl-9 outline-none transition-colors duration-300 ${highlighted ? 'bg-focus/10' : 'hover:bg-band focus:bg-band'}`}
       onKeyDown={expandKey(() => onExpand(note.id))}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
@@ -514,7 +516,9 @@ const SentNote = memo(function SentNote({
       data-note={note.id}
       data-note-state="sent"
       data-highlighted={highlighted ? 'true' : undefined}
-      className={`group/note flex flex-col gap-1 transition-colors duration-300 ${highlighted ? 'bg-focus/10' : ''}`}
+      // In focus itself back from the large editor (spec §6.15).
+      tabIndex={-1}
+      className={`group/note flex flex-col gap-1 outline-none transition-colors duration-300 ${highlighted ? 'bg-focus/10' : ''}`}
       onKeyDown={expandKey(() => onExpand(note.id))}
     >
       <p
@@ -983,15 +987,21 @@ export function NotesPanel({
       ),
     [queryClient, trpc, workspaceId],
   );
-  /** Back from the editor: the item in focus again in the panel, where it still is. */
+  /**
+   * Back from the editor: the item in focus again in the panel, where it still
+   * is (spec §6.15). An open one's field; a queued or sent one takes the focus
+   * itself, as its actions show only on the item you're on.
+   */
   const closeEditor = useCallback(() => {
     const id = editorId;
     setEditorId(null);
     requestAnimationFrame(() => {
-      const item = listRef.current?.querySelector(`[data-note="${CSS.escape(id ?? '')}"]`);
+      const item = listRef.current?.querySelector<HTMLElement>(
+        `[data-note="${CSS.escape(id ?? '')}"]`,
+      );
       const target =
         item?.querySelector<HTMLElement>('[data-note-preview], textarea[data-note-text]') ??
-        item?.querySelector<HTMLElement>('[data-note-expand]') ??
+        item ??
         asideRef.current;
       target?.focus();
     });
