@@ -244,11 +244,13 @@ exec sleep 600
     await page.eval(`document.querySelector('[data-home-quick="Add project"]').click()`);
     await page.waitFor(`${dialogText}.includes('Add project')`, 'the Add project dialog');
     await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    // Gone, not only closed: the dialog's close event, which ends Add project,
+    // comes a moment after Esc; a click before it would be undone by it.
+    await page.waitFor(`!document.querySelector('dialog')`, 'the dialog to go');
     await page.eval(`document.querySelector('[data-home-action=add-first-project]').click()`);
     await page.waitFor(`${dialogText}.includes('Add project')`, 'the Add project dialog');
     await pressKey(page, 'Escape');
-    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the dialog to close');
+    await page.waitFor(`!document.querySelector('dialog')`, 'the dialog to go');
     await clickLabel(page, 'Select Work');
 
     // 2. The Terminal tab: the profile's home shell, ⌃2 and ⌃1 (Ctrl+Tab elsewhere).
