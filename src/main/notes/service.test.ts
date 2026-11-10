@@ -40,7 +40,7 @@ function setup(state: WorkspaceState = 'working') {
     resuming: false,
     generation: 0,
   } as SessionInfo;
-  const ctx = { draft: false, fail: null as string | null, sessions: [claude] };
+  const ctx = { draft: false, atPrompt: false, fail: null as string | null, sessions: [claude] };
   const draftListeners = new Set<(workspaceId: string) => void>();
   /** The draft in Claude's prompt changes, as the suspend service reports it. */
   const setDraft = (draft: boolean) => {
@@ -53,6 +53,7 @@ function setup(state: WorkspaceState = 'working') {
     decorate: (w) => w,
     sessions: () => ctx.sessions,
     hasDraft: () => ctx.draft,
+    atPrompt: () => ctx.atPrompt,
     onDraftChange: (listener) => {
       draftListeners.add(listener);
       return () => draftListeners.delete(listener);
@@ -126,12 +127,46 @@ describe('NotesService (spec §6.15)', () => {
     notes.hold('ws_a', [a.id]);
     await settle();
     expect(sent).toEqual([]);
-    expect(service.view('ws_a').waiting).toBe('Waiting: an unsent prompt in the terminal');
+    expect(service.view('ws_a').waiting).toBe("Waiting: there may be text in Claude's prompt");
+    await expect(service.sendNow('ws_a', [a.id])).rejects.toThrow(
+      "There may be text in Claude's prompt: send it or clear it with Ctrl+C",
+    );
     // Claude was done already: the draft clearing is the only change.
     setDraft(false);
     await settle();
     expect(sent).toEqual(['Wait for the draft']);
     expect(records.get('ws_a')?.state).toBe('done');
+  });
+
+  it('sends to a fresh Claude once it shows its prompt, held or now', async () => {
+    const { notes, service, sent, ctx, setDraft } = setup('starting');
+    stop = () => service.stop();
+    const a = notes.add('ws_a', 'First thing');
+    notes.hold('ws_a', [a.id]);
+    await settle();
+    expect(sent).toEqual([]);
+    expect(service.view('ws_a').waiting).toBe('Waiting: Claude is starting');
+    const b = notes.add('ws_a', 'Right away');
+    await expect(service.sendNow('ws_a', [b.id])).rejects.toThrow(
+      "Claude is starting and doesn't show its prompt yet",
+    );
+    // Its prompt shows: the suspend service reports it as a change.
+    ctx.atPrompt = true;
+    setDraft(false);
+    await settle();
+    expect(sent).toEqual(['First thing']);
+    await service.sendNow('ws_a', [b.id]);
+    expect(sent).toEqual(['First thing', 'Right away']);
+  });
+
+  it('names the real reason when Claude is not running', async () => {
+    const { notes, service, ctx } = setup('done');
+    stop = () => service.stop();
+    const a = notes.add('ws_a', 'Hello');
+    ctx.sessions = [];
+    await expect(service.sendNow('ws_a', [a.id])).rejects.toThrow(
+      "Claude isn't running in this workspace",
+    );
   });
 
   it('puts items back when typing fails, with the reason', async () => {

@@ -48,6 +48,7 @@ describe('heldSendDecision (spec §6.15)', () => {
     gate: null,
     claude: running,
     draft: false,
+    atPrompt: false,
     question: false,
     asked: false,
     ...over,
@@ -61,9 +62,14 @@ describe('heldSendDecision (spec §6.15)', () => {
     expect(heldSendDecision(facts())).toEqual({ send: true });
   });
 
-  it('stays queued while Claude works or starts', () => {
+  it('stays queued while Claude works, and waits while it starts', () => {
     expect(waiting({ state: 'working' })).toBe(QUEUED);
-    expect(waiting({ state: 'starting' })).toBe(QUEUED);
+    expect(waiting({ state: 'starting' })).toBe('Waiting: Claude is starting');
+  });
+
+  it('sends to a fresh or restarted Claude once it shows its prompt', () => {
+    expect(heldSendDecision(facts({ state: 'starting', atPrompt: true }))).toEqual({ send: true });
+    expect(waiting({ state: 'starting', atPrompt: true, draft: true })).toMatch(/text/);
   });
 
   it('waits at a permission request or a question, sent after the turn that follows', () => {
@@ -86,7 +92,7 @@ describe('heldSendDecision (spec §6.15)', () => {
   });
 
   it('never types over a draft, nor resumes a suspended Claude', () => {
-    expect(waiting({ draft: true })).toBe('Waiting: an unsent prompt in the terminal');
+    expect(waiting({ draft: true })).toBe("Waiting: there may be text in Claude's prompt");
     expect(waiting({ claude: { status: 'suspended', resuming: false } })).toMatch(/suspended/);
     expect(waiting({ claude: { status: 'running', resuming: true } })).toMatch(/suspended/);
   });

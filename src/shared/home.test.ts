@@ -17,6 +17,7 @@ import {
   prText,
   quickReply,
   readyToMergeText,
+  replyRefusal,
   type ShipState,
   shipCandidates,
   shipStep,
@@ -489,7 +490,8 @@ describe('quickReply', () => {
     claude: typeof running | typeof suspended | null,
     draft = false,
     question = false,
-  ) => ({ claude, draft, question });
+    atPrompt = false,
+  ) => ({ claude, draft, question, atPrompt });
 
   it('offers the field where Claude waits at its prompt or works', () => {
     for (const state of [
@@ -558,6 +560,48 @@ describe('quickReply', () => {
     expect(quickReply(ws('done'), 'idle', facts({ status: 'running', resuming: true }))).toBe(
       'none',
     );
+  });
+
+  it('offers it in Starting once Claude shows its prompt', () => {
+    expect(quickReply(ws('starting'), 'idle', facts(running, false, false, true))).toBe('field');
+    expect(quickReply(ws('starting'), 'idle', facts(running, true, false, true))).toBe('draft');
+  });
+});
+
+describe('replyRefusal (spec §6.7, §6.15)', () => {
+  const running = { status: 'running' as const, resuming: false };
+  const facts = (over: Partial<Parameters<typeof replyRefusal>[2]> = {}) => ({
+    claude: running,
+    draft: false,
+    question: false,
+    atPrompt: false,
+    ...over,
+  });
+
+  it('refuses nothing where the field is offered', () => {
+    expect(replyRefusal(ws('done'), 'idle', facts())).toBeNull();
+  });
+
+  it('names each real reason', () => {
+    expect(replyRefusal(ws('done'), 'idle', facts({ draft: true }))).toBe(
+      "There may be text in Claude's prompt: send it or clear it with Ctrl+C",
+    );
+    expect(replyRefusal(ws('needs-permission'), 'needs', facts())).toMatch(/permission/);
+    expect(replyRefusal(ws('working'), 'working', facts({ question: true }))).toMatch(/question/);
+    expect(replyRefusal(ws('done'), 'merged', facts())).toBe('This workspace is merged');
+    expect(replyRefusal(ws('done'), 'idle', facts({ claude: null }))).toBe(
+      "Claude isn't running in this workspace",
+    );
+    expect(
+      replyRefusal(ws('exited'), 'idle', facts({ claude: { status: 'exited', resuming: false } })),
+    ).toBe("Claude isn't running in this workspace");
+    expect(
+      replyRefusal(ws('done'), 'idle', facts({ claude: { status: 'running', resuming: true } })),
+    ).toBe('Claude is resuming; try again in a moment');
+    expect(replyRefusal(ws('starting'), 'idle', facts())).toBe(
+      "Claude is starting and doesn't show its prompt yet",
+    );
+    expect(replyRefusal(ws('error'), 'idle', facts())).toMatch(/error/);
   });
 });
 

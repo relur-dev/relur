@@ -2,7 +2,6 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { editorFor } from '@shared/editor';
-import { QUICK_REPLY_REFUSAL } from '@shared/home';
 import type { LastWords } from '@shared/last-words';
 import { NOTE_MAX } from '@shared/notes';
 import { answerable, optionKey } from '@shared/question';
@@ -44,7 +43,7 @@ import { openExternalSafe } from '../security';
 import type { CliLinkEvent, CliLinkService } from '../services/cli-link';
 import type { ProfileService } from '../services/profiles';
 import type { ProjectService } from '../services/projects';
-import { replyFacts, replyOffer } from '../services/reply';
+import { replyFacts, replyRefusalOf } from '../services/reply';
 import type { TerminalService } from '../services/terminals';
 import type { WorkspaceService } from '../services/workspaces';
 import { attachToWindow } from '../sessions/electron';
@@ -165,6 +164,7 @@ export function createAppRouter({
     decorate: (w: Parameters<typeof workflow.decorate>[0]) => workflow.decorate(w),
     sessions: () => host.list(),
     hasDraft: (id: string) => suspend.hasDraft(id),
+    atPrompt: (id: string) => suspend.atPrompt(id),
   };
   const noteIds = z.array(z.string().min(1).max(100)).min(1).max(500);
   const sessionId = z.object({ sessionId: z.string().min(1) });
@@ -812,8 +812,8 @@ export function createAppRouter({
         .mutation(async ({ input }) => {
           const facts = replyFacts(replyDeps, input.workspaceId);
           if (!facts) throw new Error('This workspace no longer exists');
-          const offer = replyOffer(facts);
-          if (offer !== 'field') throw new Error(QUICK_REPLY_REFUSAL[offer]);
+          const refusal = replyRefusalOf(facts);
+          if (refusal) throw new Error(refusal);
           await terminals.sendToClaude(input.workspaceId, input.text);
         }),
       /**
@@ -1224,8 +1224,11 @@ export function createAppRouter({
         .mutation(({ input }) => terminals.startClaudeInProject(input.projectId)),
       /** Each running workspace Claude's idle clock: why not suspended, or when (spec §9.8). */
       suspendClocks: publicProcedure.query(() => suspend.clocks()),
-      /** Workspaces whose Claude's prompt holds a draft: no quick reply there (spec §6.7). */
-      drafts: publicProcedure.query(() => suspend.drafts()),
+      /**
+       * Workspaces whose Claude's prompt holds a draft (no quick reply there),
+       * and those whose Claude shows its prompt in Starting (spec §6.7, §9.8).
+       */
+      prompts: publicProcedure.query(() => suspend.prompts()),
       /** The projects whose main-checkout Claude is kept running (spec §9.8). */
       keptMainCheckouts: publicProcedure.query(() => workspaceRecords.keptMainCheckouts()),
       setMainCheckoutKept: publicProcedure

@@ -69,8 +69,13 @@ class FakeHost {
   onResume = this.on('resume');
   onExit = this.on('exit');
   onInput = this.on('input');
+  onPrompt = this.on('prompt');
   type(id: string, data: string) {
     this.events.emit('input', this.get(id), data);
+  }
+  /** A view's report of Claude's input box. */
+  shows(id: string, text: string | null, cursor = text?.length ?? 0, lines = 1) {
+    this.events.emit('prompt', this.get(id), text === null ? null : { text, cursor, lines });
   }
   resumed(id: string) {
     this.events.emit('resume', this.set(id, { status: 'running', resuming: true }));
@@ -305,7 +310,7 @@ describe('SuspendService (spec §9.8)', () => {
     // Home's quick reply never types over it (spec §6.7).
     expect(service.hasDraft('b')).toBe(true);
     expect(service.hasDraft('a')).toBe(false);
-    expect(service.drafts()).toEqual(['ws_b']);
+    expect(service.prompts().drafts).toEqual(['ws_b']);
     service.check();
     pass(10 * MINUTE);
     expect(host.suspended).toEqual(['a']);
@@ -314,7 +319,7 @@ describe('SuspendService (spec §9.8)', () => {
     pass(10 * MINUTE);
     expect(host.suspended).toEqual(['a']);
     hook('UserPromptSubmit', { workspaceId: 'ws_b' }, { prompt: 'go' });
-    expect(service.drafts()).toEqual([]);
+    expect(service.prompts().drafts).toEqual([]);
     service.check();
     pass(5 * MINUTE);
     expect(host.suspended).toEqual(['a', 'b']);
@@ -343,6 +348,76 @@ describe('SuspendService (spec §9.8)', () => {
     host.type('a', 'and again');
     host.type('a', '\x03');
     expect(seen).toEqual([true, false, true, false, true, false]);
+    off();
+  });
+
+  it("follows Claude's screen over the keys: a click it couldn't follow, then ⌫ to empty", () => {
+    host.add('a');
+    states.ws_a = workspace('done');
+    const seen: boolean[] = [];
+    const off = service.onDraftChange((info) => seen.push(service.hasDraft(info.id)));
+    host.type('a', 'half a thought');
+    host.shows('a', 'half a thought');
+    // A click on the prompt may move Claude's cursor: the keys alone can't tell.
+    host.type('a', '\x1b[<0;5;26M\x1b[<0;5;26m');
+    host.type('a', '\x7f'.repeat(14));
+    expect(service.hasDraft('a')).toBe(true);
+    // Claude's screen shows the cursor moved: the text after it stays.
+    host.shows('a', 'lf a thought', 0);
+    expect(service.hasDraft('a')).toBe(true);
+    host.type('a', '\x1b[F');
+    host.type('a', '\x7f'.repeat(12));
+    // The keys follow from what the screen showed.
+    expect(service.hasDraft('a')).toBe(false);
+    host.shows('a', '');
+    expect(service.hasDraft('a')).toBe(false);
+    // Its first input box on screen is a change too (Starting waits for it).
+    expect(seen).toEqual([true, true, false]);
+    // Text the keys didn't type (Claude puts an interrupted prompt back) is a draft too.
+    host.shows('a', 'put back');
+    expect(service.hasDraft('a')).toBe(true);
+    // No input box on screen (a menu): the keys' account stays.
+    host.shows('a', null);
+    expect(service.hasDraft('a')).toBe(true);
+    off();
+  });
+
+  it('counts an empty prompt over several lines as empty and other text there as unsure', () => {
+    host.add('a');
+    states.ws_a = workspace('done');
+    host.shows('a', 'one\ntwo', 7, 2);
+    host.type('a', '\x7f'.repeat(7));
+    // A wrapped line may be one line, not two: unsure until the screen shows it.
+    expect(service.hasDraft('a')).toBe(true);
+    host.shows('a', '', 0, 2);
+    expect(service.hasDraft('a')).toBe(false);
+  });
+
+  it('waits at its prompt in Starting only after SessionStart and its input box on screen', () => {
+    host.add('a');
+    states.ws_a = workspace('starting');
+    const changes: string[] = [];
+    const off = service.onDraftChange((info) => changes.push(info.id));
+    expect(service.atPrompt('a')).toBe(false);
+    // Claude Code sends SessionStart before its folder-trust question.
+    hook('SessionStart', { workspaceId: 'ws_a' });
+    host.shows('a', null);
+    expect(service.atPrompt('a')).toBe(false);
+    host.shows('a', '');
+    expect(service.atPrompt('a')).toBe(true);
+    expect(service.prompts()).toEqual({ drafts: [], atPrompt: ['ws_a'] });
+    expect(changes).toEqual(['a']);
+    // Shown before its SessionStart: ready once that comes.
+    host.add('b');
+    states.ws_b = workspace('starting');
+    host.shows('b', '');
+    expect(service.atPrompt('b')).toBe(false);
+    hook('SessionStart', { workspaceId: 'ws_b' });
+    expect(service.atPrompt('b')).toBe(true);
+    expect(changes).toEqual(['a', 'b', 'b']);
+    // A resume starts over.
+    host.resumed('a');
+    expect(service.atPrompt('a')).toBe(false);
     off();
   });
 

@@ -289,6 +289,11 @@ export interface QuickReplyFacts {
   /** Text typed into Claude's prompt and not sent (spec §9.8). */
   draft: boolean;
   /**
+   * Claude shows its prompt after its SessionStart (spec §9.8): in Starting,
+   * a fresh or restarted Claude that waits there takes typed text.
+   */
+  atPrompt: boolean;
+  /**
    * Claude waits on its question tool (from the transcript): its menu takes
    * typed text as an answer, so the card offers the options instead.
    */
@@ -300,8 +305,8 @@ export interface QuickReplyFacts {
  * Claude's question menu (Claude Code reads its state as Working, then as a
  * permission request) nor on a permission request (also an Unfinished one),
  * nor over a draft; only where
- * Claude waits at its prompt or works, or is suspended (it resumes first).
- * Never on Merged, nor on an exited Claude.
+ * Claude waits at its prompt (also in Starting, once it shows it) or works,
+ * or is suspended (it resumes first). Never on Merged, nor on an exited Claude.
  */
 export function quickReply(
   w: Pick<Workspace, 'state' | 'unfinished'>,
@@ -313,19 +318,43 @@ export function quickReply(
   if (atMenu(w.state) || w.unfinished?.kind === 'permission') return 'open';
   const { claude } = facts;
   if (!claude || claude.status === 'exited') return 'none';
-  const ready =
-    claude.status === 'suspended' || (!claude.resuming && REPLY_STATES.includes(w.state));
+  const waits = REPLY_STATES.includes(w.state) || (w.state === 'starting' && facts.atPrompt);
+  const ready = claude.status === 'suspended' || (!claude.resuming && waits);
   if (!ready) return 'none';
   return facts.draft ? 'draft' : 'field';
 }
 
-/** Why the main process refuses a quick reply, by what `quickReply` says. */
-export const QUICK_REPLY_REFUSAL: Record<Exclude<QuickReply, 'field'>, string> = {
-  open: 'Claude is asking for permission; answer it in the Claude tab',
-  question: 'Claude is asking a question; pick an answer on the card or in the Claude tab',
-  draft: 'Has an unsent prompt; open it',
-  none: "Claude isn't waiting for a message in this workspace",
-};
+/** A Board card's note over a draft (spec §6.7): it opens the workspace. */
+export const DRAFT_NOTE = 'Has an unsent prompt; open it';
+
+/**
+ * Why text can't be typed into the workspace's Claude now (spec §6.7,
+ * §6.15), for the main process's refusal of a quick reply or Send now; null
+ * when it can. Each names its real reason.
+ */
+export function replyRefusal(
+  w: Pick<Workspace, 'state' | 'unfinished'>,
+  column: BoardColumn,
+  facts: QuickReplyFacts,
+): string | null {
+  switch (quickReply(w, column, facts)) {
+    case 'field':
+      return null;
+    case 'open':
+      return 'Claude is asking for permission; answer it in the Claude tab';
+    case 'question':
+      return 'Claude is asking a question; pick an answer on the card or in the Claude tab';
+    case 'draft':
+      return "There may be text in Claude's prompt: send it or clear it with Ctrl+C";
+  }
+  const { claude } = facts;
+  if (column === 'merged') return 'This workspace is merged';
+  if (!claude || claude.status === 'exited') return "Claude isn't running in this workspace";
+  if (claude.resuming) return 'Claude is resuming; try again in a moment';
+  if (w.state === 'starting') return "Claude is starting and doesn't show its prompt yet";
+  if (w.state === 'error') return 'Claude stopped with an error; look in the Claude tab';
+  return "Claude isn't waiting for a message in this workspace";
+}
 
 /**
  * "Bash" from "Claude needs your permission to use Bash", else the message;

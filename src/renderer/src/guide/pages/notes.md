@@ -16,7 +16,7 @@ Notes are private until you send them: {{app}} keeps them in its own database, n
 
 The note you're on (under the pointer, or the one you're typing in) shows two ways to go, and a bin to delete it:
 
-- **Send now** <kbd>{{key:noteSendNow}}</kbd> types it into Claude as a prompt, the way the Board's [quick reply](home#quick-reply) does. It never types into a permission request or Claude's question menu, and never over a prompt you've started typing in the terminal: the note says why it can't go, and stays. **Queue instead** then holds it for when Claude is done. A suspended Claude resumes first. While Claude is working, Claude Code takes the note into its current turn after the step it's on.
+- **Send now** <kbd>{{key:noteSendNow}}</kbd> types it into Claude as a prompt, the way the Board's [quick reply](home#quick-reply) does. It never types into a permission request or Claude's question menu, and never over a prompt you've started typing in the terminal: the note says why it can't go, for example **There may be text in Claude's prompt: send it or clear it with Ctrl+C**, and stays. **Queue instead** then holds it for when Claude is done. A suspended Claude resumes first, and a new workspace's Claude takes a note as soon as it shows its prompt, before you've sent it anything. While Claude is working, Claude Code takes the note into its current turn after the step it's on.
 - **When done** <kbd>{{key:noteQueue}}</kbd> (send when Claude is done) moves it to **Queued**, read-only, until Claude finishes its turn; then it's sent by itself. **Cancel** takes it back before then, and **Send now** (point at it) sends it without waiting.
 
 To send several notes together, tick them: the checkboxes show when you point at a note. A bar at the bottom offers **Send now** and **Send when done** for the ticked ones, and **Clear**. With two or more notes unsent and none ticked, the same bar offers **All 2, as one prompt**, for all of them. They go as one prompt, a numbered list in the panel's order, each note its own point. Notes held separately go out together too, when Claude is done.
@@ -27,7 +27,7 @@ A held note waits for a finished turn that it won't answer by accident:
 
 - When Claude **asks for permission** or **asks you a question** in its menu, it hasn't finished: answer it, and the notes go when that turn ends.
 - When Claude **ends its turn with a question**, the note says **Waiting: Claude asked something**. Your note was written before the question, so it isn't sent as the answer. Answer Claude, and the notes go after its next turn; or press **Send now** to send them anyway.
-- At a workflow gate, after you pressed <kbd>Esc</kbd>, or while you have something typed in Claude's prompt, the note waits too, and says why. Send or delete what you typed (<kbd>⌫</kbd>, <kbd>Ctrl+U</kbd>, <kbd>Ctrl+C</kbd>), and the note goes at once.
+- At a workflow gate, after you pressed <kbd>Esc</kbd>, or while you have something typed in Claude's prompt, the note waits too, and says why. Send or delete what you typed (<kbd>⌫</kbd>, <kbd>Ctrl+U</kbd>, <kbd>Ctrl+C</kbd>), and the note goes at once: {{app}} looks at Claude's prompt on the screen, so it sees the prompt empty however you deleted the text.
 - A suspended Claude isn't woken up for a held note: it goes once you open the workspace and Claude is done.
 
 ## Sent notes

@@ -1,4 +1,10 @@
-import { boardColumn, type QuickReply, type QuickReplyFacts, quickReply } from '@shared/home';
+import {
+  boardColumn,
+  type QuickReply,
+  type QuickReplyFacts,
+  quickReply,
+  replyRefusal,
+} from '@shared/home';
 import type { SessionInfo } from '@shared/terminal-protocol';
 import type { Workspace } from '@shared/workspaces';
 import { cachedConversation } from '../claude/last-words';
@@ -11,6 +17,8 @@ export interface ReplyDeps {
   sessions: () => SessionInfo[];
   /** Text typed into this Claude's prompt and not sent (spec §9.8). */
   hasDraft: (sessionId: string) => boolean;
+  /** Claude shows its prompt after its SessionStart (spec §9.8). */
+  atPrompt: (sessionId: string) => boolean;
 }
 
 export interface ReplyFacts extends QuickReplyFacts {
@@ -37,6 +45,7 @@ export function replyFacts(deps: ReplyDeps, workspaceId: string): ReplyFacts | n
     claudeId: claude?.id ?? null,
     claude,
     draft: claude ? deps.hasDraft(claude.id) : false,
+    atPrompt: claude ? deps.atPrompt(claude.id) : false,
     question: cachedConversation(deps.records.transcriptPath(workspaceId)).pending !== null,
   };
 }
@@ -45,3 +54,7 @@ export function replyFacts(deps: ReplyDeps, workspaceId: string): ReplyFacts | n
 export const replyOffer = (facts: ReplyFacts): QuickReply =>
   // The card's column: what is left to ship decides only between two that both offer it.
   quickReply(facts.workspace, boardColumn(facts.workspace, null), facts);
+
+/** Why text can't be typed into the workspace's Claude now, by its real reason; null when it can. */
+export const replyRefusalOf = (facts: ReplyFacts): string | null =>
+  replyRefusal(facts.workspace, boardColumn(facts.workspace, null), facts);

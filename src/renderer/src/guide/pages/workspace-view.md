@@ -15,6 +15,8 @@ A line separates the header from the tabs, whose bar holds the workspace's views
 
 Switch to the next or previous tab with <kbd>{{keys:cycleTabs}}</kbd>. <kbd>{{key:closeTab}}</kbd> closes a tab; closing a running Claude asks first. When Claude has exited, <kbd>{{key:restartClaude}}</kbd> in its tab starts it again, continuing the same conversation.
 
+A click into a terminal that doesn't have the focus only gives it the focus: the click doesn't reach Claude, so it doesn't move the cursor in a prompt you've started typing. Click again to place the cursor.
+
 ## Under the tabs
 
 A bar under the tabs says when something needs doing:

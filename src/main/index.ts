@@ -692,6 +692,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       decorate: (w) => workflow.decorate(w),
       sessions: () => host.list(),
       hasDraft: (id) => suspend.hasDraft(id),
+      atPrompt: (id) => suspend.atPrompt(id),
       send: (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
       onDraftChange: (listener) =>
         suspend.onDraftChange((info) => {

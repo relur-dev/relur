@@ -63,6 +63,8 @@ export interface HeldSendFacts {
   claude: { status: 'running' | 'suspended' | 'exited'; resuming: boolean } | null;
   /** Text typed into Claude's prompt and not sent (spec §9.8). */
   draft: boolean;
+  /** Claude shows its prompt after its SessionStart: Starting waits there (spec §9.8). */
+  atPrompt: boolean;
   /** Claude waits on its question tool. */
   question: boolean;
   /** Claude's turn ended with a question in its text ("Claude asked: …"). */
@@ -76,7 +78,8 @@ export const QUEUED = 'Queued · sends when Claude is done';
 
 /**
  * Whether held items go now (spec §6.15): only when Claude has finished its
- * turn (Done) and a quick reply could go, never into a permission menu, a
+ * turn (Done), or a fresh or restarted one shows its prompt (Starting), and a
+ * quick reply could go, never into a permission menu, a
  * question or over a draft; never resuming a suspended Claude. Otherwise
  * what they wait on: Claude's turn, its question, a gate, an interrupt.
  */
@@ -97,6 +100,9 @@ export function heldSendDecision(f: HeldSendFacts): HeldSendDecision {
       return wait('Waiting: Claude is waiting for your answer');
     case 'done':
       break;
+    case 'starting':
+      if (f.atPrompt) break;
+      return wait('Waiting: Claude is starting');
     default:
       return wait(QUEUED);
   }
@@ -104,7 +110,7 @@ export function heldSendDecision(f: HeldSendFacts): HeldSendDecision {
     return wait('Waiting: Claude is suspended; sends once it resumes');
   }
   if (f.asked) return wait('Waiting: Claude asked something');
-  if (f.draft) return wait('Waiting: an unsent prompt in the terminal');
+  if (f.draft) return wait("Waiting: there may be text in Claude's prompt");
   return { send: true };
 }
 

@@ -13,8 +13,8 @@ import {
   type BoardColumn,
   boardColumns,
   cardDetails,
+  DRAFT_NOTE,
   type HomeSection,
-  QUICK_REPLY_REFUSAL,
   quickReply,
 } from '@shared/home';
 import type { LastWords } from '@shared/last-words';
@@ -188,11 +188,11 @@ export function Board({
   const place = (w: Workspace) => (inProject ? w.branch : projectName(w.projectId));
 
   // Drafts change as keys are typed into a terminal: read them often while shown.
-  const drafts = useQuery(
-    trpc.sessions.drafts.queryOptions(undefined, { refetchInterval: 3_000, staleTime: 0 }),
+  const prompts = useQuery(
+    trpc.sessions.prompts.queryOptions(undefined, { refetchInterval: 3_000, staleTime: 0 }),
   );
   const refreshDrafts = () =>
-    void queryClient.invalidateQueries({ queryKey: trpc.sessions.drafts.queryKey() });
+    void queryClient.invalidateQueries({ queryKey: trpc.sessions.prompts.queryKey() });
   // What each card's Claude last said, for the line above its quick reply (spec §6.7).
   const lastWords = useQuery(
     trpc.workspaces.lastWords.queryOptions(
@@ -600,7 +600,8 @@ export function Board({
     const words = lastWords.data?.[w.id] ?? null;
     const offer = quickReply(w, column, {
       claude,
-      draft: drafts.data?.includes(w.id) ?? false,
+      draft: prompts.data?.drafts.includes(w.id) ?? false,
+      atPrompt: prompts.data?.atPrompt.includes(w.id) ?? false,
       question: words?.kind === 'question',
     });
     /** The line above the field: what Claude last said; it opens the Responses panel there. */
@@ -800,7 +801,7 @@ export function Board({
                     actions.open(w);
                   }}
                 >
-                  {QUICK_REPLY_REFUSAL.draft}
+                  {DRAFT_NOTE}
                 </button>,
               )
             : null}

@@ -1,8 +1,11 @@
+import type { PromptLine } from './prompt-line';
+
 /**
  * What Claude's prompt holds, followed from the keys typed into its view
  * (spec §9.8): its text and cursor, as Claude Code edits them. Keys whose
  * effect can't be known (the history on ↑, completion on ⇥, undo, a click)
- * make it `unsure`: a draft until ↵, ⌃C or Esc Esc empty the prompt.
+ * make it `unsure`: a draft until ↵, ⌃C or Esc Esc empty the prompt, or
+ * the screen shows what it holds (`promptShown`).
  * Checked live with Claude Code 2.1.322: ⌫, ⌃U, ⌃W, ⌃K and ⌃C clear it, a
  * single Esc doesn't, Esc Esc does when the two come within ~350 ms.
  */
@@ -142,6 +145,18 @@ function control(p: PromptDraft, key: string): PromptDraft {
     default:
       return p;
   }
+}
+
+/**
+ * The prompt as Claude's screen shows it (spec §9.8), which wins over the
+ * keys: exact on one line; over several lines, or with a paste Claude shows
+ * as `[Pasted text …]`, its text may differ from what the keys would edit, so
+ * it stays unsure until the screen shows it again.
+ */
+export function promptShown(p: PromptDraft, line: PromptLine): PromptDraft {
+  if (line.text === '') return { ...EMPTY_PROMPT, escAt: p.escAt };
+  const approximate = line.lines > 1 || /\[(Pasted text|Image)\b/.test(line.text);
+  return { text: line.text, cursor: line.cursor, unsure: approximate, escAt: p.escAt };
 }
 
 /** The prompt after these keys from a view, typed at `now` (ms). */

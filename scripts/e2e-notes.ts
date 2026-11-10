@@ -45,11 +45,15 @@ const electronArgs = args.filter((a) => !a.startsWith('--screenshots=') && a !==
 
 /**
  * A stand-in for Claude, in Node (run by this Node): SessionStart, then per
- * line typed `begin` starts a turn (a prompt, UserPromptSubmit) and `finish`
+ * line typed `begin` starts a turn (a prompt, UserPromptSubmit), `finish`
  * ends it (Claude's text, Stop, then the transcript, as Claude Code writes
- * it). A paste and Enter while a turn runs is taken into it, as Claude Code
- * does (a `queued_command` attachment, checked live with 2.1.321); while
- * idle, it is a prompt of its own, answered at once.
+ * it) and `exit` ends Claude. A paste and Enter while a turn runs is taken
+ * into it, as Claude Code does (a `queued_command` attachment, checked live
+ * with 2.1.321); while idle, it is a prompt of its own, answered at once.
+ * As Claude Code does, it turns on mouse and focus reports, ignores them
+ * (a click doesn't move its cursor here; it notes the clicks it got in
+ * claude-mouse.txt), and shows typed keys in its input
+ * box between two full-width rules, with a dim placeholder when empty.
  */
 const FAKE_CLAUDE = `
 const fs = require('node:fs');
@@ -62,28 +66,44 @@ if (argv[0] === 'auth') {
 }
 const settings = argv[argv.indexOf('--settings') + 1];
 const helper = /"command": "'(.*)' hook SessionStart"/.exec(fs.readFileSync(settings, 'utf8'))[1];
-const transcript = process.env.HOME + '/transcript-notes.jsonl';
+// The first workspace's Claude writes transcript-notes.jsonl; later ones their own.
+const first = !fs.existsSync(process.env.HOME + '/transcript-notes.jsonl');
+const sessionId = first ? 'notes' : 'notes-' + process.pid;
+const transcript = process.env.HOME + '/transcript-' + sessionId + '.jsonl';
 const hook = (event, payload) =>
-  execFileSync(helper, ['hook', event], { input: JSON.stringify({ session_id: 'notes', transcript_path: transcript, ...payload }) });
+  execFileSync(helper, ['hook', event], { input: JSON.stringify({ session_id: sessionId, transcript_path: transcript, ...payload }) });
 const write = (entry) => fs.appendFileSync(transcript, JSON.stringify({ timestamp: new Date().toISOString(), ...entry }) + '\\n');
 let n = 0;
 const id = () => 'uuid-' + ++n;
 let busy = false;
 const prompt = (text) => {
   write({ type: 'user', uuid: id(), origin: { kind: 'human' }, message: { role: 'user', content: text } });
-  process.stdout.write('\\u276f ' + text.split('\\n')[0] + '\\n');
+  out('\\u276f ' + text.split('\\n')[0] + '\\r\\n');
   hook('UserPromptSubmit', { prompt: text });
 };
 const answer = (text) => {
-  process.stdout.write('\\u23fa ' + text + '\\n\\n');
+  out('\\u23fa ' + text + '\\r\\n\\r\\n');
   hook('Stop', { last_assistant_message: text });
   write({ type: 'assistant', uuid: id(), message: { id: 'm' + n, role: 'assistant', content: [{ type: 'text', text }] } });
 };
+let draft = '';
+const rule = () => '\\u2500'.repeat(process.stdout.columns || 80);
+// The input box: a rule, the prompt line with the cursor in it, a rule.
+const promptLine = () => draft ? '\\u276f\\u00a0' + draft : '\\u276f\\u00a0\\u001b[2mTry "something"\\u001b[0m\\r\\u001b[2C';
+const box = () => process.stdout.write(rule() + '\\r\\n' + '\\r\\n' + rule() + '\\u001b[1A\\r' + promptLine());
+const redraw = () => process.stdout.write('\\r\\u001b[2K' + promptLine());
+// Output goes above the box: cleared from its top rule, written, drawn again.
+const out = (text) => { process.stdout.write('\\u001b[1A\\r\\u001b[J' + text); box(); };
+process.stdout.on('resize', () => { process.stdout.write('\\u001b[1A\\r\\u001b[J'); box(); });
 hook('SessionStart', {});
+process.stdout.write('\\u001b[?1000h\\u001b[?1006h\\u001b[?1004h');
 console.log('fake claude');
+box();
 let buffer = '';
 const START = '\\u001b[200~';
 const END = '\\u001b[201~';
+// Raw, as Claude Code reads its keys: no echo or line editing by the terminal.
+process.stdin.setRawMode(true);
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
   buffer += chunk;
@@ -106,12 +126,23 @@ process.stdin.on('data', (chunk) => {
       continue;
     }
     if (start !== -1) return;
-    const nl = buffer.search(/[\\r\\n]/);
-    if (nl === -1) return;
-    const line = buffer.slice(0, nl).trim();
-    buffer = buffer.slice(nl + 1);
-    if (line === 'begin') { busy = true; prompt('Start the work'); }
-    else if (line === 'finish') { busy = false; answer('Finished the work.'); }
+    // Keys, one at a time: mouse and focus reports and other sequences change nothing.
+    const key = /^(?:\\u001b\\[[0-?]*[ -\\/]*[@-~]|\\u001b[\\s\\S]?|[\\s\\S])/.exec(buffer);
+    if (!key) return;
+    buffer = buffer.slice(key[0].length);
+    const k = key[0];
+    if (k === '\\r' || k === '\\n') {
+      const line = draft.trim();
+      draft = '';
+      redraw();
+      if (line === 'begin') { busy = true; prompt('Start the work'); }
+      else if (line === 'finish') { busy = false; answer('Finished the work.'); }
+      else if (line === 'exit') { process.stdout.write('\\r\\n'); process.exit(0); }
+    } else if (k === '\\u007f') { draft = draft.slice(0, -1); redraw(); }
+    else if (k === '\\u0003' || k === '\\u0015') { draft = ''; redraw(); }
+    else if (/^\\u001b\\[<\\d+;\\d+;\\d+[Mm]$/.test(k)) fs.appendFileSync(process.env.HOME + '/claude-mouse.txt', k.slice(1) + '\\n');
+    else if (k >= ' ') { draft += k; redraw(); }
+    if (buffer === '') return;
   }
 });
 setInterval(() => {}, 1 << 30);
@@ -119,6 +150,32 @@ setInterval(() => {}, 1 << 30);
 
 /** The shown terminal's text, from xterm's buffer, as an expression. */
 const screenText = `(() => { const t = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent); const b = t?.xterm?.buffer.active; if (!b) return ''; let s = ''; for (let y = 0; y < b.length; y++) s += b.getLine(y).translateToString(true) + '\\n'; return s; })()`;
+
+/** The text in Claude's input box as the shown terminal draws it, as an expression; null without one. */
+const promptText = `(() => { const t = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent); const b = t?.xterm?.buffer.active; const line = b?.getLine(b.baseY + b.cursorY)?.translateToString(true); if (!line?.startsWith('\\u276f')) return null; return line.includes('Try "something"') ? '' : line.slice(2).trimEnd(); })()`;
+
+/** Whether the shown terminal has the keyboard focus, as an expression. */
+const terminalFocused = `[...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent)?.querySelector('.xterm-helper-textarea') === document.activeElement`;
+
+/** What a note's refusal says, as an expression. */
+const refusalOf = (text: string) =>
+  `(${noteWith(text)}?.querySelector('[data-note-queue-instead]')?.parentElement?.innerText ?? ${noteWith(text)}?.innerText ?? '')`;
+
+/** The waiting line of notes held behind a draft. */
+const WAITING_DRAFT = "there may be text in Claude's prompt";
+
+/** A real click on the prompt line of the shown terminal, at its fourth column. */
+async function clickPromptLine(page: Cdp) {
+  const { x, y } = await page.eval<{ x: number; y: number }>(`(() => {
+    const t = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent);
+    const r = t.querySelector('.xterm-screen').getBoundingClientRect();
+    const term = t.xterm;
+    return { x: r.left + (r.width / term.cols) * 3.5, y: r.top + (r.height / term.rows) * (term.buffer.active.cursorY + 0.5) };
+  })()`);
+  for (const type of ['mousePressed', 'mouseReleased'] as const) {
+    await page.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+  }
+}
 
 /** Whether the selector matches, as an expression. */
 const has = (selector: string) => `!!document.querySelector(${JSON.stringify(selector)})`;
@@ -343,15 +400,17 @@ async function main() {
     await page.eval(`document.querySelector('[data-notes-sent-toggle]').click()`);
     await page.waitFor(`!!document.querySelector('[data-notes-sent] [data-note]')`, 'Sent open');
     // A draft in the terminal while Claude is done: ⌥↵ holds a note, waiting
-    // on it; ⌘↵ is refused and Queue instead holds that one too. Both go by
-    // themselves once the draft is deleted with ⌫, without ↵.
+    // on it; ⌘↵ is refused, naming the draft, and Queue instead holds that one
+    // too. Then a click into the terminal to focus it, on the prompt line
+    // (where Claude Code would move its cursor), and ⌫ until the prompt is
+    // empty, without ↵: both go by themselves.
     const draft = 'half a thought';
     await typeInTerminal(page, draft, false);
-    await sleep(300);
+    await page.waitFor(`${promptText} === ${JSON.stringify(draft)}`, 'the draft in the input box');
     await page.eval(`${noteWith('Held by key')}.querySelector('[data-note-text]').focus()`);
     await pressShortcut(page, 'noteQueue');
     await page.waitFor(
-      `${noteWith('Held by key')}?.dataset.noteState === 'held' && ${noteWith('Held by key')}.querySelector('[data-note-queued]').textContent.includes('an unsent prompt in the terminal')`,
+      `${noteWith('Held by key')}?.dataset.noteState === 'held' && ${noteWith('Held by key')}.querySelector('[data-note-queued]').textContent.includes(${JSON.stringify(WAITING_DRAFT)})`,
       '⌥↵ held it, waiting on the draft',
     );
     await page.eval(`${noteWith('A last thought')}.querySelector('[data-note-text]').focus()`);
@@ -359,6 +418,10 @@ async function main() {
     await page.waitFor(
       `!!${noteWith('A last thought')}?.querySelector('[data-note-queue-instead]')`,
       '⌘↵ refused over the draft',
+    );
+    assert.match(
+      await page.eval<string>(refusalOf('A last thought')),
+      /^There may be text in Claude's prompt: send it or clear it with Ctrl\+C/,
     );
     await page.eval(
       `${noteWith('A last thought')}.querySelector('[data-note-queue-instead]').click()`,
@@ -368,12 +431,18 @@ async function main() {
       'Queue instead held it',
     );
     await page.waitFor(
-      `[...document.querySelectorAll('[data-note-queued]')].some((q) => q.textContent.includes('an unsent prompt in the terminal'))`,
+      `[...document.querySelectorAll('[data-note-queued]')].some((q) => q.textContent.includes(${JSON.stringify(WAITING_DRAFT)}))`,
       'the waiting line names the draft',
     );
     await screenshot(page, screenshotDir, 'n4-queued-by-key.png');
-    await typeInTerminal(page, '', false);
+    assert.equal(await page.eval(terminalFocused), false, 'the note has the focus');
+    await clickPromptLine(page);
+    await page.waitFor(terminalFocused, 'the click focused the terminal');
+    const mouseFile = path.join(fx.root, 'claude-mouse.txt');
+    await sleep(300);
+    assert.equal(fs.existsSync(mouseFile), false, 'a click that focuses never reaches Claude');
     for (let i = 1; i < draft.length; i++) await pressKey(page, 'Backspace');
+    await page.waitFor(`${promptText} === 'h'`, 'one character left');
     await sleep(1_000);
     assert.deepEqual(
       await page.eval(
@@ -389,10 +458,67 @@ async function main() {
       5_000,
     );
 
+    // A click while the terminal has the focus reaches Claude, which may move
+    // its cursor there; the keys can't follow that, Claude's screen can: once
+    // it shows the prompt empty after ⌫, a queued note goes.
+    await writeNote(page, () => pressShortcut(page, 'addNote'), 'After a click in the draft');
+    await typeInTerminal(page, 'more', false);
+    await page.waitFor(`${promptText} === 'more'`, 'a second draft');
+    await page.eval(
+      `${noteWith('After a click in the draft')}.querySelector('[data-note-hold]').click()`,
+    );
+    await page.waitFor(
+      `${noteWith('After a click in the draft')}?.querySelector('[data-note-queued]')?.textContent.includes(${JSON.stringify(WAITING_DRAFT)})`,
+      'held behind the second draft',
+    );
+    assert.equal(await page.eval(terminalFocused), true, 'the terminal kept the focus');
+    await clickPromptLine(page);
+    const clicked = () =>
+      fs.existsSync(mouseFile) && fs.readFileSync(mouseFile, 'utf8').endsWith('m\n');
+    for (let i = 0; i < 50 && !clicked(); i++) await sleep(100);
+    assert.match(fs.readFileSync(mouseFile, 'utf8'), /^\[<0;\d+;\d+M\n\[<0;\d+;\d+m\n$/);
+    for (let i = 0; i < 'more'.length; i++) await pressKey(page, 'Backspace');
+    await page.waitFor(
+      `${notesIn('sent')}.includes('After a click in the draft')`,
+      'sent once the screen shows the prompt empty',
+      5_000,
+    );
+
+    // A fresh workspace: its Claude waits at its prompt in Starting, before
+    // any prompt. Send now types a note there, and a held one goes at once.
+    await clickLabel(page, 'New workspace in web');
+    await page.waitFor(has('dialog[open] #ws-task'), 'New workspace');
+    await typeInField(page, '#ws-task', 'NOTE-2 Fresh', false);
+    await sleep(600);
+    await submitDialog(page);
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the second workspace', 30_000);
+    await page.waitFor(`${promptText} === ''`, "its Claude's empty input box", 30_000);
+    if (!(await page.eval<boolean>(has('[data-notes-panel]')))) await pressShortcut(page, 'notes');
+    await page.waitFor(has('[data-notes-panel]'), 'its Notes panel');
+    await writeNote(page, () => pressShortcut(page, 'addNote'), 'First words');
+    await page.eval(`${noteWith('First words')}.querySelector('[data-note-send-now]').click()`);
+    await page.waitFor(`${notesIn('sent')}.includes('First words')`, 'sent now in Starting');
+    await page.waitFor(`${screenText}.includes('Noted: First words')`, 'Claude took it');
+    // Claude has ended: the refusal says so.
+    await typeInTerminal(page, 'exit');
+    await page.waitFor(`${screenText}.includes('process exited')`, 'Claude ended');
+    await writeNote(page, () => pressShortcut(page, 'addNote'), 'Too late');
+    await page.eval(`${noteWith('Too late')}.querySelector('[data-note-send-now]').click()`);
+    await page.waitFor(
+      `${refusalOf('Too late')}.startsWith("Claude isn't running in this workspace")`,
+      'refused: Claude has ended',
+    );
+
     console.log(`e2e-notes: ok (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {
     const shown = await app?.page.eval<string>(`document.body.innerText`).catch(() => '');
     console.error(`The window showed:\n${shown?.slice(0, 3000)}`);
+    const bottom = await app?.page
+      .eval<string>(
+        `(() => { const t = [...document.querySelectorAll('[data-terminal][data-connected]')].find((t) => t.offsetParent); const b = t?.xterm?.buffer.active; if (!b) return ''; const rows = []; for (let y = Math.max(0, b.baseY + b.cursorY - 5); y <= b.baseY + b.cursorY + 2; y++) rows.push(JSON.stringify(b.getLine(y)?.translateToString(true))); return rows.join('\\n') + '\\ncursor ' + (b.baseY + b.cursorY) + ',' + b.cursorX; })()`,
+      )
+      .catch(() => '');
+    console.error(`The terminal's last lines:\n${bottom}`);
     if (app) await screenshot(app.page, screenshotDir, 'failure.png').catch(() => {});
     throw error;
   } finally {

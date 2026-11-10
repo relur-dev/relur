@@ -1,3 +1,4 @@
+import type { PromptLine } from '@shared/prompt-line';
 import {
   TERMINAL_PORT_CHANNEL,
   type TerminalClientMessage,
@@ -6,9 +7,26 @@ import {
 import { MessageChannelMain, type WebContents } from 'electron';
 import type { SessionHost } from './host';
 
-function isInput(message: unknown): message is TerminalClientMessage {
-  const m = message as Partial<TerminalClientMessage> | null;
+function isInput(message: unknown): message is Extract<TerminalClientMessage, { type: 'input' }> {
+  const m = message as { type?: unknown; data?: unknown } | null;
   return m?.type === 'input' && typeof m.data === 'string';
+}
+
+/** A view's report of Claude's input box (spec §9.8): checked, as it comes from a renderer. */
+function promptOf(message: unknown): PromptLine | null | undefined {
+  const m = message as { type?: unknown; line?: unknown } | null;
+  if (m?.type !== 'prompt') return undefined;
+  if (m.line === null) return null;
+  const line = m.line as Partial<PromptLine> | undefined;
+  if (
+    typeof line?.text !== 'string' ||
+    line.text.length > 100_000 ||
+    !Number.isInteger(line.cursor) ||
+    !Number.isInteger(line.lines)
+  ) {
+    return undefined;
+  }
+  return { text: line.text, cursor: line.cursor as number, lines: line.lines as number };
 }
 
 /**
@@ -33,6 +51,10 @@ export function attachToWindow(
   });
   port1.on('message', (event) => {
     if (isInput(event.data)) attachment.input(event.data.data);
+    else {
+      const line = promptOf(event.data);
+      if (line !== undefined) attachment.prompt(line);
+    }
   });
   port1.on('close', () => {
     open = false;

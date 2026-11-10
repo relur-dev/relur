@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROMPT, holdsDraft, type PromptDraft, promptAfter } from './prompt-draft';
+import {
+  EMPTY_PROMPT,
+  holdsDraft,
+  type PromptDraft,
+  promptAfter,
+  promptShown,
+} from './prompt-draft';
 
 /** The prompt after each chunk in turn, typed 1 s apart unless given. */
 const typed = (...chunks: (string | [string, number])[]): PromptDraft => {
@@ -101,5 +107,27 @@ describe('promptAfter (spec §9.8)', () => {
     // A click may put the cursor anywhere.
     expect(draft('ab', '\x1b[<0;3;4M', '\x7f\x7f')).toBe(true);
     expect(draft('ab', '\x1b[<0;3;4M', '\r')).toBe(false);
+  });
+});
+
+describe('promptShown (spec §9.8)', () => {
+  const unsure = promptAfter(EMPTY_PROMPT, 'half\x1b[<0;5;26M', 0);
+
+  it("takes the screen's text and cursor over the keys' account", () => {
+    expect(unsure.unsure).toBe(true);
+    const shown = promptShown(unsure, { text: 'lf', cursor: 0, lines: 1 });
+    expect(shown).toMatchObject({ text: 'lf', cursor: 0, unsure: false });
+    expect(holdsDraft(promptAfter(shown, '\x1b[F\x7f\x7f', 0))).toBe(false);
+  });
+
+  it('is empty for an empty prompt, also over several lines', () => {
+    expect(holdsDraft(promptShown(unsure, { text: '', cursor: 0, lines: 1 }))).toBe(false);
+    expect(holdsDraft(promptShown(unsure, { text: '', cursor: 0, lines: 3 }))).toBe(false);
+  });
+
+  it('stays unsure over several lines and for a paste Claude shows folded', () => {
+    expect(promptShown(EMPTY_PROMPT, { text: 'a\nb', cursor: 3, lines: 2 }).unsure).toBe(true);
+    const paste = { text: '[Pasted text #1 +12 lines]', cursor: 26, lines: 1 };
+    expect(promptShown(EMPTY_PROMPT, paste).unsure).toBe(true);
   });
 });

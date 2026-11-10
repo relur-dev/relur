@@ -1,5 +1,12 @@
 import fs from 'node:fs';
-import { EMPTY_PROMPT, holdsDraft, type PromptDraft, promptAfter } from '@shared/prompt-draft';
+import {
+  EMPTY_PROMPT,
+  holdsDraft,
+  type PromptDraft,
+  promptAfter,
+  promptShown,
+} from '@shared/prompt-draft';
+import type { PromptLine } from '@shared/prompt-line';
 import { atMenu, type WorkspaceState } from '@shared/status';
 import {
   BLOCKER_TEXT,
@@ -33,6 +40,7 @@ type Host = Pick<
   | 'onResume'
   | 'onExit'
   | 'onInput'
+  | 'onPrompt'
 >;
 
 export interface SuspendDeps {
@@ -70,8 +78,10 @@ export interface SuspendDeps {
 interface Facts {
   /** SessionStart arrived since it was started or resumed. */
   started: boolean;
-  /** What Claude's prompt holds, from the keys typed into its view (spec §9.8). */
+  /** What Claude's prompt holds, from the keys typed into its view and its screen (spec §9.8). */
   draft: PromptDraft;
+  /** A view showed Claude's input box since it was started or resumed (spec §9.8). */
+  promptSeen: boolean;
   /** From hook payloads; given back with `--permission-mode` on resume. */
   permissionMode: string | null;
   /** From the status line; given back with `--model` on resume. */
@@ -125,6 +135,7 @@ export class SuspendService {
         this.facts.set(info.id, {
           started: false,
           draft: EMPTY_PROMPT,
+          promptSeen: false,
           permissionMode: null,
           model: null,
           transcript: null,
@@ -138,6 +149,7 @@ export class SuspendService {
       host.onResume((info) => {
         const facts = this.factsOf(info);
         facts.started = false;
+        facts.promptSeen = false;
         this.setDraft(info, facts, EMPTY_PROMPT);
         facts.eligibleSince = null;
         facts.blocker = undefined;
@@ -155,6 +167,7 @@ export class SuspendService {
         this.release(info.id);
       }),
       host.onInput((info, data) => this.input(info, data)),
+      host.onPrompt((info, line) => this.promptLine(info, line)),
     ];
   }
 
@@ -192,6 +205,8 @@ export class SuspendService {
     if (message.event === 'SessionStart') {
       facts.started = true;
       if (info.resuming) this.markReady(info.id, this.settleMs);
+      // A Claude in Starting that already shows its prompt takes typed text now.
+      if (facts.promptSeen) this.draftChanged(info);
     }
     if (facts.main) this.mainHook(info, facts.main, message);
   }
@@ -225,8 +240,20 @@ export class SuspendService {
   }
 
   /**
-   * Calls `listener` when a Claude's prompt starts or stops holding a draft:
-   * held notes go once nothing is typed there any more (spec §6.15).
+   * Whether this Claude waits at its prompt, as far as the app can tell in
+   * Starting (spec §6.7): its SessionStart came and a view showed its input
+   * box. Claude Code sends SessionStart before its folder-trust question, so
+   * the hook alone isn't enough (checked live with 2.1.322).
+   */
+  atPrompt(sessionId: string): boolean {
+    const facts = this.facts.get(sessionId);
+    return !!facts?.started && facts.promptSeen;
+  }
+
+  /**
+   * Calls `listener` when a Claude's prompt starts or stops holding a draft,
+   * or shows for the first time: held notes go once nothing is typed there
+   * any more (spec §6.15).
    */
   onDraftChange(listener: (info: SessionInfo) => void): () => void {
     this.draftListeners.add(listener);
@@ -243,12 +270,16 @@ export class SuspendService {
     if (holdsDraft(draft) !== had) this.draftChanged(info);
   }
 
-  /** The workspaces whose Claude's prompt holds a draft (spec §6.7, quick reply). */
-  drafts(): string[] {
-    return this.deps.host
-      .list()
-      .filter((s) => s.kind === 'claude' && s.workspaceId && this.hasDraft(s.id))
-      .map((s) => s.workspaceId as string);
+  /**
+   * The workspaces whose Claude's prompt holds a draft, and those whose
+   * Claude waits at its prompt (`atPrompt`), for the Board's quick reply
+   * (spec §6.7).
+   */
+  prompts(): { drafts: string[]; atPrompt: string[] } {
+    const claudes = this.deps.host.list().filter((s) => s.kind === 'claude' && s.workspaceId);
+    const of = (keep: (id: string) => boolean) =>
+      claudes.filter((s) => keep(s.id)).map((s) => s.workspaceId as string);
+    return { drafts: of((id) => this.hasDraft(id)), atPrompt: of((id) => this.atPrompt(id)) };
   }
 
   /** Suspends every session that has been idle for its profile's whole delay. */
@@ -480,6 +511,21 @@ export class SuspendService {
     else if (atMenu(main.state) && answersPermission(data)) main.state = 'working';
   }
 
+  /**
+   * A view's screen shows Claude's input box (spec §9.8): what it holds wins
+   * over the keys before it. Keys after it apply to it, until the next one.
+   * None (a menu, output, another program) leaves the keys' account as it is.
+   */
+  private promptLine(info: SessionInfo, line: PromptLine | null): void {
+    const facts = this.facts.get(info.id);
+    if (!facts || !line) return;
+    const first = !facts.promptSeen;
+    facts.promptSeen = true;
+    const had = holdsDraft(facts.draft);
+    facts.draft = promptShown(facts.draft, line);
+    if (first || holdsDraft(facts.draft) !== had) this.draftChanged(info);
+  }
+
   private sessionOf(
     sessionId: string | null | undefined,
     workspaceId: string | null,
@@ -502,6 +548,7 @@ export class SuspendService {
       facts = {
         started: false,
         draft: EMPTY_PROMPT,
+        promptSeen: false,
         permissionMode: null,
         model: null,
         transcript: null,

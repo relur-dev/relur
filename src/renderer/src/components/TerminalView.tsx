@@ -12,6 +12,7 @@ import type {
 import { useEffect, useRef, useState } from 'react';
 import { ConversationAids, type NavigatorState } from '../terminal/conversation';
 import { openTerminalPort } from '../terminal/ports';
+import { isMouseReport, watchPrompt } from '../terminal/prompt-screen';
 import { mouseWheelHandler } from '../terminal/wheel';
 import { trpcClient } from '../trpc';
 import { keyHint } from '../ui/controls';
@@ -294,9 +295,29 @@ export function TerminalView({
     term.onResize(sendSize);
     // Keystrokes before the port connects are queued, not dropped.
     const queued: string[] = [];
-    const send = (data: string) =>
+    const send = (data: string) => {
       port?.postMessage({ type: 'input', data } satisfies TerminalClientMessage);
+      prompt.input();
+    };
+    // What Claude's input box shows, after keys and output (spec §9.8): the
+    // main process reads a draft from it; other sessions' reports are dropped.
+    const prompt = watchPrompt(term, (line) =>
+      port?.postMessage({ type: 'prompt', line } satisfies TerminalClientMessage),
+    );
+    // A click that focuses the terminal only focuses it (spec §6.3): its mouse
+    // reports don't reach the program, where Claude would move its cursor.
+    let focusing = false;
+    const onMouseDown = () => {
+      focusing = document.activeElement !== term.textarea;
+    };
+    const onMouseUp = () => {
+      // After xterm sends the release, from its own listener.
+      if (focusing) setTimeout(() => (focusing = false), 0);
+    };
+    container.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mouseup', onMouseUp, true);
     term.onData((data) => {
+      if (focusing && isMouseReport(data)) return;
       // Resuming: keys go nowhere, and the overlay says so (spec §9.8).
       if (resumingRef.current) {
         setBlocked(true);
@@ -354,6 +375,9 @@ export function TerminalView({
       themeObserver.disconnect();
       container.removeEventListener('copy', onCopy, true);
       container.removeEventListener('paste', onPaste, true);
+      container.removeEventListener('mousedown', onMouseDown, true);
+      window.removeEventListener('mouseup', onMouseUp, true);
+      prompt.dispose();
       port?.close();
       aids?.dispose();
       aidsRef.current = null;

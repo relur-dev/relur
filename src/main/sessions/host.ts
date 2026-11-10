@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
+import type { PromptLine } from '@shared/prompt-line';
 import type {
   SessionInfo,
   SessionKind,
@@ -19,6 +20,8 @@ export interface TerminalSink {
 
 export interface Attachment {
   input(data: string): void;
+  /** What the view's screen shows in Claude's input box (spec §9.8). */
+  prompt(line: PromptLine | null): void;
   detach(): void;
 }
 
@@ -430,6 +433,12 @@ export class SessionHost {
         this.write(id, data);
         this.events.emit('input', session.info, data);
       },
+      // Like keys: only while Claude runs and takes them.
+      prompt: (line) => {
+        if (this.closed || session.info.kind !== 'claude') return;
+        if (session.info.status !== 'running' || session.info.resuming) return;
+        this.events.emit('prompt', session.info, line);
+      },
       detach: () => session.sinks.delete(sink),
     };
   }
@@ -548,6 +557,12 @@ export class SessionHost {
   onInput(listener: (info: SessionInfo, data: string) => void): () => void {
     this.events.on('input', listener);
     return () => this.events.off('input', listener);
+  }
+
+  /** A view reported Claude's input box as its screen shows it (spec §9.8). */
+  onPrompt(listener: (info: SessionInfo, line: PromptLine | null) => void): () => void {
+    this.events.on('prompt', listener);
+    return () => this.events.off('prompt', listener);
   }
 
   private session(id: string): Session {

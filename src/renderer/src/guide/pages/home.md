@@ -63,7 +63,7 @@ There is no field where a message could answer something by accident:
 
 - **Needs permission:** Claude shows its permission menu, which typed text would answer. The card offers **Open** instead, so you answer it in the Claude tab.
 - **A question from Claude:** typed text would become your answer, so the card shows the options instead, as above.
-- **An unsent prompt:** if you typed into the Claude tab and didn't send it, the card says **Has an unsent prompt; open it**.
+- **An unsent prompt:** if you typed into the Claude tab and didn't send it, the card says **Has an unsent prompt; open it**. It goes away as soon as Claude's prompt is empty again.
 - **Merged** workspaces, and workspaces whose Claude has exited.
 
 ## Keyboard on the Board

@@ -1,4 +1,3 @@
-import { QUICK_REPLY_REFUSAL } from '@shared/home';
 import { lastParagraph } from '@shared/last-words';
 import {
   composePrompt,
@@ -11,7 +10,7 @@ import {
 import { cachedConversation } from '../claude/last-words';
 import type { TranscriptResponse } from '../claude/transcript';
 import type { NoteRecords, NoteSend } from '../db/notes';
-import { type ReplyDeps, replyFacts, replyOffer } from '../services/reply';
+import { type ReplyDeps, replyFacts, replyRefusalOf } from '../services/reply';
 
 export interface NotesDeps extends ReplyDeps {
   notes: NoteRecords;
@@ -121,6 +120,7 @@ export class NotesService {
       gate: w.workflow?.kind === 'gate' ? (w.workflow.label ?? null) : null,
       claude: facts.claude,
       draft: facts.draft,
+      atPrompt: facts.atPrompt,
       question: facts.question,
       asked: w.state === 'done' && this.asked(workspaceId),
     });
@@ -172,8 +172,8 @@ export class NotesService {
   async sendNow(workspaceId: string, ids: readonly string[]): Promise<void> {
     const facts = replyFacts(this.deps, workspaceId);
     if (!facts) throw new Error('This workspace no longer exists');
-    const offer = replyOffer(facts);
-    if (offer !== 'field') throw new Error(QUICK_REPLY_REFUSAL[offer]);
+    const refusal = replyRefusalOf(facts);
+    if (refusal) throw new Error(refusal);
     await this.deliver(workspaceId, ids, 'open');
   }
 

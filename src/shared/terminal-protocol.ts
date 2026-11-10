@@ -1,3 +1,5 @@
+import type { PromptLine } from './prompt-line';
+
 /**
  * Terminal data travels over a dedicated MessagePort per attached view, not
  * over tRPC: output is batched in the main process, and the first message
@@ -31,7 +33,14 @@ export type TerminalServerMessage =
   | { type: 'mark'; mark: TerminalMark }
   | { type: 'exit'; exitCode: number | null; signal: number | null };
 
-export type TerminalClientMessage = { type: 'input'; data: string };
+/**
+ * `prompt`: what a Claude view's screen shows in Claude's input box once its
+ * output settles (spec §9.8), null when the cursor isn't in one. It travels
+ * with the keys, so the main process knows which keys came after it.
+ */
+export type TerminalClientMessage =
+  | { type: 'input'; data: string }
+  | { type: 'prompt'; line: PromptLine | null };
 
 /**
  * `home`: the profile's home terminal (spec §6.7). `setup`: an install or
