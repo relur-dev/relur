@@ -84,6 +84,8 @@ To open them all at once, use **Create n PRs** at the top of the panel. It opens
 
 A line under the panel's header says what was pushed, each command's output, what Claude was asked and what was skipped. Each repository's PR then shows on its chip in the header (the primary's too), in its section of the panel with its own **View PR**, and on [Home](home), where **View PRs** lists them all.
 
+To [merge locally](finishing-work#merge-into-your-local-base) instead, each repository merges into its own base. A section's **Merge into main** merges that repository only. **Merge n into their bases**, under the panel's header, merges all of them, and so does **Merge into bases** on Home. Repositories that can be fast-forwarded are merged at once; the rest go to Claude in one message, naming each repository's folder. The strip under the header shows how far it got, such as **Rebasing for merge… · 1 of 2 merged**, and each section shows its own outcome. If one is refused (say, a main checkout with changes), nothing is merged anywhere. If Claude's rebase fails in one repository, the others stay merged, and pressing Merge again does only the rest.
+
 The workspace counts as merged once every repository with commits is merged; then it offers to delete itself.
 
 ## Deleting

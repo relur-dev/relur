@@ -79,6 +79,15 @@ export function App() {
     }),
   );
   const workspaces = useQuery(trpc.workspaces.list.queryOptions());
+  // Merges into the base (spec §14.4): waiting for Claude, done or stopped.
+  useSubscription(
+    trpc.changes.mergeChanges.subscriptionOptions(undefined, {
+      onData: () => {
+        void queryClient.invalidateQueries({ queryKey: trpc.changes.mergeStatuses.queryKey() });
+        void queryClient.invalidateQueries({ queryKey: trpc.changes.state.pathKey() });
+      },
+    }),
+  );
   // Continuing interrupted work (spec §9.7): the notice and the start's overview.
   const unfinished = useQuery(trpc.unfinished.state.queryOptions());
   useSubscription(

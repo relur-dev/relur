@@ -1,6 +1,6 @@
 # Finishing work
 
-{{app}} doesn't merge. It helps you commit, push and open a pull request, then shows when it's merged.
+{{app}} helps you commit, push and open a pull request, then shows when it's merged. If you merge locally instead, **Merge into main** fast-forwards your local base branch to the workspace's branch, with Claude rebasing it first when main has moved on. It never pushes.
 
 ## The Changes panel
 
@@ -41,6 +41,16 @@ Then the panel shows the PR badge. Projects without a remote show only Commit, w
 
 A workspace across several repositories has a section per repository, each with its own commit message, **Ask Claude to write it** (for that repository only), **Commit → Push → Create PR** row and PR badge, and **Create n PRs** at the top opens them in every repository with commits at once; see [Tasks across repositories](tasks-across-repositories#finishing).
 
+## Merge into your local base
+
+If you merge locally rather than through a pull request, **Merge into main** does it for you. It's in the Changes panel under the Commit, Push and Create PR step once everything is committed, and on the workspace's card on the [Board](home) under Ready to ship. It does what `git merge --ff-only <branch>` in your main checkout does: your local main moves forward to the workspace's branch. It never fetches and never pushes; push main yourself when you're ready.
+
+- **Your main checkout** is only fast-forwarded, and only while main is checked out there with no changed files. New files that git doesn't track yet don't count, but git won't overwrite one, and then you see git's message. {{app}} never switches the branch there. If your main checkout is on another branch, main is moved without touching any files. If main is checked out in some other worktree, {{app}} leaves it alone and tells you where.
+- **When main has moved on**, a fast-forward isn't possible. {{app}} then asks Claude in the Claude tab to rebase the branch onto your local main, resolve any conflicts, run the project's checks as its `CLAUDE.md` says, and commit. Claude ends with **Ready to merge.** or **Not ready to merge:** and the reason. The workspace shows **Rebasing for merge…**. When Claude's turn ends, {{app}} tries once more. If it works, the workspace moves to Merged; if not, the panel says why (conflicts left, the checks failed, main moved again) and stops. It doesn't ask Claude again. **Cancel** stops waiting; Claude finishes its turn anyway, and nothing is merged.
+- **A branch you've already pushed**, or one with a pull request, would need a force-push after a rebase, which {{app}} never does. So it asks first. **Merge main into the branch** (the default) has Claude merge main in instead, which keeps the branch's history and its pull request as they are. **Rebase anyway** leaves the branch on the remote behind; force-push it yourself, or delete it.
+
+Merge doesn't start while Claude is working, or while it waits for you to answer a permission request or a question. If you quit {{app}} while Claude rebases, the wait is forgotten: press Merge again. Across several repositories, each one merges into its own base; see [Tasks across repositories](tasks-across-repositories#finishing).
+
 ## The PR badge
 
 {{app}} checks the pull request after a push, every five minutes, when you come back to the app, and when you click **Check again**. Without a PR status command it uses git alone:
@@ -67,7 +77,7 @@ By default {{app}} needs no setup for pull requests: Claude opens them, and git 
 - `createCommand` runs in the worktree with the workspace's environment, and the panel shows its output. In a workspace across several repositories, each repository's command gets that repository's own base branch and worktree in `${{env:BASE_BRANCH}}` and `${{env:WORKTREE_PATH}}`.
 - `statusCommand` prints one JSON object, `{ "state": "open", "url": "…" }`, with `open`, `draft`, `merged` or `closed`, or nothing when the branch has no pull request. It may add `"title"`: New workspace then names the task after the pull request when you pick an [existing branch](new-workspace#from-an-existing-branch). With `gh`, add `title` to `--json` and to the `jq` object.
 
-A project's `pr` fields override the profile's. With either command set, [Home](home) also lists a pushed workspace without a pull request under Ready to ship, with **Create PR**; without them it doesn't, since you may merge locally instead.
+A project's `pr` fields override the profile's. With either command set, [Home](home) also lists a pushed workspace without a pull request under Ready to ship, with **Create PR**; without them it doesn't, since you may merge locally instead. Either way, a branch you can still merge stays under Ready to ship, with **Merge into main**.
 
 ## Commit identity
 

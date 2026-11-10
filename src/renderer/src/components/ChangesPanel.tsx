@@ -6,6 +6,7 @@ import {
   type FileDiff,
   PUSH_REJECTED,
 } from '@shared/changes';
+import type { MergeStatus } from '@shared/merge';
 import type { Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
 import { PR_LABEL, type PrStatus, type Workspace, type WorkspaceRepo } from '@shared/workspaces';
@@ -25,6 +26,7 @@ import { takeRequest } from '../ui/open-requests';
 import { remember } from '../ui/remember';
 import { PrimaryTag } from './DeleteWorkspaceDialog';
 import { useOpenInEditor } from './EditorPicker';
+import { type MergeApi, MergeRow, useMerge, useMergeStatuses } from './MergeControls';
 
 type Monaco = typeof import('../monaco');
 let loading: Promise<Monaco> | null = null;
@@ -406,6 +408,8 @@ function FinishControls({ workspace }: { workspace: Workspace }) {
     }),
   );
   const check = useMutation(trpc.changes.refreshPr.mutationOptions({ onSuccess: refresh }));
+  const mergeApi = useMerge();
+  const mergeStatus = useMergeStatuses()(workspace.id);
   const s = state.data;
   if (!s) return null;
   const busy = commit.isPending || push.isPending || createPr.isPending || ask.isPending;
@@ -499,6 +503,15 @@ function FinishControls({ workspace }: { workspace: Workspace }) {
           </button>
         </div>
       ) : null}
+      <MergeRow
+        workspace={workspace}
+        projectId={null}
+        base={workspace.baseBranch}
+        mergeable={s.mergeable}
+        status={mergeStatus}
+        api={mergeApi}
+      />
+      {mergeApi.dialog}
       {!s.hasRemote ? (
         <p data-no-remote className="text-sm text-fg-subtle">
           No remote: Push and Create PR need one. Add it in a Shell tab with{' '}
@@ -541,11 +554,16 @@ function RepoControls({
   workspace,
   repo,
   name,
+  merge,
+  mergeStatus,
 }: {
   workspace: Workspace;
   repo: WorkspaceRepo;
   /** The repository's project name. */
   name: string;
+  /** Merge into the base, shared with the panel's header strip (spec §14.4). */
+  merge: MergeApi;
+  mergeStatus: MergeStatus | null;
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
@@ -684,6 +702,14 @@ function RepoControls({
           </>
         ) : null}
       </div>
+      <MergeRow
+        workspace={workspace}
+        projectId={repo.projectId}
+        base={repo.baseBranch}
+        mergeable={s.mergeable}
+        status={mergeStatus}
+        api={merge}
+      />
       {note ? (
         <p className="text-sm whitespace-pre-wrap text-fg-muted select-text">{note}</p>
       ) : null}
@@ -1427,6 +1453,9 @@ function LinkedChangesPanel({
   });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [allResult, setAllResult] = useState<CreateAllOutcome | null>(null);
+  const merge = useMerge();
+  const mergeStatus = useMergeStatuses()(workspace.id);
+  const mergeable = states.filter((q) => q.data?.mergeable).length;
   // Show in Changes (a repository chip, spec §21.4): that section expanded, scrolled to.
   useEffect(() => {
     if (!focus) return;
@@ -1532,6 +1561,21 @@ function LinkedChangesPanel({
         </button>
       </div>
       {allResult ? <CreateAllNote result={allResult} onDismiss={() => setAllResult(null)} /> : null}
+      {mergeable > 1 || mergeStatus || merge.error(workspace.id) ? (
+        // Merge every repository into its own base (spec §21.5, §14.4).
+        <div data-merge-all className="shrink-0 border-b border-line bg-surface px-3.5 py-2">
+          <MergeRow
+            workspace={workspace}
+            projectId={null}
+            base="their bases"
+            mergeable={mergeable > 1}
+            status={mergeStatus}
+            api={merge}
+            label={`Merge ${mergeable} into their bases`}
+          />
+        </div>
+      ) : null}
+      {merge.dialog}
       <FilesAndDiff
         full={full}
         linked
@@ -1637,7 +1681,13 @@ function LinkedChangesPanel({
                       : undefined,
                   )}
                   {group('uncommitted', 'Uncommitted', data?.uncommitted ?? [])}
-                  <RepoControls workspace={workspace} repo={repo} name={name(repo.projectId)} />
+                  <RepoControls
+                    workspace={workspace}
+                    repo={repo}
+                    name={name(repo.projectId)}
+                    merge={merge}
+                    mergeStatus={mergeStatus}
+                  />
                 </div>
               ) : null}
             </section>

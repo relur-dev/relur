@@ -8,6 +8,7 @@ import {
   homeSection,
   homeSections,
   mergedLabel,
+  offersMerge,
   openPrs,
   openPrsText,
   permissionTool,
@@ -15,6 +16,7 @@ import {
   projectWorkspaces,
   prText,
   quickReply,
+  readyToMergeText,
   type ShipState,
   shipCandidates,
   shipStep,
@@ -74,9 +76,9 @@ function ws(state: WorkspaceState, more: Partial<Workspace> = {}): Workspace {
   };
 }
 
-const dirty: ShipState = { uncommitted: 4, unpushed: 0, withoutPr: 0 };
-const ahead: ShipState = { uncommitted: 0, unpushed: 3, withoutPr: 0 };
-const clean: ShipState = { uncommitted: 0, unpushed: 0, withoutPr: 0 };
+const dirty: ShipState = { uncommitted: 4, unpushed: 0, withoutPr: 0, mergeable: 0 };
+const ahead: ShipState = { uncommitted: 0, unpushed: 3, withoutPr: 0, mergeable: 0 };
+const clean: ShipState = { uncommitted: 0, unpushed: 0, withoutPr: 0, mergeable: 0 };
 
 describe('homeSection', () => {
   it('puts permission, input, approval and Unfinished under Needs you', () => {
@@ -159,7 +161,7 @@ describe('homeSection', () => {
 describe('shipStep', () => {
   it('offers Commit, then Push, then View PR', () => {
     const open = ws('done', { repos: [repo('web', true, { pr: pr('draft') })] });
-    expect(shipStep(open, { uncommitted: 2, unpushed: 1, withoutPr: 1 })).toEqual({
+    expect(shipStep(open, { uncommitted: 2, unpushed: 1, withoutPr: 1, mergeable: 1 })).toEqual({
       kind: 'commit',
       files: 2,
     });
@@ -178,6 +180,38 @@ describe('shipStep', () => {
     const open = ws('done', { repos: [repo('web', true, { pr: pr('open') })] });
     expect(shipStep(open, waiting)).toEqual({ kind: 'create', repos: 2 });
     expect(homeSection(ws('done'), waiting)).toBe('ship');
+  });
+});
+
+describe('Merge into the base on Home (§14.4)', () => {
+  const mergeable = { ...clean, mergeable: 1 };
+  it('puts a mergeable Done workspace under Ready to ship, after the PR steps', () => {
+    expect(homeSection(ws('done'), mergeable)).toBe('ship');
+    expect(boardColumn(ws('done'), mergeable)).toBe('ship');
+    expect(shipStep(ws('done'), mergeable)).toEqual({ kind: 'merge', repos: 1 });
+    // Push, Create PR and an open PR stay the main step.
+    expect(shipStep(ws('done'), { ...ahead, mergeable: 1 })).toEqual({ kind: 'push', commits: 3 });
+    expect(shipStep(ws('done'), { ...mergeable, withoutPr: 1 })).toEqual({
+      kind: 'create',
+      repos: 1,
+    });
+    const open = ws('done', { repos: [repo('web', true, { pr: pr('open') })] });
+    expect(shipStep(open, mergeable)?.kind).toBe('pr');
+    // Without anything to merge, still Idle.
+    expect(boardColumn(ws('done'), clean)).toBe('idle');
+  });
+
+  it('offers Merge beside the main action once everything is committed', () => {
+    expect(offersMerge(mergeable)).toBe(true);
+    expect(offersMerge({ ...ahead, mergeable: 1 })).toBe(true);
+    expect(offersMerge({ ...dirty, mergeable: 1 })).toBe(false);
+    expect(offersMerge(clean)).toBe(false);
+    expect(offersMerge(null)).toBe(false);
+  });
+
+  it('says what is ready to merge', () => {
+    expect(readyToMergeText(1, 'main', false)).toBe('Ready to merge into main');
+    expect(readyToMergeText(2, 'main', true)).toBe('2 repositories ready to merge');
   });
 });
 

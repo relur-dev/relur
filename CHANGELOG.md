@@ -11,6 +11,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - Sent notes move to **Sent** with the time they went, grouped when they went as one prompt; the section folds away, and each workspace remembers it. **View response** opens the Responses panel at Claude's answer, whose entry says **from notes** and leads back. A sent note can be copied, deleted or moved back to the open ones.
 - On the Board, on Home and in a project's view, a small notes mark shows how many notes a workspace has waiting to be sent.
 - **Hover a card on the Board** for what it doesn't show: its branch, the whole message Claude is waiting with, its workflow status, its memory, how long ago it was last active, and why its Claude isn't suspended yet or when it will be.
+- **Merge into main, without leaving the app.** For when you merge locally instead of through a pull request. **Merge into main** is in the Changes panel once everything is committed, and on the Board's Ready to ship cards. It fast-forwards your local base branch to the workspace's branch, as `git merge --ff-only` in your main checkout would. It never fetches and never pushes.
+  - Your main checkout is only fast-forwarded, and only while the base is checked out there with no changed files. Its branch is never switched. When it's on another branch, the base is moved without touching any files. When the base is checked out in some other worktree, Relur says so and does nothing.
+  - When the base has moved on, Claude is asked to rebase the branch onto it, resolve conflicts, run the project's checks and commit. The workspace shows **Rebasing for merge…**, and when Claude's turn ends Relur tries the merge once more: the workspace moves to Merged, or the panel says why it stopped (conflicts left, the checks failed, the base moved again). **Cancel** stops waiting.
+  - A branch that's already pushed, or has a pull request, would need a force-push after a rebase, so Relur asks first. The default is to have Claude merge the base into the branch instead.
+  - In a workspace across several repositories, each merges into its own base, all at once or one section at a time, with the progress and any partial result shown.
 
 ### Changed
 
@@ -18,6 +23,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 - **A project's Workspaces tab is the same Board**, with your columns from Home (move or hide one in either place and both change) and without grouping. Cards show their branch where Home's show the project, and workspaces of other projects linked into it show too, marked with their project. **Other worktrees** is a strip under the Board; click it to list them. The memory sort of the old table is gone: the status bar's Memory panel lists the largest workspaces.
 - A gate's card on the Board has **Review** next to its answer button.
 - **The Responses panel is easier to scan.** A collapsed entry shows your prompt on one line and Claude's latest words in two clean lines, in place of the faded preview, with a small bar for each part when there are several. Expanded, each part starts with its place (**2/3**), and the entry's header stays in view while you scroll it. **Copy** shows when you point at an entry. An entry says **Interrupted**, **Asks permission** or **Writing…** where that applies, and **from notes · 2** when several notes went as its prompt. **Expand all** and **Collapse all** are now one button. To show an answer in the terminal, click an expanded entry's text.
+- A done workspace with a branch you can still merge stays under **Ready to ship** on Home, instead of going to Idle.
 
 ### Fixed
 

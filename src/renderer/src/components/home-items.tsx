@@ -1,11 +1,13 @@
 import {
   type HomeSection,
   mergedLabel,
+  offersMerge,
   openPrsText,
   permissionTool,
   prNumber,
   prText,
   type RepoPr,
+  readyToMergeText,
   type ShipState,
   shipCandidates,
   shipStep,
@@ -14,6 +16,7 @@ import {
   workingFor,
 } from '@shared/home';
 import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
+import { mergeProgressText, mergeStoppedText } from '@shared/merge';
 import type { Profile, Project } from '@shared/schemas';
 import { backgroundNote, type StatusGlyph as Glyph } from '@shared/status';
 import type { SessionInfo } from '@shared/terminal-protocol';
@@ -24,6 +27,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
 import { NotesIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
+import { type MergeApi, useMergeStatuses } from './MergeControls';
 import { GateAnswer } from './WorkflowViews';
 
 /** What the Board's cards and Home's quick actions do; the app opens views and dialogs. */
@@ -197,8 +201,9 @@ export function useShipStates(workspaces: Workspace[]) {
         uncommitted: sum.uncommitted + (s?.data?.uncommitted ?? 0),
         unpushed: sum.unpushed + (s?.data?.unpushed ?? 0),
         withoutPr: sum.withoutPr + (s?.data && waitsForPr(s.data) ? 1 : 0),
+        mergeable: sum.mergeable + (s?.data?.mergeable ? 1 : 0),
       }),
-      { uncommitted: 0, unpushed: 0, withoutPr: 0 },
+      { uncommitted: 0, unpushed: 0, withoutPr: 0, mergeable: 0 },
     );
   };
 }
@@ -227,6 +232,7 @@ export function useHomeItems({
   actions,
   ship,
   now,
+  merge,
 }: {
   profile: Profile;
   projects: Project[];
@@ -235,7 +241,10 @@ export function useHomeItems({
   actions: HomeActions;
   ship: (workspaceId: string) => ShipState | null;
   now: number;
+  /** Merge into the base (spec §14.4); its dialog is rendered by the caller. */
+  merge: MergeApi;
 }) {
+  const mergeStatus = useMergeStatuses();
   const trpc = useTRPC();
   const queryClient = useQueryClient();
   const launching = useLaunching();
@@ -271,8 +280,11 @@ export function useHomeItems({
     let glyph: Glyph | null = workspaceGlyph(w, launching.has(w.id));
     let meta: HomeItem['meta'] = null;
     let title: HomeItem['title'] = null;
+    const merging = mergeStatus(w.id);
     const error =
       errors[w.id] ??
+      merge.error(w.id) ??
+      (merging?.phase === 'stopped' ? `Merge stopped: ${mergeStoppedText(merging)}` : null) ??
       (push.variables?.workspaceId === w.id ? push.error?.message : null) ??
       (createPr.variables?.workspaceId === w.id ? createPr.error?.message : null) ??
       (createPr.variables?.workspaceId === w.id &&
@@ -369,6 +381,21 @@ export function useHomeItems({
       }
     } else if (section === 'working') {
       glyph = 'working';
+      // Claude rebases for a merge (spec §14.4): said first, with Cancel.
+      if (merging?.phase === 'waiting') {
+        parts.push({ text: mergeProgressText(merging), tone: 'strong' });
+        buttons.push(
+          <Action
+            key="cancel-merge"
+            kind="ghost"
+            data="cancel-merge"
+            title="Stop waiting for Claude; Claude goes on with its turn"
+            onClick={() => merge.cancel(w.id)}
+          >
+            Cancel
+          </Action>,
+        );
+      }
       parts.push({ text: workingFor(w.stateSince, now) });
       const background = backgroundNote(w.state, w.background);
       if (background) parts.push({ text: background });
@@ -388,8 +415,33 @@ export function useHomeItems({
     } else if (section === 'ship') {
       glyph = 'done';
       title = 'bold';
-      const step = shipStep(w, ship(w.id));
-      if (step?.kind === 'commit') {
+      const state = ship(w.id);
+      const step = shipStep(w, state);
+      const linked = w.repos.length > 1;
+      const mergeButton = (kind: ActionKind) => (
+        <Action
+          key="merge"
+          kind={kind}
+          data="merge"
+          disabled={merge.pending(w.id) || merging?.phase === 'waiting'}
+          title={
+            linked
+              ? 'Fast-forwards each repository’s local base to the branch; never pushes'
+              : `Fast-forwards your local ${w.baseBranch} to ${w.branch}; never pushes`
+          }
+          onClick={() => merge.start(w.id)}
+        >
+          {merge.pending(w.id)
+            ? 'Merging…'
+            : linked
+              ? 'Merge into bases'
+              : `Merge into ${w.baseBranch}`}
+        </Action>
+      );
+      if (step?.kind === 'merge') {
+        parts.push({ text: readyToMergeText(step.repos, w.baseBranch, linked) });
+        buttons.push(mergeButton('secondary'));
+      } else if (step?.kind === 'commit') {
         parts.push({ text: `${step.files} ${step.files === 1 ? 'file' : 'files'} not committed` });
         buttons.push(
           <Action
@@ -403,7 +455,6 @@ export function useHomeItems({
           </Action>,
         );
       } else if (step?.kind === 'push') {
-        const linked = w.repos.length > 1;
         const pushing = push.isPending && push.variables?.workspaceId === w.id;
         parts.push({
           text: `${step.commits} ${step.commits === 1 ? 'commit' : 'commits'} not pushed`,
@@ -424,7 +475,7 @@ export function useHomeItems({
         );
       } else if (step?.kind === 'create') {
         // Spec §6.7: only where a PR command is set; a linked workspace goes to Changes (§21.5).
-        const linked = w.repos.length > 1;
+
         const creating = createPr.isPending && createPr.variables?.workspaceId === w.id;
         parts.push({ text: withoutPrText(step.repos, linked) });
         buttons.push(
@@ -468,6 +519,8 @@ export function useHomeItems({
           );
         }
       }
+      // Beside the main action once everything is committed (spec §6.7, §14.4).
+      if (step && step.kind !== 'merge' && offersMerge(state)) buttons.push(mergeButton('ghost'));
     } else {
       glyph = 'exited';
       title = 'muted';

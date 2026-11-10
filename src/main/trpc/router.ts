@@ -21,6 +21,7 @@ import { workspaceRepo } from '@shared/workspaces';
 import { app, BrowserWindow, clipboard, dialog, nativeTheme, shell, webContents } from 'electron';
 import { z } from 'zod';
 import type { FinishService } from '../changes/finish';
+import type { MergeService } from '../changes/merge';
 import { watchWorktrees } from '../changes/watch';
 import { cachedConversation, lastWordsOf, pruneConversations } from '../claude/last-words';
 import { readResponses, watchTranscript } from '../claude/transcript';
@@ -79,6 +80,8 @@ export interface Services {
   worktreeNotices: WorktreeNotices;
   remoteWatch: RemoteWatch;
   finish: FinishService;
+  /** Merge into the base (spec §14.4). */
+  merge: MergeService;
   editors: EditorService;
   setup: SetupService;
   profiles: ProfileService;
@@ -136,6 +139,7 @@ export function createAppRouter({
   worktreeNotices,
   remoteWatch,
   finish,
+  merge,
   editors,
   setup,
   profiles,
@@ -1166,6 +1170,27 @@ export function createAppRouter({
             );
           }, signal),
         ),
+      /**
+       * Merge into the base (spec §14.4): every repository, or one; `diverged`
+       * answers the question for a published branch.
+       */
+      merge: publicProcedure
+        .input(workspaceId.extend({ ...repo, diverged: z.enum(['rebase', 'merge']).nullish() }))
+        .mutation(({ input }) =>
+          merge.merge(input.workspaceId, input.projectId ?? null, input.diverged ?? null),
+        ),
+      /** Every workspace's merge: waiting for Claude, done or stopped with why. */
+      mergeStatuses: publicProcedure.query(() => merge.list()),
+      mergeChanges: publicProcedure.subscription(({ signal }) =>
+        fromListener<true>((listener) => merge.onChange(() => listener(true)), signal),
+      ),
+      /** Stops waiting for Claude; Claude goes on with its turn. */
+      cancelMerge: publicProcedure
+        .input(workspaceId)
+        .mutation(({ input }) => merge.cancel(input.workspaceId)),
+      dismissMerge: publicProcedure
+        .input(workspaceId)
+        .mutation(({ input }) => merge.dismiss(input.workspaceId)),
       /** Checks every repository's PR (spec §21.5). */
       refreshPr: publicProcedure
         .input(workspaceId)

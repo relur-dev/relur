@@ -48,6 +48,7 @@ import {
   useNow,
   useShipStates,
 } from './home-items';
+import { useMerge } from './MergeControls';
 
 /** The column's section, whose rules and actions it shows (spec §6.7). */
 const SECTION_OF: Record<Exclude<BoardColumn, 'idle'>, HomeSection> = {
@@ -152,7 +153,8 @@ export function Board({
   const suspended = useSuspended();
   const ship = useShipStates(workspaces);
   const now = useNow();
-  const item = useHomeItems({ profile, projects, sessions, memory, actions, ship, now });
+  const merge = useMerge();
+  const item = useHomeItems({ profile, projects, sessions, memory, actions, ship, now, merge });
   const columns = boardColumns(workspaces, ship);
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '';
   // Why a running Claude isn't suspended, or when it will be (spec §9.8), for
@@ -1166,6 +1168,7 @@ export function Board({
           </div>
         </div>
       ) : null}
+      {merge.dialog}
     </div>
   );
 }

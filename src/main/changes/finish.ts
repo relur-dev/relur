@@ -54,6 +54,8 @@ export interface FinishState {
   usesPrs: boolean;
   /** The branch has commits of its own (spec §14.2): Create PR has something to open. */
   hasOwnCommits: boolean;
+  /** Merge into the base has something to do (spec §14.4): own commits, not merged, all committed. */
+  mergeable: boolean;
   /** What the branch is compared with: `<remote>/<base>`, or the local base (spec §6.4). */
   baseRef: string;
   /** Commits of the base the branch doesn't have yet. */
@@ -292,8 +294,11 @@ export class FinishService {
     const { workspace, repo, project, profile, git } = await this.context(workspaceId, projectId);
     const dir = repo.worktreePath;
     // Home reads this every 15 s: a local merge moves the workspace to Clean up (§6.7, §14.2).
-    await refreshMerged(git, this.records, workspace, repo, project).catch(() => {});
+    const merged = await refreshMerged(git, this.records, workspace, repo, project).catch(
+      () => repo.merged,
+    );
     const uncommitted = (await git.status(dir)).length;
+    const hasOwnCommits = await this.hasOwnCommits(git, workspace, repo, project);
     const { pushed, unpushed } = await pushState(git, workspace, project, dir);
     const tracks = await git.upstream(dir, workspace.branch);
     const settings = prSettings(profile, project);
@@ -309,12 +314,13 @@ export class FinishService {
       pr: project.remote ? repo.pr : null,
       createsWithCommand: Boolean(settings.createCommand),
       usesPrs: Boolean(settings.createCommand || settings.statusCommand),
-      hasOwnCommits: await this.hasOwnCommits(git, workspace, repo, project),
+      hasOwnCommits,
+      mergeable: hasOwnCommits && !merged && uncommitted === 0,
     };
   }
 
   /** Whether a repository's branch has commits of its own (spec §14.2): its tip isn't its own start. */
-  private async hasOwnCommits(
+  async hasOwnCommits(
     git: Git,
     workspace: Workspace,
     repo: WorkspaceRepo,
@@ -791,7 +797,7 @@ export class FinishService {
   }
 
   /** A workspace and one of its repositories (the main one for null), with git for it. */
-  private async context(workspaceId: string, projectId: string | null = null) {
+  async context(workspaceId: string, projectId: string | null = null) {
     const workspace = this.workspace(workspaceId);
     const repo = this.repoOf(workspace, projectId);
     const config = this.config.require();

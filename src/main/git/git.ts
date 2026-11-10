@@ -845,6 +845,52 @@ export class Git {
     }
   }
 
+  /** Whether commit `a` is contained in `b` (`git merge-base --is-ancestor`). */
+  async isAncestor(dir: string, a: string, b: string): Promise<boolean> {
+    return (await this.tryRun(dir, ['merge-base', '--is-ancestor', a, b])) !== null;
+  }
+
+  /**
+   * Fast-forwards the branch checked out in `dir` to `branch` (spec §14.4):
+   * `git merge --ff-only`, which refuses anything else, and refuses to
+   * overwrite untracked files.
+   */
+  async fastForward(dir: string, branch: string): Promise<void> {
+    await this.run(dir, ['merge', '--ff-only', '--quiet', `refs/heads/${branch}`]);
+  }
+
+  /**
+   * Moves a branch checked out nowhere to `next` (spec §14.4), only while it
+   * still points at `old`: git refuses when it moved meanwhile.
+   */
+  async updateBranch(repo: string, branch: string, next: string, old: string): Promise<void> {
+    await this.run(repo, [
+      'update-ref',
+      '-m',
+      `merge ${next}: Fast-forward`,
+      `refs/heads/${branch}`,
+      next,
+      old,
+    ]);
+  }
+
+  /** Whether a rebase or merge is under way in the worktree (spec §14.4). */
+  async operationInProgress(dir: string): Promise<'rebase' | 'merge' | null> {
+    const exists = async (name: string) => {
+      const p = (await this.tryRun(dir, ['rev-parse', '--git-path', name]))?.trim();
+      return Boolean(p) && fs.existsSync(path.resolve(dir, p as string));
+    };
+    if ((await exists('rebase-merge')) || (await exists('rebase-apply'))) return 'rebase';
+    if (await exists('MERGE_HEAD')) return 'merge';
+    return null;
+  }
+
+  /** Files with unresolved conflicts in the worktree. */
+  async conflictedFiles(dir: string): Promise<string[]> {
+    const out = await this.tryRun(dir, ['diff', '--name-only', '--diff-filter=U']);
+    return [...new Set((out ?? '').split('\n').filter(Boolean))];
+  }
+
   /** The author emails of the commits in `range` (`a..b`), lowercase and distinct. */
   async authors(dir: string, range: string): Promise<{ name: string; email: string }[]> {
     const out = await this.tryRun(dir, ['log', '--format=%an%x00%ae', range]);

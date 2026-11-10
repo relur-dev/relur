@@ -23,6 +23,8 @@ export interface ShipState {
   unpushed: number;
   /** Repositories that use pull requests, with commits of their own and no PR known (§6.7). */
   withoutPr: number;
+  /** Repositories Merge into the base has something to do in (§14.4). */
+  mergeable: number;
 }
 
 /** What a Ready to ship row offers: the first of these that applies (spec §6.7). */
@@ -30,7 +32,8 @@ export type ShipStep =
   | { kind: 'commit'; files: number }
   | { kind: 'push'; commits: number }
   | { kind: 'create'; repos: number }
-  | { kind: 'pr'; prs: RepoPr[] };
+  | { kind: 'pr'; prs: RepoPr[] }
+  | { kind: 'merge'; repos: number };
 
 /** A repository's pull request, by its project. */
 export interface RepoPr {
@@ -62,7 +65,10 @@ export function openPrs(w: Pick<Workspace, 'repos' | 'pr'>): RepoPr[] {
   });
 }
 
-/** Uncommitted files first, then unpushed commits, then repositories without a PR, then open PRs. */
+/**
+ * Uncommitted files first, then unpushed commits, then repositories without
+ * a PR, then open PRs, then branches to merge into their bases (§14.4).
+ */
 export function shipStep(
   w: Pick<Workspace, 'repos' | 'pr'>,
   state: ShipState | null,
@@ -71,8 +77,22 @@ export function shipStep(
   if (state && state.unpushed > 0) return { kind: 'push', commits: state.unpushed };
   if (state && state.withoutPr > 0) return { kind: 'create', repos: state.withoutPr };
   const prs = openPrs(w);
-  return prs.length > 0 ? { kind: 'pr', prs } : null;
+  if (prs.length > 0) return { kind: 'pr', prs };
+  return state && state.mergeable > 0 ? { kind: 'merge', repos: state.mergeable } : null;
 }
+
+/**
+ * Whether a Ready to ship row offers Merge into <base> beside its main action
+ * (spec §6.7, §14.4): everything committed and something to merge.
+ */
+export const offersMerge = (state: ShipState | null) =>
+  !!state && state.uncommitted === 0 && state.mergeable > 0;
+
+/** "Ready to merge into main", or "2 repositories ready to merge" in a linked workspace. */
+export const readyToMergeText = (repos: number, base: string, linked: boolean) =>
+  linked
+    ? `${repos} ${repos === 1 ? 'repository' : 'repositories'} ready to merge`
+    : `Ready to merge into ${base}`;
 
 /**
  * The open pull requests' text (spec §6.7): one as prText ("PR #212 open"),

@@ -14,6 +14,7 @@ import { APP_LOG_FILE, AppLog } from './app-log';
 import { followAppearance } from './appearance';
 import { HookBridge } from './bridge/server';
 import { FinishService, PR_POLL_MS } from './changes/finish';
+import { MergeService } from './changes/merge';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
 import { awaitLastResponse, readPrompts, shownPrompt } from './claude/transcript';
 import { ConfigStore } from './config/store';
@@ -726,6 +727,13 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     });
     // PR status (spec §12.4): every 5 minutes, and when the window gains focus.
     const finish = new FinishService(config, workspaceRecords, terminals);
+    // Merge into the base (spec §14.4): Claude's turn ending tries again.
+    const merge = new MergeService(
+      workspaceRecords,
+      finish,
+      (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
+      status,
+    );
     const prTimer = setInterval(() => void finish.refreshAll(), PR_POLL_MS);
     atShutdown(() => clearInterval(prTimer));
     let lastFocusCheck = 0;
@@ -745,6 +753,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     );
     serveTrpcOverIpc({
       finish,
+      merge,
       editors,
       quit: { asker: quitAsker, answer: (quit: boolean) => answerQuit?.(quit) },
       unfinished: continuing,
