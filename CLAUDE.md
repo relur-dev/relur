@@ -37,3 +37,12 @@ An Electron desktop app (macOS and Linux) for running parallel Claude Code sessi
 - **Shell:** in `rm` paths write variables as `"${VAR:?}"`.
 - Match the surrounding code: its comment density, naming and idioms. Comments cite spec sections (`spec §6.1`) where behaviour comes from the spec.
 - Personal rules for your own setup go in `CLAUDE.local.md` (gitignored; `.worktreeinclude` copies it into new worktrees).
+
+## Rebasing and merging
+
+When "Merge into main" asks you to rebase a branch onto main:
+
+- **Conflicts:** resolve them so both sides' changes stay wherever they still apply.
+- **Binary files** (e.g. the Guide's screenshots): never merge them. Take main's version, then retake them with `scripts/guide-screenshots.ts`.
+- **`CHANGELOG.md`:** keep both sides' entries under Unreleased, no entry twice, no empty heading.
+- **Afterwards:** `npm run check` and the e2e suites the branch touches, then commit. End with "Ready to merge." or "Not ready to merge: <reason>".
