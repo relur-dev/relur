@@ -1,8 +1,9 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { MergedInto, SubmoduleWork } from '@shared/workspaces';
 import type { Env } from '../env/scrub';
+import { gitMayStart, signalGroup, trackGit } from './processes';
 
 /** The first line of git's error, without `fatal:` or `error:` (for notes). */
 export function gitReason(error: unknown): string {
@@ -14,8 +15,116 @@ export function gitReason(error: unknown): string {
   return (line ?? text).replace(/^(fatal|error):\s*/i, '');
 }
 
-/** How long Create waits for the remote, per `ls-remote` or `fetch` (spec §7.3). */
+/** How long a git command that talks to a remote may run (spec §7.3, §16). */
 export const NETWORK_TIMEOUT_SEC = 30;
+/** Push and clone carry a whole branch or repository: they may take longer. */
+export const TRANSFER_TIMEOUT_SEC = 120;
+
+/**
+ * ssh options for every git command of the app that talks to a remote (spec
+ * §16): never ask (nobody can answer: a host key or passphrase prompt fails at
+ * once), give up on a host that doesn't answer, and on a connection that went
+ * dead (after sleep, say) instead of waiting on it forever.
+ */
+export const SSH_OPTIONS =
+  '-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=2';
+
+/** git's subcommands that talk to a remote. */
+const NETWORK_COMMANDS = new Set(['fetch', 'pull', 'push', 'clone', 'ls-remote']);
+
+/** The subcommand in git's arguments: the first after the global options. */
+export function gitSubcommand(args: string[]): string | null {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (arg === '-c' || arg === '-C') i++;
+    else if (!arg.startsWith('-')) return arg;
+  }
+  return null;
+}
+
+/** The time limit of a command that talks to a remote, or null for any other. */
+export function networkTimeoutSec(args: string[]): number | null {
+  const sub = gitSubcommand(args);
+  if (!sub || !NETWORK_COMMANDS.has(sub)) return null;
+  return sub === 'push' || sub === 'clone' ? TRANSFER_TIMEOUT_SEC : NETWORK_TIMEOUT_SEC;
+}
+
+/**
+ * A network command's stderr, with what to do first when ssh couldn't go on
+ * without asking (spec §7.3): a host key not accepted yet (a first connection,
+ * such as to a host a service moved Git over SSH to) or a key that needs its
+ * passphrase. The rest of stderr stays below it.
+ */
+export function networkProblem(stderr: string, cwd: string): string {
+  const fix = `run git fetch once in a terminal in ${cwd}`;
+  const unknown = /host key is known for (\S+?)[.,]? |Host key verification failed/i.exec(stderr);
+  if (unknown) {
+    const host =
+      unknown[1] ?? /Offending \S+ key for (\S+)|for (\S+) has changed/.exec(stderr)?.[1];
+    return `ssh doesn't accept the host key of ${host ?? 'the remote'} yet (a first connection, or the key changed), and git run by the app can't ask: ${fix} and accept it.\n${stderr}`;
+  }
+  if (/Permission denied \(publickey/i.test(stderr)) {
+    return `ssh couldn't sign in without asking (a key with a passphrase that isn't in ssh-agent?): ${fix}, or add the key with ssh-add.\n${stderr}`;
+  }
+  return stderr;
+}
+
+/** Where failures of network commands are written (app.log, spec §3.4); set at start. */
+let gitLog: ((line: string) => void) | null = null;
+export function logGitFailures(write: ((line: string) => void) | null): void {
+  gitLog = write;
+}
+
+/**
+ * git in its own process group (`detached`), tracked until it closes. After
+ * `timeoutSec` the whole group is stopped, and it fails "timed out after N s".
+ */
+function spawnGit(
+  gitPath: string,
+  cwd: string,
+  args: string[],
+  env: Env,
+  timeoutSec: number | null,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    if (!gitMayStart()) {
+      reject(new GitError(args, null, 'not started: the app is quitting'));
+      return;
+    }
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let timedOut = false;
+    let settled = false;
+    const child = spawn(gitPath, args, {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    });
+    trackGit(child);
+    const timer =
+      timeoutSec === null
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            signalGroup(child, 'SIGKILL');
+          }, timeoutSec * 1000);
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    const done = (code: number | null, message = '') => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      const out = Buffer.concat(stdout);
+      const err = Buffer.concat(stderr).toString('utf8');
+      if (timedOut) reject(new GitError(args, null, `timed out after ${timeoutSec} s`));
+      else if (code !== 0) reject(new GitError(args, code, err || message, out.toString('utf8')));
+      else resolve(out);
+    };
+    child.on('error', (error) => done(null, error.message));
+    child.on('close', (code) => done(code));
+  });
+}
 
 export class GitError extends Error {
   constructor(
@@ -87,6 +196,8 @@ export interface GitOptions {
   gitPath: string;
   /** Environment of the profile the command runs for (rule R3). */
   env: Env;
+  /** For tests: replaces NETWORK_TIMEOUT_SEC. */
+  networkTimeoutSec?: number;
 }
 
 /**
@@ -98,66 +209,71 @@ export class Git {
   constructor(private readonly options: GitOptions) {}
 
   /**
-   * Runs git. With `timeoutSec`, it runs in its own process group, which is
-   * stopped after that long: the ssh it started for a remote goes too.
+   * Runs git, in its own process group, tracked so quitting stops it (spec
+   * §5). A command that talks to a remote (fetch, pull, push, clone,
+   * ls-remote) always goes the network way (spec §7.3, §16): ssh never asks,
+   * and after its time limit (or `timeoutSec`) the whole group is stopped,
+   * the ssh it started included; a failure is written to app.log.
    */
-  run(cwd: string, args: string[], { timeoutSec }: { timeoutSec?: number } = {}): Promise<string> {
+  async run(
+    cwd: string,
+    args: string[],
+    { timeoutSec }: { timeoutSec?: number } = {},
+  ): Promise<string> {
+    return (await this.runBuffer(cwd, args, timeoutSec)).toString('utf8');
+  }
+
+  private async runBuffer(cwd: string, args: string[], timeoutSec?: number): Promise<Buffer> {
     // No optional locks: a background `git status` would otherwise take the
     // index lock to refresh it, and the user's own git command could fail
     // on `index.lock` meanwhile (spec §16).
-    const env = { ...this.options.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
-    if (timeoutSec !== undefined) return this.runTimed(cwd, args, env, timeoutSec);
-    return new Promise((resolve, reject) => {
-      execFile(
-        this.options.gitPath,
-        args,
-        { cwd, env, maxBuffer: 64 * 1024 * 1024 },
-        (error, stdout, stderr) => {
-          if (error) {
-            const code = typeof error.code === 'number' ? error.code : null;
-            reject(new GitError(args, code, stderr || error.message, stdout));
-          } else {
-            resolve(stdout);
-          }
-        },
-      );
-    });
+    const env: Env = { ...this.options.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
+    let limit = networkTimeoutSec(args);
+    if (limit === NETWORK_TIMEOUT_SEC) limit = this.options.networkTimeoutSec ?? limit;
+    if (limit === null) return spawnGit(this.options.gitPath, cwd, args, env, timeoutSec ?? null);
+    const ssh = await this.sshCommand(cwd, env);
+    if (ssh) env.GIT_SSH_COMMAND = ssh;
+    try {
+      return await spawnGit(this.options.gitPath, cwd, args, env, timeoutSec ?? limit);
+    } catch (error) {
+      if (!(error instanceof GitError)) throw error;
+      const stderr = networkProblem(error.stderr, cwd);
+      const failed =
+        stderr === error.stderr ? error : new GitError(args, error.exitCode, stderr, error.stdout);
+      gitLog?.(`git ${args.join(' ')} in ${cwd}: ${gitReason(failed)}`);
+      throw failed;
+    }
   }
 
-  private runTimed(cwd: string, args: string[], env: Env, timeoutSec: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-      let stdout = '';
-      let stderr = '';
-      let timedOut = false;
-      const child = spawn(this.options.gitPath, args, {
-        cwd,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
-      });
-      const timer = setTimeout(() => {
-        timedOut = true;
-        try {
-          if (child.pid) process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          // already gone
-        }
-      }, timeoutSec * 1000);
-      child.stdout.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString('utf8');
-      });
-      child.stderr.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString('utf8');
-      });
-      const done = (code: number | null, message = '') => {
-        clearTimeout(timer);
-        if (timedOut) reject(new GitError(args, null, `timed out after ${timeoutSec} s`));
-        else if (code !== 0) reject(new GitError(args, code, stderr || message));
-        else resolve(stdout);
-      };
-      child.on('error', (error) => done(null, error.message));
-      child.on('close', (code) => done(code));
-    });
+  /**
+   * The ssh command git uses for a remote, with SSH_OPTIONS after the user's
+   * own (`GIT_SSH_COMMAND`, else `core.sshCommand`, else `ssh`): ssh takes
+   * the first value of an option, so theirs still win. Null for a `GIT_SSH`
+   * program or an `ssh.variant` other than OpenSSH's, which are left as they are.
+   */
+  private async sshCommand(cwd: string, env: Env): Promise<string | null> {
+    if (env.GIT_SSH_COMMAND) return `${env.GIT_SSH_COMMAND} ${SSH_OPTIONS}`;
+    if (env.GIT_SSH) return null;
+    if (env.GIT_SSH_VARIANT && env.GIT_SSH_VARIANT !== 'ssh') return null;
+    const out = await spawnGit(
+      this.options.gitPath,
+      cwd,
+      ['config', '--get-regexp', '^(core\\.sshcommand|ssh\\.variant)$'],
+      env,
+      5,
+    ).then(
+      (b) => b.toString('utf8'),
+      () => '',
+    );
+    const value = (key: string) =>
+      out
+        .split('\n')
+        .find((l) => l.startsWith(`${key} `))
+        ?.slice(key.length + 1)
+        .trim();
+    const variant = value('ssh.variant');
+    if (variant && variant !== 'ssh' && variant !== 'auto') return null;
+    return `${value('core.sshcommand') || 'ssh'} ${SSH_OPTIONS}`;
   }
 
   /** Like `run`, but returns null instead of throwing when git exits non-zero. */
@@ -239,9 +355,7 @@ export class Git {
 
   /** The remote's branches, asked of the remote itself (network). */
   async remoteHeads(repo: string, remote: string): Promise<Set<string>> {
-    const out = await this.run(repo, ['ls-remote', '--heads', remote], {
-      timeoutSec: NETWORK_TIMEOUT_SEC,
-    });
+    const out = await this.run(repo, ['ls-remote', '--heads', remote]);
     return new Set(
       out
         .split('\n')
@@ -266,7 +380,7 @@ export class Git {
   }
 
   async fetch(repo: string, remote: string, branch: string): Promise<void> {
-    await this.run(repo, ['fetch', '--quiet', remote, branch], { timeoutSec: NETWORK_TIMEOUT_SEC });
+    await this.run(repo, ['fetch', '--quiet', remote, branch]);
   }
 
   /**
@@ -604,19 +718,7 @@ export class Git {
 
   /** A file's content at a revision, or null when it doesn't exist there. */
   async showFile(dir: string, rev: string, file: string): Promise<Buffer | null> {
-    return new Promise((resolve) => {
-      execFile(
-        this.options.gitPath,
-        ['show', `${rev}:${file}`],
-        {
-          cwd: dir,
-          env: { ...this.options.env, GIT_TERMINAL_PROMPT: '0' },
-          encoding: 'buffer',
-          maxBuffer: 64 * 1024 * 1024,
-        },
-        (error, stdout) => resolve(error ? null : stdout),
-      );
-    });
+    return this.runBuffer(dir, ['show', `${rev}:${file}`]).catch(() => null);
   }
 
   /** Deletes a local branch; remote branches are never touched. */
@@ -626,9 +728,7 @@ export class Git {
 
   /** `git fetch --prune <remote>`: every branch of the remote (network, spec §7.6). */
   async fetchRemote(repo: string, remote: string): Promise<void> {
-    await this.run(repo, ['fetch', '--quiet', '--prune', remote], {
-      timeoutSec: NETWORK_TIMEOUT_SEC,
-    });
+    await this.run(repo, ['fetch', '--quiet', '--prune', remote]);
   }
 
   /**
@@ -641,9 +741,7 @@ export class Git {
 
   /** The commit a ref names on the remote (`git ls-remote <remote> <ref>`), or null (network). */
   async remoteRef(repo: string, remote: string, ref: string): Promise<string | null> {
-    const out = await this.run(repo, ['ls-remote', remote, ref], {
-      timeoutSec: NETWORK_TIMEOUT_SEC,
-    });
+    const out = await this.run(repo, ['ls-remote', remote, ref]);
     const line = out.split('\n').find((l) => l.endsWith(`\t${ref}`));
     return line?.split('\t')[0] || null;
   }

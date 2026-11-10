@@ -24,6 +24,8 @@ import { WorkspaceRecords } from './db/workspaces';
 import { EditorService } from './editor/service';
 import { EnvService } from './env/service';
 import { bugReportUrl, featureRequestUrl, osOption, osVersion } from './feedback';
+import { logGitFailures } from './git/git';
+import { killGitProcessesNow, runningGitCount, stopGitProcesses } from './git/processes';
 import { helperPath, stableHelper, writeSessionBin } from './helper-files';
 import {
   migrateSettings,
@@ -128,17 +130,23 @@ const stopAccepting = () => {
 // The one will-quit handler. A terminal still running here would end while
 // Electron tears Node down, where node-pty's exit callback aborts the app
 // ("quit unexpectedly"): it is stopped first and the quit goes on after.
+// git the app started (a background fetch, say) is stopped the same way, so
+// nothing it started outlives it (spec §5).
 app.on('will-quit', (event) => {
   stopAccepting();
-  if (host.runningCount() > 0) {
+  const git = stopGitProcesses();
+  if (host.runningCount() > 0 || runningGitCount() > 0) {
     event.preventDefault();
-    void host.shutdown().then(() => app.quit());
+    void Promise.all([host.shutdown(), git]).then(() => app.quit());
     return;
   }
   for (const task of shutdownTasks.splice(0)) task();
   closeDatabase?.();
   closeDatabase = null;
 });
+// The last resort when the app ends some other way (app.exit, an uncaught
+// error): git still running is killed, group and all.
+process.on('exit', killGitProcessesNow);
 const bridge = new HookBridge();
 let status: StatusService | null = null;
 /** Work the app's stop interrupts (spec §9.7); set once the app is ready. */
@@ -223,7 +231,11 @@ function showMainWindow(): void {
     if (mainWindow === win) mainWindow = null;
     answerCloseNotice = null;
   });
-  if (isSelfTest) runSelfTest(mainWindow, selfTestCheck, () => host.shutdown());
+  if (isSelfTest) {
+    runSelfTest(mainWindow, selfTestCheck, async () => {
+      await Promise.all([host.shutdown(), stopGitProcesses()]);
+    });
+  }
 }
 
 /**
@@ -552,6 +564,8 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     // Create's and the task lookup's phases, timed (spec §3.4).
     const appLog = new AppLog(path.join(dataDir, APP_LOG_FILE));
     workspaces.log = appLog;
+    // Network git that failed, a background fetch included (spec §7.3).
+    logGitFailures((line) => appLog.write(line));
     status.onSessionStart((workspaceId) => workspaces.sessionStarted(workspaceId));
     // The workflow read from each workspace's status file (spec §13.4, §13.5).
     const workflow = new WorkflowService(config, workspaceRecords, terminals);

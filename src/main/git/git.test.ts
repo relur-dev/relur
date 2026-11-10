@@ -2,7 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createFixture, type Fixture } from '../test-support/git-fixtures';
-import { Git, GitError, gitReason } from './git';
+import {
+  Git,
+  GitError,
+  gitReason,
+  logGitFailures,
+  NETWORK_TIMEOUT_SEC,
+  networkTimeoutSec,
+  TRANSFER_TIMEOUT_SEC,
+} from './git';
 
 let fx: Fixture;
 let git: Git;
@@ -153,7 +161,9 @@ describe('Git', () => {
   it('stops a network call after its timeout, with the ssh it started (spec §7.3)', async () => {
     // A git that starts a child holding its output open, as ssh does.
     const slow = path.join(fx.root, 'slow-git');
-    fs.writeFileSync(slow, '#!/bin/sh\nsleep 30 &\nsleep 30\n', { mode: 0o755 });
+    fs.writeFileSync(slow, '#!/bin/sh\n[ "$1" = fetch ] || exit 1\nsleep 30 &\nsleep 30\n', {
+      mode: 0o755,
+    });
     const started = Date.now();
     const error = await new Git({ gitPath: slow, env: fx.env })
       .run(fx.root, ['fetch'], { timeoutSec: 1 })
@@ -161,5 +171,105 @@ describe('Git', () => {
     expect(error).toBeInstanceOf(GitError);
     expect(gitReason(error)).toBe('timed out after 1 s');
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('runs every command that talks to a remote with a time limit (spec §16)', () => {
+    expect(networkTimeoutSec(['fetch', '--quiet', '--prune', 'origin'])).toBe(NETWORK_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['ls-remote', '--heads', 'origin'])).toBe(NETWORK_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['pull', '--ff-only'])).toBe(NETWORK_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['-c', 'a.b=c', '-C', 'dir', 'fetch'])).toBe(NETWORK_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['push', '-u', 'origin', 'b'])).toBe(TRANSFER_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['clone', '--quiet', 'url', 'dir'])).toBe(TRANSFER_TIMEOUT_SEC);
+    expect(networkTimeoutSec(['status'])).toBeNull();
+    expect(networkTimeoutSec(['remote', 'get-url', 'origin'])).toBeNull();
+  });
+
+  describe('over ssh (spec §7.3)', () => {
+    /** A clone whose remote is reached through `ssh`: the fake one in `bin`. */
+    const sshRemote = (name: string, script: string) => {
+      const { clone } = fx.cloneWithRemote(name);
+      fx.git(clone, 'remote', 'set-url', 'origin', 'ssh://git@ssh.example.invalid/repo.git');
+      const bin = path.join(fx.root, `${name}-bin`);
+      fs.mkdirSync(bin);
+      // Named ssh, so git passes it OpenSSH's options.
+      fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\necho "$@" > "${bin}/args"\n${script}`, {
+        mode: 0o755,
+      });
+      return { clone, bin, env: { ...fx.env, GIT_SSH_COMMAND: path.join(bin, 'ssh') } };
+    };
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    it('stops a background fetch whose ssh hangs after the limit, with its child', async () => {
+      const { clone, bin, env } = sshRemote(
+        'ssh-hangs',
+        `sleep 300 &\necho $$ $! > "$(dirname "$0")/pids"\nwait\n`,
+      );
+      const lines: string[] = [];
+      logGitFailures((line) => lines.push(line));
+      try {
+        const started = Date.now();
+        const error = await new Git({ gitPath: 'git', env, networkTimeoutSec: 1 })
+          .fetchRemote(clone, 'origin')
+          .catch((e: unknown) => e);
+        expect(gitReason(error)).toBe('timed out after 1 s');
+        expect(Date.now() - started).toBeLessThan(5000);
+        expect(fs.readFileSync(path.join(bin, 'args'), 'utf8')).toMatch(
+          /-o BatchMode=yes -o ConnectTimeout=\d+/,
+        );
+        const pids = fs.readFileSync(path.join(bin, 'pids'), 'utf8').trim().split(' ').map(Number);
+        for (const end = Date.now() + 2000; Date.now() < end && pids.some(alive); ) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        expect(pids.filter(alive)).toEqual([]);
+        expect(lines).toEqual([
+          `git fetch --quiet --prune origin in ${clone}: timed out after 1 s`,
+        ]);
+      } finally {
+        logGitFailures(null);
+      }
+    });
+
+    it('fails at once where ssh would ask, and says what to do', async () => {
+      // As OpenSSH does: with BatchMode it refuses, otherwise it waits for an answer.
+      const { clone, env } = sshRemote(
+        'ssh-asks',
+        `case "$*" in *BatchMode=yes*)
+  echo 'No ED25519 host key is known for ssh.example.invalid and you have requested strict checking.' >&2
+  echo 'Host key verification failed.' >&2
+  exit 255 ;;
+esac
+sleep 300
+`,
+      );
+      const started = Date.now();
+      const error = await new Git({ gitPath: 'git', env })
+        .fetchRemote(clone, 'origin')
+        .catch((e: unknown) => e);
+      expect(Date.now() - started).toBeLessThan(5000);
+      expect(error).toBeInstanceOf(GitError);
+      expect(gitReason(error)).toBe(
+        `ssh doesn't accept the host key of ssh.example.invalid yet (a first connection, or the key changed), and git run by the app can't ask: run git fetch once in a terminal in ${clone} and accept it.`,
+      );
+      // git's own words stay below, for messages that look for them.
+      expect((error as GitError).stderr).toMatch(/Host key verification failed/);
+    });
+
+    it("keeps the user's core.sshCommand, with the options after it", async () => {
+      const { clone, bin } = sshRemote('ssh-config', 'exit 255\n');
+      fx.git(clone, 'config', 'core.sshCommand', `${path.join(bin, 'ssh')} -o User=mine`);
+      await new Git({ gitPath: 'git', env: fx.env })
+        .remoteRef(clone, 'origin', 'HEAD')
+        .catch(() => {});
+      expect(fs.readFileSync(path.join(bin, 'args'), 'utf8')).toMatch(
+        /^-o User=mine -o BatchMode=yes /,
+      );
+    });
   });
 });

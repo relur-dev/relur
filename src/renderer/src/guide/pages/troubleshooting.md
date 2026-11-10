@@ -54,9 +54,13 @@ Each setup line runs on its own. Write `cd app && npm install` on one line. See 
 
 {{app}} can't ask for a password. Set up git's credentials once in a Shell tab, then push again. See [Commit, Push, Create PR](finishing-work#commit-push-create-pr).
 
+## A remote's host key or passphrase
+
+{{app}} runs git without a terminal, so ssh can't ask anything: a host key you haven't accepted yet (the first connection to a new host, such as `ssh.bitbucket.org`, where Bitbucket moves Git over SSH) or a key that needs its passphrase fails at once. The reason says so, where you started the call and in `{{configDir}}/app.log` for the fetches {{app}} runs in the background. Run `git fetch` once in a terminal in the project's folder and accept the host key, or add the key to ssh-agent with `ssh-add`. A call to a remote gives up after 30 seconds (Push after 2 minutes), and quitting {{app}} stops every git it started.
+
 ## Creating a workspace takes long
 
-{{app}} times each step of Create and of the task lookup in `app.log` in its settings folder, `{{configDir}}/app.log`. Each line names the step and its milliseconds, for example `git fetch origin main 1914 ms` or `lookup ABC-123 (work): claude -p 18450 ms`, and a Claude lookup adds how many turns Claude took. The lines end with `Claude's session started` and `total since Create`.
+{{app}} times each step of Create and of the task lookup in `app.log` in its settings folder, `{{configDir}}/app.log`. Each line names the step and its milliseconds, for example `git fetch origin main 1914 ms` or `lookup ABC-123 (work): claude -p 18450 ms`, and a Claude lookup adds how many turns Claude took. The lines end with `Claude's session started` and `total since Create`. A call to a remote that failed, in the background too, has a line of its own with git's reason, for example `git fetch --quiet --prune origin in ~/code/shop: timed out after 30 s`.
 
 ## Where are my worktrees?
 

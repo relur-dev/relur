@@ -20,6 +20,7 @@ import {
   assertExitedCleanly,
   type Cdp,
   clickClosingButton,
+  clickLabel,
   dialogText,
   launchApp,
   pressShortcut,
@@ -297,6 +298,61 @@ exec sleep 600
         app = undefined;
       }
     }
+    // A background fetch whose ssh hangs (spec §5, §7.3): New workspace asks
+    // the remote as it opens; quitting then, by the app's own Quit or by a
+    // SIGTERM to its main process alone, stops git with its ssh, and nothing
+    // of the app is left, long before git's time limit.
+    const remoteRepo = fx.cloneWithRemote('remote-notes').clone;
+    fx.git(remoteRepo, 'remote', 'set-url', 'origin', 'ssh://git@ssh.example.invalid/notes.git');
+    const fakeSsh = path.join(fx.root, 'ssh-bin', 'ssh');
+    const sshPids = path.join(fx.root, 'ssh-pids.txt');
+    fs.mkdirSync(path.dirname(fakeSsh));
+    fs.writeFileSync(fakeSsh, `#!/bin/sh\nsleep 600 &\necho $$ $! >> "${sshPids}"\nwait\n`, {
+      mode: 0o755,
+    });
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        ...config,
+        quitOnWindowClose: false,
+        projects: [
+          {
+            id: 'remote-notes',
+            profileId: 'work',
+            name: 'remote-notes',
+            repoPath: remoteRepo,
+            remote: 'origin',
+            baseBranch: 'main',
+          },
+        ],
+      }),
+    );
+    for (const how of ['Quit', 'SIGTERM'] as const) {
+      fs.rmSync(sshPids, { force: true });
+      const running = await launchApp({
+        env: { ...withDisplayEnv(fx.env), GIT_SSH_COMMAND: fakeSsh },
+        dev: devMode,
+        electronArgs,
+      });
+      app = running;
+      await recordNativeDialogs(running.main);
+      await clickLabel(running.page, 'New workspace in remote-notes');
+      // ls-remote and the fetch of the base, each with its ssh.
+      await waitForFile(sshPids, { until: /\n/ });
+      const started = Date.now();
+      const processes = descendants(running.pid);
+      const pids = fs.readFileSync(sshPids, 'utf8').trim().split(/\s+/).map(Number);
+      if (how === 'SIGTERM') process.kill(running.pid, 'SIGTERM');
+      else if (isMac) await pressQuit(running.main);
+      else await closeWindow(running.main);
+      await assertGone(running, processes, fx.root, `${how} during a hanging fetch`);
+      assert.deepEqual(pids.filter(alive), [], `${how}: the ssh and its child are gone`);
+      assert.ok(Date.now() - started < 20_000, `${how}: quit without waiting for git's limit`);
+      assert.equal(fs.existsSync(nativeDialogs), false, `${how}: no question`);
+      app = undefined;
+    }
+
     console.log(`e2e quit test passed (${devMode ? 'dev server' : 'production build'})`);
   } catch (error) {
     if (fs.existsSync(nativeDialogs)) {
