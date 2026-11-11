@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { Workspace } from '@shared/workspaces';
 import { describe, expect, it, vi } from 'vitest';
 import { openStateDb } from './state-db';
@@ -19,6 +22,7 @@ const workspace = (id: string, projectId = 'api'): Workspace => ({
   unfinished: null,
   lastPrompt: null,
   keepRunning: false,
+  flag: null,
   claudeMayLink: true,
   stateSince: null,
   claudeSessionId: null,
@@ -68,6 +72,54 @@ describe('WorkspaceRecords', () => {
     expect(records.get('a')).toBeNull();
     expect(records.list().map((w) => w.id)).toEqual(['bb']);
     expect(records.forProject('api')).toEqual([]);
+  });
+
+  it('flags a workspace with a note, edits the note, clears it and puts it back (spec §6.7)', () => {
+    const records = new WorkspaceRecords(openStateDb(':memory:'));
+    records.insert(workspace('a'));
+    const changes = vi.fn();
+    records.onChange(changes);
+    records.setFlag('a', '  Check the Safari case,\nthen the e2e  ');
+    const flag = records.get('a')?.flag;
+    expect(flag?.note).toBe('Check the Safari case, then the e2e');
+    expect(Number.isNaN(Date.parse(flag?.at ?? ''))).toBe(false);
+    // Editing the note keeps when it was flagged.
+    records.setFlag('a', 'Write the e2e');
+    expect(records.get('a')?.flag).toEqual({ at: flag?.at, note: 'Write the e2e' });
+    // An empty note still flags it.
+    records.setFlag('a', '');
+    expect(records.get('a')?.flag).toEqual({ at: flag?.at, note: '' });
+    records.setFlag('a', null);
+    expect(records.get('a')?.flag).toBeNull();
+    // Undo puts back the flag as it was.
+    records.setFlag('a', 'Write the e2e', { at: '2026-11-01T09:00:00.000Z', note: 'x' });
+    expect(records.get('a')?.flag).toEqual({
+      at: '2026-11-01T09:00:00.000Z',
+      note: 'Write the e2e',
+    });
+    expect(changes).toHaveBeenCalledTimes(5);
+    records.setFlag('missing', 'x');
+    expect(changes).toHaveBeenCalledTimes(5);
+  });
+
+  it('keeps the flag through state changes, Claude stopping and a restart (spec §6.7)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flag-'));
+    try {
+      const file = path.join(dir, 'state.db');
+      const db = openStateDb(file);
+      const records = new WorkspaceRecords(db);
+      records.insert(workspace('a'));
+      records.setFlag('a', 'Continue tomorrow');
+      records.setState('a', 'working');
+      records.setState('a', 'done', { unread: true });
+      records.setClaudeRunning('a', false);
+      records.setState('a', 'exited');
+      db.close();
+      const again = new WorkspaceRecords(openStateDb(file));
+      expect(again.get('a')?.flag?.note).toBe('Continue tomorrow');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('records state changes as activity', () => {

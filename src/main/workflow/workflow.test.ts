@@ -156,6 +156,7 @@ describe('WorkflowService with the status service', () => {
     unfinished: null,
     lastPrompt: null,
     keepRunning: false,
+    flag: null,
     claudeMayLink: true,
     stateSince: null,
     claudeSessionId: null,

@@ -166,6 +166,13 @@ export const SHORTCUTS = {
     label: 'Continue the workflow; at a gate, go to Claude',
     chords: [{ mod: true, shift: true, code: 'Enter' }],
   },
+  flag: {
+    group: 'Workspaces',
+    label: 'Flag the workspace to come back to later, or unflag it',
+    // Ctrl+Shift+G on Linux and Windows: no shell, readline or desktop key;
+    // Ctrl+G (without Shift) stays the terminal's (spec §6.6).
+    chords: [{ mod: true, shift: true, code: 'KeyG' }],
+  },
   openInEditor: {
     group: 'Workspaces',
     label: 'Open in editor (workspace or project)',

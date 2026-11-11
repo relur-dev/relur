@@ -94,6 +94,9 @@
   --color-st-approval: oklch(0.425 0.16 295);
   --color-st-error: oklch(0.43 0.17 28);
 
+  /* A flagged workspace (spec §6.7): cyan-blue, apart from the status colors and focus */
+  --color-flag: oklch(0.395 0.09 210);
+
   /* Board's Needs you column while it has cards (spec §6.7): fill and top edge,
      in the most urgent card's color. Light only; dark tints the column instead. */
   --color-needs-bg: oklch(0.845 0.03 80);
@@ -205,6 +208,7 @@
   --color-st-input: oklch(0.76 0.14 350);
   --color-st-approval: oklch(0.76 0.13 295);
   --color-st-error: oklch(0.72 0.17 25);
+  --color-flag: oklch(0.79 0.1 210);
 
   --color-diff-add: oklch(0.76 0.14 150);
   --color-diff-add-bg: oklch(0.72 0.14 150 / 0.13);

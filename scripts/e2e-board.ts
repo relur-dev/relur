@@ -17,7 +17,10 @@
  * question, its words at a gate or the gate's hint alone, none for a fresh
  * session), the line opening the Responses panel at that entry, and Claude's
  * question tool shown as Asked a question (card, sidebar, Needs you in
- * the input color) and answered from its card's options. Runs with a throwaway HOME and a fake
+ * the input color) and answered from its card's options; and the flag (Flag…
+ * with a note from a card's ⋯, on the card and in the sidebar, Edit Flag Note…,
+ * ⇧⌘G, the Flagged filter, the flag after a restart with the filter off again,
+ * Unflag and Undo). Runs with a throwaway HOME and a fake
  * `claude`.
  *
  *   tsx scripts/e2e-board.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
@@ -41,7 +44,9 @@ import {
   launchApp,
   openContextMenu,
   pressKey,
+  pressShortcut,
   type RunningApp,
+  readCardDetails,
   screenshot,
   sleep,
   submitDialog,
@@ -1364,6 +1369,101 @@ exec sleep 600
     );
     assert.equal(await page.eval(columnOf(id('gate'))), 'needs');
 
+    // 9c. Flag (spec §6.7): from a card's ⋯ with a note; on the card, in the
+    // sidebar and in its details; the card keeps its column, at the top of it.
+    const asker = id('asker');
+    const flagNote = 'Check the Safari case, then write the e2e for the redirect';
+    const flagMark = (wid: string) => `!!document.querySelector('[data-flag-mark="${wid}"]')`;
+    const cardNote = (wid: string) =>
+      `(${card(wid)}?.querySelector('[data-card-flag-note]')?.textContent ?? null)`;
+    const flagRow = (wid: string) => `!!document.querySelector('nav [data-flag-row="${wid}"]')`;
+    const rowTitle = (wid: string) =>
+      `(document.querySelector('nav [data-nav-key="w:${wid}"]')?.title ?? '')`;
+    const allCards = `[...document.querySelectorAll('[data-board-card]')].map((c) => c.dataset.boardCard)`;
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(`!!${card(asker)}`, "asker's card");
+    const askerColumn = await page.eval<string>(columnOf(asker));
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-board-flagged]:disabled')`),
+      true,
+      'Flagged is off with nothing flagged',
+    );
+    await chooseFromNextContextMenu(app.main, 'Flag…');
+    await page.eval(`document.querySelector('[data-card-menu="${asker}"]').click()`);
+    await page.waitFor(`!!document.querySelector('dialog[open] [data-flag-note]')`, 'Flag dialog');
+    assert.deepEqual(await app.main.eval(`globalThis.__lastMenu`), ['Flag…', 'Delete workspace…']);
+    assert.match(await page.eval<string>(dialogText), /Flag ABC-9/);
+    await typeInField(page, '[data-flag-note]', flagNote);
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'Flag dialog closed');
+    await page.waitFor(flagMark(asker), 'the flag on the card');
+    assert.equal(await page.eval(cardNote(asker)), flagNote);
+    assert.equal(await page.eval(columnOf(asker)), askerColumn, 'the card keeps its column');
+    if (askerColumn !== 'needs' && askerColumn !== 'working') {
+      assert.equal(await page.eval(`${columnIds(askerColumn)}[0]`), asker, 'flagged on top');
+    }
+    await page.waitFor(flagRow(asker), 'the flag in the sidebar');
+    assert.match(await page.eval<string>(rowTitle(asker)), new RegExp(`\nFlagged: ${flagNote}$`));
+    assert.match(
+      await readCardDetails(page, card(asker)),
+      new RegExp(`\nFlagged just now: ${flagNote}\n`),
+    );
+    // Edit Flag Note… from a right click on the card.
+    await chooseFromNextContextMenu(app.main, 'Edit Flag Note…');
+    await openContextMenu(page, `[data-board-card="${asker}"]`);
+    await page.waitFor(`!!document.querySelector('dialog[open] [data-flag-note]')`, 'Edit dialog');
+    assert.deepEqual(await app.main.eval(`globalThis.__lastMenu`), [
+      'Edit Flag Note…',
+      'Unflag',
+      'Delete workspace…',
+    ]);
+    assert.equal(
+      await page.eval(`document.querySelector('dialog[open] [data-flag-note]').value`),
+      flagNote,
+    );
+    const editedNote = 'Write the e2e for the redirect';
+    await typeInField(page, '[data-flag-note]', editedNote);
+    await page.waitFor(`${cardNote(asker)} === ${JSON.stringify(editedNote)}`, 'the note edited');
+    await screenshot(page, screenshotDir, 'b9-flagged.png');
+    if (screenshotDir) {
+      // The flag in dark, and in narrow columns (220px each).
+      await page.eval(`document.documentElement.dataset.theme = 'dark'`);
+      await screenshot(page, screenshotDir, 'b9-flagged-dark.png');
+      await page.eval(`document.documentElement.dataset.theme = 'light'`);
+      await page.send('Emulation.setDeviceMetricsOverride', {
+        width: 1000,
+        height: 700,
+        deviceScaleFactor: 0,
+        mobile: false,
+      });
+      await screenshot(page, screenshotDir, 'b9-flagged-narrow.png');
+      await page.send('Emulation.clearDeviceMetricsOverride', {});
+    }
+    // ⇧⌘G on a card that isn't flagged opens Flag…; Cancel leaves it unflagged.
+    const sleepy = id('sleepy');
+    await page.eval(`${card(sleepy)}.focus()`);
+    await pressShortcut(page, 'flag');
+    await page.waitFor(`${dialogText}.includes('Flag ABC-7')`, 'Flag from ⇧⌘G');
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'Flag dialog cancelled');
+    assert.equal(await page.eval(flagMark(sleepy)), false, 'Cancel flags nothing');
+    // The Flagged filter: only the flagged card, every card again.
+    const everyCard = (await page.eval<string[]>(allCards)).sort();
+    assert.ok(everyCard.length > 1);
+    await page.eval(`document.querySelector('[data-board-flagged]').click()`);
+    await page.waitFor(`${allCards}.join() === ${JSON.stringify(asker)}`, 'only the flagged card');
+    await screenshot(page, screenshotDir, 'b9-filtered.png');
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-board-flagged]').getAttribute('aria-pressed')`,
+      ),
+      'true',
+    );
+    await page.eval(`document.querySelector('[data-board-flagged]').click()`);
+    await page.waitFor(`${allCards}.length === ${everyCard.length}`, 'every card again');
+    // On again for the restart: the filter starts off at every launch, the flag stays.
+    await page.eval(`document.querySelector('[data-board-flagged]').click()`);
+    await page.waitFor(`${allCards}.join() === ${JSON.stringify(asker)}`, 'filtered again');
+
     // 10. Each profile's columns are remembered across a restart.
     await app.stop();
     app = await launch();
@@ -1383,6 +1483,41 @@ exec sleep 600
       'Personal on the Board',
     );
     assert.deepEqual(await page.eval(shown), DEFAULT_ORDER, "Personal's columns, the default");
+
+    // 10b. The flag after the restart, the filter off again (spec §6.7).
+    await page.waitFor(flagMark(asker), 'the flag after the restart');
+    assert.equal(await page.eval(cardNote(asker)), editedNote);
+    assert.equal(
+      await page.eval(
+        `document.querySelector('[data-board-flagged]').getAttribute('aria-pressed')`,
+      ),
+      'false',
+      'Flagged starts off',
+    );
+    assert.equal((await page.eval<string[]>(allCards)).length, everyCard.length);
+    await page.waitFor(flagRow(asker), 'the flag in the sidebar after the restart');
+    // One click on the flag clears it; Undo puts it back with its note.
+    await page.eval(`document.querySelector('[data-flag-mark="${asker}"]').click()`);
+    await page.waitFor(`!${flagMark(asker)}`, 'unflagged');
+    assert.equal(await page.eval(`${card(asker)}.contains(document.activeElement)`), false);
+    await page.waitFor(
+      `!!document.querySelector('[data-flag-undo="${asker}"]')`,
+      'Unflagged · Undo',
+    );
+    await screenshot(page, screenshotDir, 'b10-undo.png');
+    await page.eval(`document.querySelector('[data-flag-undo-button]').click()`);
+    await page.waitFor(`${cardNote(asker)} === ${JSON.stringify(editedNote)}`, 'the flag undone');
+    // Unflag from the card's menu; the toast goes after 5 seconds.
+    await chooseFromNextContextMenu(app.main, 'Unflag');
+    await openContextMenu(page, `[data-board-card="${asker}"]`);
+    await page.waitFor(`!${flagMark(asker)}`, 'unflagged from the menu');
+    await page.waitFor(`!${flagRow(asker)}`, 'no flag in the sidebar');
+    assert.equal(await page.eval(cardNote(asker)), null);
+    assert.equal(
+      await page.eval(`!!document.querySelector('[data-board-flagged]:disabled')`),
+      true,
+    );
+    await page.waitFor(`!document.querySelector('[data-flag-undo]')`, 'the toast gone', 8_000);
 
     console.log('e2e-board: ok');
   } catch (error) {

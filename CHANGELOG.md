@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Flag a workspace** to come back to it later, for example to continue tomorrow: **Flag…** in a Board card's new **⋯** menu (or right-click the card), in the sidebar row's menu, in the workspace header, or **⇧⌘G** (Ctrl+Shift+G on Linux). Add an optional line on what to continue, and change it later with **Edit Flag Note…**. A flagged card shows a blue flag and the line under its title, stays in its column and moves to the top of Idle, Ready to ship and Merged; the sidebar row shows the flag too, and the card's ⓘ the whole line. **Flagged** next to Columns shows only flagged workspaces, on Home and in each project's view; it starts off at every launch. The flag stays across restarts and suspension until you clear it: click the flag, choose **Unflag**, or press ⇧⌘G again, with **Undo** for 5 seconds.
+
 ### Fixed
 
 - The Guide on the web lists every keyboard shortcut for both macOS and Linux: the Linux-only ones (copy and paste in a terminal) were missing. The README gives the Linux key next to each macOS one and links to the shortcuts, and says its demo is shown on macOS.

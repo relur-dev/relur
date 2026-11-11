@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { flagNote } from '@shared/flag';
 import type { WorkspaceState } from '@shared/status';
 import { type UnfinishedKind, unfinishedKind } from '@shared/unfinished';
 import type {
@@ -7,6 +8,7 @@ import type {
   PrStatus,
   RepoAddedBy,
   Workspace,
+  WorkspaceFlag,
   WorkspaceRepo,
 } from '@shared/workspaces';
 import { prepareOrSkip, type StateDb } from './state-db';
@@ -46,6 +48,8 @@ interface Row {
   unfinished_stopped: number;
   last_prompt: string | null;
   keep_running: number;
+  flagged_at: string | null;
+  flag_note: string | null;
   claude_may_link: number;
   branch_origin: string | null;
 }
@@ -151,6 +155,7 @@ const toWorkspace = (row: Row, linked: WorkspaceRepo[] = []): Workspace => ({
       : null,
   lastPrompt: row.last_prompt,
   keepRunning: row.keep_running === 1,
+  flag: row.flagged_at ? { at: row.flagged_at, note: row.flag_note ?? '' } : null,
   claudeMayLink: row.claude_may_link !== 0,
   claudeSessionId: row.claude_session_id,
   ports:
@@ -197,7 +202,13 @@ export class WorkspaceRecords {
   insert(
     workspace: Omit<
       Workspace,
-      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning' | 'claudeMayLink'
+      | 'repos'
+      | 'background'
+      | 'unfinished'
+      | 'lastPrompt'
+      | 'keepRunning'
+      | 'claudeMayLink'
+      | 'flag'
     > & {
       repos?: NewLinkedRepo[] | WorkspaceRepo[];
       background?: number;
@@ -205,6 +216,7 @@ export class WorkspaceRecords {
       lastPrompt?: string | null;
       keepRunning?: boolean;
       claudeMayLink?: boolean;
+      flag?: Workspace['flag'];
     },
   ): void {
     const linked = (workspace.repos ?? []).filter((r) => !('primary' in r) || !r.primary);
@@ -264,7 +276,13 @@ export class WorkspaceRecords {
   private insertRow(
     workspace: Omit<
       Workspace,
-      'repos' | 'background' | 'unfinished' | 'lastPrompt' | 'keepRunning' | 'claudeMayLink'
+      | 'repos'
+      | 'background'
+      | 'unfinished'
+      | 'lastPrompt'
+      | 'keepRunning'
+      | 'claudeMayLink'
+      | 'flag'
     > & { claudeMayLink?: boolean },
   ): void {
     this.prepare(
@@ -279,6 +297,7 @@ export class WorkspaceRecords {
       ...workspace,
       ports: undefined,
       pr: undefined,
+      flag: undefined,
       portBase: workspace.ports?.base ?? null,
       portCount: workspace.ports?.count ?? null,
       taskId: workspace.task.id,
@@ -447,6 +466,22 @@ export class WorkspaceRecords {
       on ? 1 : 0,
       id,
     );
+    if (result.changes > 0) this.events.emit('change');
+  }
+
+  /**
+   * Flags a workspace, or changes its note, keeping when it was flagged; null
+   * clears it (spec §6.7). `restore` puts back a flag as it was (Undo).
+   */
+  setFlag(id: string, note: string | null, restore?: WorkspaceFlag): void {
+    const result =
+      note === null
+        ? this.prepare(
+            'UPDATE workspaces SET flagged_at = NULL, flag_note = NULL WHERE id = ?',
+          ).run(id)
+        : this.prepare(
+            'UPDATE workspaces SET flagged_at = COALESCE(?, flagged_at, ?), flag_note = ? WHERE id = ?',
+          ).run(restore?.at ?? null, new Date().toISOString(), flagNote(note), id);
     if (result.changes > 0) this.events.emit('change');
   }
 

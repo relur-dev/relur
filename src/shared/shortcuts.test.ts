@@ -82,6 +82,11 @@ describe('shortcuts', () => {
     expect(formatShortcut(SHORTCUTS.notes, false)).toBe('Ctrl+Shift+K');
     expect(formatShortcut(SHORTCUTS.addNote, true)).toBe('⌥⌘N');
     expect(formatShortcut(SHORTCUTS.addNote, false)).toBe('Ctrl+Alt+N');
+    expect(formatShortcut(SHORTCUTS.flag, true)).toBe('⇧⌘G');
+    expect(formatShortcut(SHORTCUTS.flag, false)).toBe('Ctrl+Shift+G');
+    expect(matchShortcut('flag', key('KeyG', { meta: true, shift: true }), true)).toBe(0);
+    // ⌘G alone isn't it.
+    expect(matchShortcut('flag', key('KeyG', { meta: true }), true)).toBe(-1);
     expect(formatShortcut(SHORTCUTS.responsesFullView, true)).toBe('⇧⌘F');
     expect(formatShortcut(SHORTCUTS.changesFullView, true)).toBe('⇧⌘M');
     expect(formatShortcut(SHORTCUTS.changesFullView, false)).toBe('Ctrl+Shift+M');

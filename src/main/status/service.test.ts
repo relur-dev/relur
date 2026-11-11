@@ -29,6 +29,7 @@ const workspace: Omit<Workspace, 'repos'> = {
   unfinished: null,
   lastPrompt: null,
   keepRunning: false,
+  flag: null,
   claudeMayLink: true,
   stateSince: null,
   claudeSessionId: null,

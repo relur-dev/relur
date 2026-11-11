@@ -1,4 +1,4 @@
-import { projectWorkspaces } from '@shared/home';
+import { flaggedOnly, projectWorkspaces } from '@shared/home';
 import { formatBytes, type MemorySnapshot, projectMemory } from '@shared/memory';
 import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
@@ -15,7 +15,8 @@ import { useSuspended } from '../ui/suspended';
 import { SETUP_TAB, SKILLS_TAB, WORKFLOW_TAB, WORKSPACES_TAB } from '../view';
 import { Board, BoardEmpty } from './Board';
 import { BoardColumns } from './BoardColumns';
-import { useBoardLayout } from './board-state';
+import { BoardFlagged } from './BoardFlagged';
+import { useBoardLayout, useFlaggedFilter } from './board-state';
 import { ProjectEditor, useOpenInEditor } from './EditorPicker';
 import type { HomeActions } from './home-items';
 import { ProjectSetup } from './ProjectSetup';
@@ -98,6 +99,7 @@ export function ProjectView({
   const shown = [...workspaces, ...linkedIn];
   // The profile's one column layout, shared with Home (spec §6.7).
   const [boardLayout, changeBoardLayout] = useBoardLayout(profile.id);
+  const [flagged, setFlagged] = useFlaggedFilter(profile.id);
   const projectShell = useMutation(
     trpc.sessions.projectShell.mutationOptions({ onSuccess: onSessionOpened }),
   );
@@ -379,6 +381,9 @@ export function ProjectView({
         ) : null}
         <span className="flex-1" />
         {tab === WORKSPACES_TAB && shown.length > 0 ? (
+          <BoardFlagged on={flagged} onChange={setFlagged} workspaces={shown} />
+        ) : null}
+        {tab === WORKSPACES_TAB && shown.length > 0 ? (
           <BoardColumns layout={boardLayout} onLayout={changeBoardLayout} workspaces={shown} />
         ) : null}
       </div>
@@ -423,7 +428,7 @@ export function ProjectView({
               profile={profile}
               inProject={project}
               projects={projects}
-              workspaces={shown}
+              workspaces={flaggedOnly(shown, flagged && shown.some((w) => w.flag))}
               sessions={profileSessions}
               memory={memory}
               actions={actions}

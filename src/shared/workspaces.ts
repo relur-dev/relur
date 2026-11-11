@@ -41,6 +41,8 @@ export interface Workspace {
   lastPrompt: string | null;
   /** Keep running: its Claude is never suspended when idle (spec §9.8). */
   keepRunning: boolean;
+  /** Flagged to come back to later (spec §6.7), with its note; null when not flagged. */
+  flag: WorkspaceFlag | null;
   /**
    * Let Claude add others when needed (spec §21.9): Claude is told about the
    * profile's other projects and may link one with the command line tool.
@@ -69,6 +71,14 @@ export interface Workspace {
    * null without any, missing where it isn't added.
    */
   notes?: NoteCounts | null;
+}
+
+/** A workspace's flag (spec §6.7): kept until cleared by hand. */
+export interface WorkspaceFlag {
+  /** When it was flagged. */
+  at: string;
+  /** What to continue: one line, possibly empty. */
+  note: string;
 }
 
 /** One repository of a workspace (spec §21.1): its own worktree on the workspace's branch. */

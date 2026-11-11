@@ -10,6 +10,7 @@ Right-click a project for **Remove from <profile>…**. Right-click a workspace 
 - **{{reveal}}**: its worktree folder;
 - **Copy path**: the worktree's full path;
 - **Copy branch name**;
+- **Flag…**, or **Edit Flag Note…** and **Unflag** once flagged: see [Flag a workspace](home#flag-a-workspace). A flagged row shows a small flag before its title, with the note in its tooltip;
 - **Keep Claude Running**: its Claude is never [suspended](suspend) when idle; a checkmark shows it's on;
 - **Delete workspace…**: see [Deleting a workspace](delete-workspace).
 

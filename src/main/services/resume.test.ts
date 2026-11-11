@@ -35,6 +35,7 @@ const workspace = (id: string, claudeSessionId: string | null): Workspace => ({
   unfinished: null,
   lastPrompt: null,
   keepRunning: false,
+  flag: null,
   claudeMayLink: true,
   stateSince: null,
   claudeSessionId,

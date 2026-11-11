@@ -4,7 +4,7 @@ import {
   parseBoardLayout,
   serializeBoardLayout,
 } from '@shared/board-layout';
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { remember } from '../ui/remember';
 
 /**
@@ -32,4 +32,27 @@ export function useBoardLayout(profileId: string) {
     remember(boardKey(profileId), isDefaultLayout(next) ? null : serializeBoardLayout(next));
   };
   return [layout, change] as const;
+}
+
+/**
+ * The Board's Flagged filter (spec §6.7), per profile: the same on Home and in
+ * its projects' views, kept only while the app runs, so every launch starts
+ * with it off.
+ */
+const flaggedFilter = new Map<string, boolean>();
+const flaggedListeners = new Set<() => void>();
+
+export function useFlaggedFilter(profileId: string) {
+  const on = useSyncExternalStore(
+    (l) => {
+      flaggedListeners.add(l);
+      return () => flaggedListeners.delete(l);
+    },
+    () => flaggedFilter.get(profileId) ?? false,
+  );
+  const change = (next: boolean) => {
+    flaggedFilter.set(profileId, next);
+    for (const l of flaggedListeners) l();
+  };
+  return [on, change] as const;
 }

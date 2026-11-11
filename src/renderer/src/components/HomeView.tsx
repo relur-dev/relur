@@ -5,6 +5,7 @@ import {
   serializeCollapsedLanes,
   toggleLane,
 } from '@shared/board-group';
+import { flaggedOnly } from '@shared/home';
 import type { MemorySnapshot } from '@shared/memory';
 import type { Profile, Project } from '@shared/schemas';
 import { formatChord, SHORTCUTS } from '@shared/shortcuts';
@@ -17,8 +18,9 @@ import { button, isMac, Kbd, keyHint } from '../ui/controls';
 import { remember } from '../ui/remember';
 import { Board, BoardEmpty } from './Board';
 import { BoardColumns } from './BoardColumns';
+import { BoardFlagged } from './BoardFlagged';
 import { BoardGroup } from './BoardGroup';
-import { stored, useBoardLayout } from './board-state';
+import { stored, useBoardLayout, useFlaggedFilter } from './board-state';
 import type { HomeActions } from './home-items';
 import { TerminalView } from './TerminalView';
 
@@ -91,6 +93,9 @@ export function HomeView({
   }, [tab]);
 
   const [boardLayout, changeBoardLayout] = useBoardLayout(profile.id);
+  const [flagged, setFlagged] = useFlaggedFilter(profile.id);
+  // The Flagged filter (spec §6.7): only flagged workspaces on the Board.
+  const onBoard = flaggedOnly(workspaces, flagged && workspaces.some((w) => w.flag));
   const [group, setGroup] = useState<Group>(() => parseBoardGroup(stored(groupKey(profile.id))));
   const chooseGroup = (next: Group) => {
     setGroup(next);
@@ -105,9 +110,7 @@ export function HomeView({
     remember(lanesKey(profile.id), serializeCollapsedLanes(next));
   };
   // The projects with a band: those with workspaces of their own.
-  const banded = projects
-    .filter((p) => workspaces.some((w) => w.projectId === p.id))
-    .map((p) => p.id);
+  const banded = projects.filter((p) => onBoard.some((w) => w.projectId === p.id)).map((p) => p.id);
   // Without workspaces the Overview shows an empty state, with nothing to arrange.
   const board = tab === 'overview' && projects.length > 0 && workspaces.length > 0;
 
@@ -152,6 +155,7 @@ export function HomeView({
           })}
         </div>
         <span className="flex-1" />
+        {board ? <BoardFlagged on={flagged} onChange={setFlagged} workspaces={workspaces} /> : null}
         {board ? (
           <BoardColumns layout={boardLayout} onLayout={changeBoardLayout} workspaces={workspaces} />
         ) : null}
@@ -197,7 +201,7 @@ export function HomeView({
         <Board
           profile={profile}
           projects={projects}
-          workspaces={workspaces}
+          workspaces={onBoard}
           sessions={sessions}
           memory={memory}
           actions={actions}

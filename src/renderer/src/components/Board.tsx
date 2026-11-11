@@ -21,6 +21,7 @@ import type { LastWords } from '@shared/last-words';
 import { describeSplit, formatBytes, type MemorySnapshot, workspaceMemory } from '@shared/memory';
 import { answerable } from '@shared/question';
 import type { Profile, Project } from '@shared/schemas';
+import { matchShortcut } from '@shared/shortcuts';
 import { backgroundNote, STATE_LABEL } from '@shared/status';
 import { SUSPENDED_TOOLTIP, suspendClockNote } from '@shared/suspend';
 import type { SessionInfo } from '@shared/terminal-protocol';
@@ -29,13 +30,14 @@ import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
-import { button, iconButton, Kbd, keyHint } from '../ui/controls';
+import { button, iconButton, isMac, Kbd, keyHint } from '../ui/controls';
 import { InfoIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
 import { StatusGlyph } from '../ui/StatusGlyph';
 import { useSuspended } from '../ui/suspended';
 import { ago } from '../ui/time';
 import { CardDetails } from './CardDetails';
+import { FlagMark, flagging, flagMenuItems, runFlagChoice } from './Flag';
 import {
   Action,
   actionClass,
@@ -178,6 +180,7 @@ export function Board({
       active: ago(w.lastActivityAt ?? w.createdAt, now),
       suspended: suspended.has(w.id),
       suspendNote: clockNote(w),
+      flagged: w.flag ? ago(w.flag.at, now) : null,
     });
     return <CardDetails label={cardLabel(w)} title={title} lines={lines} />;
   };
@@ -275,9 +278,18 @@ export function Board({
     card?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
     const target = e.target as HTMLElement;
     const card = target.closest<HTMLElement>('[data-board-card]');
+    // ⇧⌘G on a card, or anywhere in it (spec §6.7): Flag…, or Unflag.
+    if (card && matchShortcut('flag', e.nativeEvent, isMac) !== -1) {
+      const w = workspaces.find((x) => x.id === card.dataset.boardCard);
+      if (w) {
+        e.preventDefault();
+        flagging.toggle(w);
+      }
+      return;
+    }
+    if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
     // Only from a card itself or the Board: its buttons and field keep their keys.
     if (card ? target !== card : target !== root.current) return;
     const cardsOf = (cell: Element | null | undefined) => [
@@ -332,6 +344,18 @@ export function Board({
       e.preventDefault();
       actions.delete(w);
     }
+  };
+
+  /**
+   * A card's menu (spec §6.7), from its ⋯ or a right click: Flag… (or Edit
+   * Flag Note… and Unflag), then Delete workspace….
+   */
+  const cardMenu = async (w: Workspace) => {
+    const choice = await trpcClient.ui.contextMenu.mutate({
+      items: [...flagMenuItems(w), { id: 'delete', label: 'Delete workspace…' }],
+    });
+    if (runFlagChoice(w, choice)) return;
+    if (choice === 'delete') actions.delete(w);
   };
 
   // Drag to delete: a press that moves lifts the card; only the zone takes it.
@@ -660,6 +684,11 @@ export function Board({
         onClick={() => {
           if (!dropped.current) actions.open(w);
         }}
+        onContextMenu={(e) => {
+          if ((e.target as HTMLElement).closest('input')) return;
+          e.preventDefault();
+          void cardMenu(w);
+        }}
         // A card focused near the column's edge stays in view once it has unfolded.
         onTransitionEnd={(e) => {
           if (
@@ -678,6 +707,26 @@ export function Board({
             linkedIn={group === 'project' ? projectName : null}
             suspended={suspended.has(w.id) && column !== 'idle'}
             details={details(w)}
+            menu={
+              <button
+                type="button"
+                data-card-menu={w.id}
+                aria-label={`Menu for ${cardLabel(w)}`}
+                aria-haspopup="menu"
+                title="Flag, delete…"
+                className="-my-0.5 flex size-[18px] flex-none items-center justify-center rounded-[4px] text-fg-subtle opacity-0 outline-none group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 hover:text-fg focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-focus)]"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void cardMenu(w);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+                }}
+              >
+                ⋯
+              </button>
+            }
           />
           {offer === 'question' && words?.question && !lifted && !wasSent ? (
             <div data-quick-reply-question className="flex flex-col gap-[5px]">
@@ -1226,6 +1275,7 @@ function CardBody({
   linkedIn = null,
   suspended,
   details = null,
+  menu = null,
 }: {
   w: Workspace;
   it: HomeItem;
@@ -1242,6 +1292,8 @@ function CardBody({
   suspended: boolean;
   /** The ⓘ and its details (spec §6.7); a dragged copy shows the ⓘ alone. */
   details?: ReactNode;
+  /** The card's ⋯ menu button, after the ⓘ; none on a dragged copy. */
+  menu?: ReactNode;
 }): ReactNode {
   return (
     <>
@@ -1250,6 +1302,8 @@ function CardBody({
         {w.task.id ? (
           <span className="flex-none font-mono text-[11.5px] text-fg-subtle">{w.task.id}</span>
         ) : null}
+        {/* Not a Tab stop: Tab goes to the ⓘ first; ⇧⌘G and the ⋯ unflag from the keyboard. */}
+        <FlagMark w={w} focusable={false} />
         <NotesMark w={w} />
         <span className="flex-1" />
         {linkedFrom ? (
@@ -1279,6 +1333,7 @@ function CardBody({
             <InfoIcon />
           </span>
         )}
+        {menu}
       </div>
       <span
         className={`line-clamp-2 text-base text-pretty ${
@@ -1287,6 +1342,15 @@ function CardBody({
       >
         {w.task.title || w.name}
       </span>
+      {w.flag?.note ? (
+        // What to continue (spec §6.7): two lines at most, the whole in the details.
+        <span
+          data-card-flag-note={w.id}
+          className="line-clamp-2 border-l-2 border-flag/60 pl-1.5 text-sm text-pretty text-fg-muted"
+        >
+          {w.flag.note}
+        </span>
+      ) : null}
       <div className="flex min-w-0 items-baseline gap-2">
         <div
           data-board-status

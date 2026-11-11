@@ -968,6 +968,20 @@ export function createAppRouter({
       setKeepRunning: publicProcedure
         .input(workspaceId.extend({ on: z.boolean() }))
         .mutation(({ input }) => workspaceRecords.setKeepRunning(input.workspaceId, input.on)),
+      /**
+       * Flag (spec §6.7): a note flags it or changes its note, null clears it;
+       * `restore` puts back a cleared flag as it was (Undo).
+       */
+      setFlag: publicProcedure
+        .input(
+          workspaceId.extend({
+            note: z.string().max(10_000).nullable(),
+            restore: z.object({ at: z.string(), note: z.string() }).optional(),
+          }),
+        )
+        .mutation(({ input }) =>
+          workspaceRecords.setFlag(input.workspaceId, input.note, input.restore),
+        ),
       /** Let Claude add repositories (spec §21.9): from its next SessionStart. */
       setClaudeMayLink: publicProcedure
         .input(workspaceId.extend({ on: z.boolean() }))

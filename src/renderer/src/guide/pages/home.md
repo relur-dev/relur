@@ -20,9 +20,9 @@ A workspace is in one column only. While Claude [waits for work in the backgroun
 
 ## Cards
 
-A card shows the workspace's status, task and title, and its project at the top right, next to a small **ⓘ**. Click it to open the workspace. Hover over it, or give it the focus, for its buttons (such as **Open**, **Approve spec** or **Push**) and **Delete**. Cards move between the columns by themselves as Claude works; you can't drag them from one column to another.
+A card shows the workspace's status, task and title, and its project at the top right, next to a small **ⓘ**. Click it to open the workspace. Hover over it, or give it the focus, for its buttons (such as **Open**, **Approve spec** or **Push**) and **Delete**, and for **⋯** after the ⓘ, its menu (also a right-click on the card): **Flag…** and **Delete workspace…**. Cards move between the columns by themselves as Claude works; you can't drag them from one column to another.
 
-The **ⓘ** has what the card doesn't show: its branch, the whole message Claude is waiting with, its [workflow](workflows) status, its [memory](memory), how long ago it was last active, and whether its Claude will be [suspended](suspend#why-one-isn-t-suspended) ("Not suspended: a draft in the prompt", "Suspended in 3 min if it stays idle"). Rest the pointer on it to see them; click it to keep them open until you click elsewhere or press <kbd>Esc</kbd>. Clicking the **ⓘ** doesn't open the workspace.
+The **ⓘ** has what the card doesn't show: a [flag](#flag-a-workspace)'s whole note, its branch, the whole message Claude is waiting with, its [workflow](workflows) status, its [memory](memory), how long ago it was last active, and whether its Claude will be [suspended](suspend#why-one-isn-t-suspended) ("Not suspended: a draft in the prompt", "Suspended in 3 min if it stays idle"). Rest the pointer on it to see them; click it to keep them open until you click elsewhere or press <kbd>Esc</kbd>. Clicking the **ⓘ** doesn't open the workspace.
 
 In a narrow window the Board scrolls sideways, and each column scrolls on its own (grouped by project, the whole Board scrolls instead, as below).
 
@@ -47,6 +47,16 @@ Click a band's header to collapse it to one count per column, and click again, o
 
 Grouped, the whole Board scrolls, and the column headers and the projects' names stay in view. <kbd>↑</kbd> and <kbd>↓</kbd> move down a column through the bands, <kbd>←</kbd> and <kbd>→</kbd> stay within a band, and <kbd>Tab</kbd> reaches each band's header, where <kbd>↵</kbd> collapses or expands it, then its **+**.
 
+## Flag a workspace
+
+Flag a workspace to come back to it later, for example to continue tomorrow. **Flag…** is in its card's **⋯** menu (or right-click the card), in its [sidebar row](sidebar)'s menu, in the [workspace view](workspace-view)'s header and its **⋯**, and <kbd>{{key:flag}}</kbd> flags the workspace you're in or the card in focus. You can add a line on what to continue ("Check the Safari case, then write the e2e"); it's optional, and **Edit Flag Note…** in the same menus changes it later.
+
+A flagged card shows a small flag in blue after its task id, and the line under its title, two lines at most; the **ⓘ** has the whole line. The card stays in the column its state puts it in, at the top of **Idle**, **Ready to ship** and **Merged**; **Needs you** and **Working** keep their own order. Its sidebar row shows the flag too, with the line in its tooltip.
+
+**Flagged** at the right of the tabs, next to **Columns**, shows only flagged workspaces, on Home and in every project's view; click it again for all of them. It is off whenever {{app}} starts, so no workspace stays hidden behind it, and it turns itself off when nothing is flagged any more.
+
+The flag stays, across restarts and [suspension](suspend), until you clear it: click the flag on the card, choose **Unflag** in a menu, or press <kbd>{{key:flag}}</kbd> again. **Unflagged · Undo** shows for 5 seconds; **Undo** puts the flag back with its line.
+
 ## Drag to delete
 
 Drag a card and **Drop to delete** appears along the bottom. Drop it there to open [Delete workspace](delete-workspace) with everything deleting it would lose; nothing is deleted until you confirm. <kbd>Esc</kbd>, or dropping it anywhere else, cancels, and so does a dialog that opens while you drag.
@@ -68,7 +78,7 @@ There is no field where a message could answer something by accident:
 
 ## Keyboard on the Board
 
-<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column, in the order the Board shows them. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's **ⓘ** (<kbd>↵</kbd> or <kbd>Space</kbd> shows its details, <kbd>Esc</kbd> closes them), then its field and buttons, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace. <kbd>Tab</kbd> from the Board reaches a column's **⋯** first; <kbd>↵</kbd> opens its menu.
+<kbd>↑</kbd> and <kbd>↓</kbd> move within a column, <kbd>←</kbd> and <kbd>→</kbd> to the next column, in the order the Board shows them. <kbd>↵</kbd> opens the workspace, <kbd>Tab</kbd> reaches the card's **ⓘ** (<kbd>↵</kbd> or <kbd>Space</kbd> shows its details, <kbd>Esc</kbd> closes them), then its **⋯**, field and buttons, <kbd>{{key:flag}}</kbd> flags or unflags it, and <kbd>Delete</kbd> or <kbd>{{mac}}⌫{{/mac}}{{other}}Backspace{{/other}}</kbd> opens Delete workspace. <kbd>Tab</kbd> from the Board reaches a column's **⋯** first; <kbd>↵</kbd> opens its menu.
 
 ## Terminal
 

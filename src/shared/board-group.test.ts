@@ -41,6 +41,7 @@ function ws(projectId: string, state: WorkspaceState, linked: string[] = []): Wo
     unfinished: null,
     lastPrompt: null,
     keepRunning: false,
+    flag: null,
     claudeMayLink: true,
     claudeSessionId: null,
     ports: null,

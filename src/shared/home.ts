@@ -247,8 +247,22 @@ export const boardColumn = (w: Workspace, ship: ShipState | null): BoardColumn =
 };
 
 /**
- * The workspaces by column: the sections in their order (spec §6.7), and Idle (interrupted, suspended, exited, or Done with nothing to ship) by
- * last activity.
+ * Flagged workspaces first, each part in its order (spec §6.7): for Idle,
+ * Ready to ship and Merged. Needs you keeps the order ⌘J goes, and Working its own.
+ */
+export const flaggedFirst = <W extends Pick<Workspace, 'flag'>>(list: W[]): W[] => [
+  ...list.filter((w) => w.flag),
+  ...list.filter((w) => !w.flag),
+];
+
+/** The Board's Flagged filter (spec §6.7): only flagged workspaces while it is on. */
+export const flaggedOnly = <W extends Pick<Workspace, 'flag'>>(list: W[], on: boolean): W[] =>
+  on ? list.filter((w) => w.flag) : list;
+
+/**
+ * The workspaces by column: the sections in their order (spec §6.7), and Idle
+ * (interrupted, suspended, exited, or Done with nothing to ship) by last
+ * activity; flagged ones first in Idle, Ready to ship and Merged.
  */
 export function boardColumns(
   workspaces: Workspace[],
@@ -262,9 +276,9 @@ export function boardColumns(
   return {
     needs: sections.needs,
     working: sections.working,
-    idle,
-    ship: sections.ship,
-    merged: sections.clean,
+    idle: flaggedFirst(idle),
+    ship: flaggedFirst(sections.ship),
+    merged: flaggedFirst(sections.clean),
   };
 }
 
@@ -391,13 +405,13 @@ export function permissionTool(message: string | null): string | null {
 
 /** One line of a card's details, its kind for the popover's styling and the tests. */
 export interface CardDetail {
-  kind: 'linked' | 'branch' | 'state' | 'workflow' | 'memory' | 'active' | 'suspend';
+  kind: 'flag' | 'linked' | 'branch' | 'state' | 'workflow' | 'memory' | 'active' | 'suspend';
   text: string;
 }
 
 /**
  * A card's details, behind its ⓘ (spec §6.7): its task, then what its card
- * leaves out: where it is linked in from (on a project's Board), its branch (on
+ * leaves out: its flag's whole note, where it is linked in from (on a project's Board), its branch (on
  * Home; a project's Board shows it on the card), the whole of its state's
  * message, its workflow status (§13.5), memory (§6.14), last activity, and why
  * its Claude is or isn't suspended (§9.8).
@@ -414,10 +428,16 @@ export function cardDetails(
     suspended: boolean;
     /** `suspendClockNote`'s text, while it isn't suspended. */
     suspendNote: string | null;
+    /** How long ago it was flagged ("2h"; ui/time `ago`), while it is. */
+    flagged?: string | null;
   },
 ): { title: string; lines: CardDetail[] } {
   const lines: CardDetail[] = [];
   const add = (kind: CardDetail['kind'], text: string) => lines.push({ kind, text });
+  if (w.flag) {
+    const when = !o.flagged ? '' : o.flagged === 'now' ? ' just now' : ` ${o.flagged} ago`;
+    add('flag', `Flagged${when}${w.flag.note ? `: ${w.flag.note}` : ''}`);
+  }
   if (o.linkedFrom) add('linked', `Linked in from ${o.linkedFrom}`);
   if (o.branch) add('branch', `Branch: ${w.branch}`);
   if (w.state === 'needs-permission' && w.stateMessage) add('state', w.stateMessage);

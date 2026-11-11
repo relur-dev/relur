@@ -114,6 +114,9 @@ const MIGRATIONS: string[] = [
      ref_transcript  TEXT
    );
    CREATE INDEX note_sends_workspace ON note_sends (workspace_id);`,
+  // Flagged to come back to later, with its note (spec §6.7).
+  `ALTER TABLE workspaces ADD COLUMN flagged_at TEXT;
+   ALTER TABLE workspaces ADD COLUMN flag_note TEXT;`,
 ];
 
 export type StateDb = Database.Database;

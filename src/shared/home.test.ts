@@ -4,6 +4,7 @@ import {
   boardColumn,
   boardColumns,
   cardDetails,
+  flaggedOnly,
   type HomeSection,
   homeSection,
   homeSections,
@@ -67,6 +68,7 @@ function ws(state: WorkspaceState, more: Partial<Workspace> = {}): Workspace {
     unfinished: null,
     lastPrompt: null,
     keepRunning: false,
+    flag: null,
     claudeMayLink: true,
     claudeSessionId: null,
     ports: null,
@@ -402,6 +404,17 @@ describe('cardDetails', () => {
       { kind: 'suspend', text: 'Not suspended: shown' },
     ]);
   });
+  it('starts with the flag and its whole note (spec §6.7)', () => {
+    const note = `Check the Safari case, then ${'write the e2e '.repeat(12).trim()}`;
+    const w = ws('done', { flag: { at: '2026-11-01T09:00:00.000Z', note } });
+    expect(cardDetails(w, { ...base, flagged: '2h' }).lines[0]).toEqual({
+      kind: 'flag',
+      text: `Flagged 2h ago: ${note}`,
+    });
+    const bare = ws('done', { flag: { at: '2026-11-01T09:00:00.000Z', note: '' } });
+    expect(cardDetails(bare, { ...base, flagged: 'now' }).lines[0]?.text).toBe('Flagged just now');
+    expect(cardDetails(ws('done'), base).lines.some((l) => l.kind === 'flag')).toBe(false);
+  });
   it('says why it is unfinished, and that it is suspended in place of the clock', () => {
     const w = ws('exited', {
       unfinished: { kind: 'working', since: '2026-11-01T09:00:00.000Z', stopped: 0 },
@@ -412,6 +425,58 @@ describe('cardDetails', () => {
     expect(text).toContain("Claude didn't finish");
     expect(text).toContain('Suspended to save memory; resumes when you open it');
     expect(text).not.toContain('Not suspended');
+  });
+});
+
+describe('flagged workspaces on the Board (spec §6.7)', () => {
+  const flag = { at: '2026-11-01T09:00:00.000Z', note: 'Continue tomorrow' };
+  const merged = { repos: [repo('web', true, { pr: pr('merged'), hasCommits: true })] };
+  const at = (h: number) => `2026-11-01T${String(h).padStart(2, '0')}:00:00.000Z`;
+
+  it('sorts flagged cards to the top of Idle, Ready to ship and Merged, each part in its order', () => {
+    const list = [
+      ws('exited', { lastActivityAt: at(12) }),
+      ws('exited', { lastActivityAt: at(8), flag }),
+      ws('interrupted', { lastActivityAt: at(11) }),
+      ws('exited', { lastActivityAt: at(9), flag }),
+      ws('done', { lastActivityAt: at(12) }),
+      ws('done', { lastActivityAt: at(8), flag }),
+      ws('done', { ...merged, lastActivityAt: at(12) }),
+      ws('done', { ...merged, lastActivityAt: at(8), flag }),
+    ];
+    const id = (i: number) => list[i]?.id;
+    const ship = (wid: string) => ([id(4), id(5)].includes(wid) ? dirty : clean);
+    const columns = boardColumns(list, ship);
+    expect(columns.idle.map((w) => w.id)).toEqual([id(3), id(1), id(0), id(2)]);
+    expect(columns.ship.map((w) => w.id)).toEqual([id(5), id(4)]);
+    expect(columns.merged.map((w) => w.id)).toEqual([id(7), id(6)]);
+  });
+
+  it('keeps Needs you in the order ⌘J goes, and Working in its own', () => {
+    const list = [
+      ws('needs-input', { stateSince: at(9) }),
+      ws('needs-input', { stateSince: at(10), flag }),
+      ws('working', { stateSince: at(9) }),
+      ws('working', { stateSince: at(10), flag }),
+    ];
+    const columns = boardColumns(list, () => clean);
+    expect(columns.needs.map((w) => w.id)).toEqual([list[0]?.id, list[1]?.id]);
+    expect(columns.working.map((w) => w.id)).toEqual([list[2]?.id, list[3]?.id]);
+  });
+
+  it('never moves a card to another column', () => {
+    const plain = [ws('needs-input'), ws('working'), ws('exited'), ws('done', merged)];
+    const flagged = plain.map((w) => ({ ...w, flag }));
+    for (const [i, w] of flagged.entries()) {
+      expect(boardColumn(w, clean)).toBe(boardColumn(plain[i] as Workspace, clean));
+    }
+  });
+
+  it('shows only flagged workspaces while the filter is on', () => {
+    const list = [ws('exited'), ws('working', { flag }), ws('done', { flag })];
+    expect(flaggedOnly(list, false)).toBe(list);
+    expect(flaggedOnly(list, true).map((w) => w.id)).toEqual([list[1]?.id, list[2]?.id]);
+    expect(flaggedOnly([ws('exited')], true)).toEqual([]);
   });
 });
 

@@ -16,6 +16,7 @@ import { DeleteWorkspaceDialog, DeleteWorkspacesDialog } from './components/Dele
 import { APP_NOTICE_EVENT } from './components/EditorPicker';
 import { EditProfileDialog } from './components/EditProfileDialog';
 import { FirstLaunch } from './components/FirstLaunch';
+import { FlagLayer } from './components/Flag';
 import { type HomeTab, HomeView } from './components/HomeView';
 import type { HomeActions } from './components/home-items';
 import { InstallCliDialog } from './components/InstallCliDialog';
@@ -1116,6 +1117,8 @@ export function App() {
             memory={memory.data ?? null}
             suspendedSessions={suspendedSessions}
           />
+
+          <FlagLayer workspaces={workspaces.data ?? []} />
 
           {editingProfile && profiles.some((p) => p.id === editingProfile) ? (
             <EditProfileDialog

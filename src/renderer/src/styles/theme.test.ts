@@ -163,6 +163,36 @@ describe('light theme contrast', () => {
 });
 
 /**
+ * The flag (spec §6.7): an icon on cards, sidebar rows and the workspace
+ * header, never to be taken for a status (Needs you's amber and pink above
+ * all) or for the focus ring.
+ */
+describe.each(['light', 'dark'] as const)('flag color, %s theme', (name) => {
+  const theme = THEMES[name];
+  it('reads at 4.5:1 on every surface', () => {
+    for (const surface of SURFACES) {
+      const c = contrast('--color-flag', `--color-${surface}`, undefined, theme);
+      expect(c, surface).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it('is clearly apart from the status colors, the neutral ones and focus', () => {
+    for (const other of [
+      'st-permission',
+      'st-input',
+      'st-approval',
+      'st-error',
+      'fg',
+      'fg-muted',
+      'focus',
+    ]) {
+      expect(distance('--color-flag', `--color-${other}`, theme), other).toBeGreaterThanOrEqual(
+        0.09,
+      );
+    }
+  });
+});
+
+/**
  * Profile colors (spec §3.1) show as dots on every surface (tabs and status bar
  * on chrome, sidebar on canvas, rows on selected, menus and dialogs on raised)
  * and as text in the terminal (prompt numbers on term).

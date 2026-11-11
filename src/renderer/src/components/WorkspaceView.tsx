@@ -28,6 +28,7 @@ import {
   AttachIcon,
   ChangesIcon,
   EditorIcon,
+  FlagIcon,
   NotesIcon,
   ResponsesIcon,
   TrashIcon,
@@ -36,6 +37,7 @@ import { takeRequest, takeResponseEntry } from '../ui/open-requests';
 import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
+import { FlagMark, flagging, flagHint, flagMenuItems, runFlagChoice } from './Flag';
 import { LinkRepositoryDialog } from './LinkRepositoryDialog';
 import { NotesPanel } from './NotesPanel';
 import { RepoChips } from './RepoChips';
@@ -381,6 +383,20 @@ export function WorkspaceView({
     window.addEventListener('keydown', listener, true);
     return () => window.removeEventListener('keydown', listener, true);
   }, []);
+  // ⇧⌘G (spec §6.7): Flag… when it isn't flagged, else Unflag.
+  const flagRef = useRef(workspace);
+  flagRef.current = workspace;
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => {
+      if (matchShortcut('flag', e, isMac) === -1) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      flagging.toggle(flagRef.current);
+    };
+    window.addEventListener('keydown', listener, true);
+    return () => window.removeEventListener('keydown', listener, true);
+  }, []);
   // Show in Changes from a repository chip: that repository's section.
   const [changesFocus, setChangesFocus] = useState<{ projectId: string; at: number } | null>(null);
   const [unlinking, setUnlinking] = useState<Project | null>(null);
@@ -565,7 +581,8 @@ export function WorkspaceView({
     return () => window.removeEventListener('keydown', listener, true);
   }, [restartable, startClaude, workspace.id]);
 
-  // Link another repository…, Unlink <repo>… per linked one, Delete (spec §21.4).
+  // Link another repository…, Unlink <repo>… per linked one, Let Claude Add
+  // Repositories (spec §21.4, §21.9), the flag's items (§6.7), Delete.
   const menu = async () => {
     const linkable = projects.filter((p) => !workspace.repos.some((r) => r.projectId === p.id));
     const choice = await trpcClient.ui.contextMenu.mutate({
@@ -585,9 +602,11 @@ export function WorkspaceView({
           label: `Unlink ${projectName(r.projectId)}…`,
         })),
         { id: 'mayLink', label: 'Let Claude Add Repositories', checked: workspace.claudeMayLink },
+        ...flagMenuItems(workspace),
         { id: 'delete', label: 'Delete workspace…' },
       ],
     });
+    if (runFlagChoice(workspace, choice)) return;
     if (choice === 'delete') onDelete();
     else if (choice === 'mayLink') {
       void trpcClient.workspaces.setClaudeMayLink.mutate({
@@ -643,6 +662,33 @@ export function WorkspaceView({
           >
             <TrashIcon />
           </button>
+          {workspace.flag ? (
+            <>
+              <FlagMark w={workspace} size={14} className="-ml-1.5" />
+              {workspace.flag.note ? (
+                <button
+                  type="button"
+                  data-flag-header-note
+                  title={`${workspace.flag.note}\nClick to edit the flag note`}
+                  className="min-w-0 -ml-1 flex-1 truncate rounded-sm px-1 text-left text-sm text-fg-muted hover:bg-raised hover:text-fg"
+                  onClick={() => flagging.open(workspace)}
+                >
+                  {workspace.flag.note}
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <button
+              type="button"
+              data-flag-button
+              className={`${iconButton} -ml-1.5 text-fg-subtle`}
+              title={flagHint()}
+              aria-label="Flag workspace"
+              onClick={() => flagging.open(workspace)}
+            >
+              <FlagIcon filled={false} />
+            </button>
+          )}
           <span className="flex-1" />
           <button
             type="button"

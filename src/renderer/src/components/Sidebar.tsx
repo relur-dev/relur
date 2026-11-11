@@ -13,6 +13,7 @@ import { linkedRepos, type Workspace } from '@shared/workspaces';
 import { type KeyboardEvent, useRef, useState } from 'react';
 import { trpcClient } from '../trpc';
 import { iconButton, Kbd, keyHint, REVEAL_LABEL } from '../ui/controls';
+import { FlagIcon } from '../ui/icons';
 import { useLaunching } from '../ui/launching';
 import { useLinkedDisclosure } from '../ui/linked-disclosure';
 import { useNow } from '../ui/now';
@@ -22,6 +23,7 @@ import { useSuspended } from '../ui/suspended';
 import { elapsed } from '../ui/time';
 import { HOME, type View } from '../view';
 import { useOpenInEditor } from './EditorPicker';
+import { flagMenuItems, runFlagChoice } from './Flag';
 
 const row =
   'group mx-1.5 flex h-7 items-center gap-2 rounded-md px-2 transition-colors duration-120 ease-out-quiet';
@@ -44,12 +46,16 @@ const LABEL_COLOR: Partial<Record<Workspace['state'], string>> = {
  * its state, at a gate with the gate's label, with its background work
  * (§10.2), and its branch.
  */
+/** A flagged row's tooltip ends with the flag and its note (spec §6.1, §6.7). */
+const flagLine = (w: Workspace) =>
+  w.flag ? `\nFlagged${w.flag.note ? `: ${w.flag.note}` : ''}` : '';
+
 function rowTooltip(w: Workspace, glyph: Glyph | null, suspended: boolean): string {
   // Suspended to save memory (spec §9.8), on a line of its own.
   const tail = suspended ? `\n${SUSPENDED_TOOLTIP}` : '';
   // The Unfinished marker (spec §9.7) says why instead.
   if (glyph === 'unfinished') {
-    return `${w.name}\n${unfinishedTooltip(w.unfinished)} · ${w.branch}${tail}`;
+    return `${w.name}\n${unfinishedTooltip(w.unfinished)} · ${w.branch}${tail}${flagLine(w)}`;
   }
   const state =
     w.state === 'awaiting-approval' && w.workflow?.label
@@ -58,7 +64,7 @@ function rowTooltip(w: Workspace, glyph: Glyph | null, suspended: boolean): stri
         ? 'Done (unread)'
         : STATE_LABEL[w.state];
   const note = backgroundNote(w.state, w.background);
-  return `${w.name}\n${note ? `${state} · ${note}` : state} · ${w.branch}${tail}`;
+  return `${w.name}\n${note ? `${state} · ${note}` : state} · ${w.branch}${tail}${flagLine(w)}`;
 }
 
 /** The active profile's tree: Home, then projects with their workspaces. */
@@ -115,7 +121,7 @@ export function Sidebar({
   // Open in editor (spec §6.13): the primary repository, asking for an editor the first time.
   const editorOpen = useOpenInEditor();
   // Spec §6.1: Open in editor, Reveal in Finder, Copy path, Copy branch name,
-  // Keep Claude Running (§9.8), Delete….
+  // Flag… or Edit Flag Note… and Unflag (§6.7), Keep Claude Running (§9.8), Delete….
   const workspaceMenu = async (workspace: Workspace) => {
     const choice = await trpcClient.ui.contextMenu.mutate({
       items: [
@@ -123,10 +129,12 @@ export function Sidebar({
         { id: 'reveal', label: REVEAL_LABEL },
         { id: 'copyPath', label: 'Copy path' },
         { id: 'copyBranch', label: 'Copy branch name' },
+        ...flagMenuItems(workspace),
         { id: 'keepRunning', label: 'Keep Claude Running', checked: workspace.keepRunning },
         { id: 'delete', label: 'Delete workspace…' },
       ],
     });
+    if (runFlagChoice(workspace, choice)) return;
     if (choice === 'keepRunning') {
       void trpcClient.workspaces.setKeepRunning.mutate({
         workspaceId: workspace.id,
@@ -397,6 +405,12 @@ export function Sidebar({
                           className={`${row} ${rowState(selected)} w-[calc(100%-0.75rem)] pl-[26px] text-left`}
                         >
                           {glyph ? <StatusGlyph glyph={glyph} /> : <span className="size-3" />}
+                          {w.flag ? (
+                            // Flagged (spec §6.1, §6.7): the note is in the row's tooltip.
+                            <span data-flag-row={w.id} className="-mx-0.5 flex-none text-flag">
+                              <FlagIcon size={11} />
+                            </span>
+                          ) : null}
                           <span
                             className={`min-w-0 flex-1 truncate ${glyph === 'done' ? 'font-semibold' : ''}`}
                           >

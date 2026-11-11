@@ -70,3 +70,24 @@ export const InfoIcon = () => (
     <path d="M8 7.25v4M8 4.75v.01" />
   </Icon>
 );
+
+/**
+ * Flag (spec §6.7): a pennant on a pole; filled for a flagged workspace,
+ * outlined for Flag… in the workspace header. 12px on cards and rows.
+ */
+export const FlagIcon = ({ filled = true, size = 14 }: { filled?: boolean; size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M4 14V2.5" />
+    <path d="M4 2.75h8.5l-2 3.25 2 3.25H4z" fill={filled ? 'currentColor' : 'none'} />
+  </svg>
+);
