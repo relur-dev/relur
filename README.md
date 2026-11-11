@@ -12,7 +12,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-lightgrey)
 
-<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board with its columns Working, Idle, Needs you, Ready to ship and Merged; a working card opens and Claude's output streams in; ⌘N creates a workspace for ABC-160 and its card is in Working; another card moves by itself to Needs you, is answered from its quick reply and goes back to Working; Commit… on a card in Ready to ship opens the Changes panel with its diff">
+<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board grouped by project, with New workspace and Add project at the top; a working card moves by itself to Needs you with Claude's question and its options as buttons, one click answers it and the card goes back to Working; in a working workspace a note is written and queued with ⌥↵, and goes to Claude by itself when it finishes; back on Home, Merge into main on a Ready to ship card moves it to Merged">
 
 </div>
 
@@ -21,8 +21,8 @@
 Claude Code is great at one task at a time. Run three, and you're juggling terminal tabs, branches and the question of which session is waiting for you. Relur gives every task its own git worktree, branch and Claude Code session, and shows you at a glance which one needs you.
 
 - **One task, one worktree.** Sessions never step on each other's files or branches.
-- **Know when Claude needs you.** Working, needs permission, waiting or done: in the sidebar, the Dock badge and a notification.
-- **Review and ship.** See the diff, then commit, push and open a pull request, without leaving the app.
+- **Know when Claude needs you.** Working, needs permission, waiting or done: on the Board, in the sidebar, the Dock badge and a notification.
+- **Review and ship.** See the diff, then commit, push and open a pull request, or merge into main, without leaving the app.
 - **Work and personal, apart.** Profiles keep separate Claude accounts, settings and projects.
 - **The real Claude Code.** The official `claude`, unmodified, in a terminal you can see. Runs locally, no telemetry; its only requests of its own are an opt-in daily check for new versions, and the download when you click Update.
 
@@ -75,18 +75,33 @@ Relur can tell you when a new version is out: on its first start it asks whether
 1. **Open Relur and create a profile.** Pick its Claude account. Relur checks for git and Claude Code, and signs you in with Claude Code's own command if needed.
 2. **Add a project** (⌘O): a git repository.
 3. **Create a workspace** (⌘N): type the task, like `ABC-142 Rate limit the login endpoint`. Relur makes the worktree and branch and starts Claude.
-4. **Start the next one** while it works. The sidebar tells you which one needs you.
+4. **Start the next one** while it works. Home's Board shows which one needs you.
 
 The in-app **Guide** (⇧⌘/) explains everything else.
 
-## More
+## Features
 
-- **Tasks across repositories:** one workspace, several repositories, one Claude.
-- **Your team's skills and workflow:** load skills per profile or project, follow a task's status as a stepper, and approve at gates.
-- **Start from a ticket id:** type `ABC-142` alone, and its title is looked up through your connectors.
-- **Readable answers:** Claude's responses as Markdown, one click to copy.
-- **Open in your editor:** VS Code, Cursor, JetBrains, Zed or your own.
-- **A command line tool:** `relur add` from any terminal.
+**The Board.** Home shows every workspace in five columns, Working, Idle, Needs you, Ready to ship and Merged, grouped by project if you like. Cards move by themselves as Claude works. [Home](https://relur.dev/guide/home)
+
+**Answer from the Board.** Reply to a waiting Claude on its card, or click one of the options when it asks you a question, without opening the workspace. [Quick reply](https://relur.dev/guide/home#quick-reply)
+
+**Notes.** Jot down thoughts while Claude works, private until you send them: now, or with ⌥↵ when Claude is done, and they go out by themselves. [Notes](https://relur.dev/guide/notes)
+
+**Drop files into Claude's prompt.** Drag files onto the Claude tab, or pick them with **Add files** (⇧⌘A). A file in the workspace goes in as `@path`, a screenshot as an attached image; nothing is sent until you press ↵. [Add files](https://relur.dev/guide/add-files)
+
+**Merge into main.** For when you merge locally instead of through a pull request: Relur brings your main up to date first, and has Claude rebase the branch when main has moved on. It never pushes. [Merge into your local base](https://relur.dev/guide/finishing-work#merge-into-your-local-base)
+
+**From an existing branch or pull request.** Work on a colleague's pull request or an older branch: pick it from the list or paste its URL from GitHub, GitLab or Bitbucket, and **Push** updates the pull request. [From an existing branch](https://relur.dev/guide/new-workspace#from-an-existing-branch)
+
+**Tasks across repositories.** One workspace, several repositories, one Claude. **Create n PRs** opens a pull request in each repository with work of its own, each linking to the others. [Tasks across repositories](https://relur.dev/guide/tasks-across-repositories)
+
+And more:
+
+- **Your team's skills and workflow:** load [skills](https://relur.dev/guide/skills) per profile or project, follow a task's status as a stepper, and approve at [gates](https://relur.dev/guide/workflows#when-the-skills-wait-for-you).
+- **Start from a ticket id:** type `ABC-142` alone, and its title is [looked up](https://relur.dev/guide/new-workspace#looking-up-the-title) through your connectors.
+- **Readable answers:** Claude's [responses](https://relur.dev/guide/copy-response) as Markdown, one click to copy.
+- **Open in your editor:** VS Code, Cursor, JetBrains, Zed or [your own](https://relur.dev/guide/open-in-editor).
+- **A command line tool:** [`relur add`](https://relur.dev/guide/cli) from any terminal.
 
 <details>
 <summary><b>Screenshots</b></summary>
