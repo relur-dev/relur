@@ -14,6 +14,8 @@
 
 <img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board grouped by project, with New workspace and Add project at the top; a working card moves by itself to Needs you with Claude's question and its options as buttons, one click answers it and the card goes back to Working; in a working workspace a note is written and queued with ⌥↵, and goes to Claude by itself when it finishes; back on Home, Merge into main on a Ready to ship card moves it to Merged">
 
+<sub>Shown on macOS. On Linux some keys differ: see the <a href="https://relur.dev/guide/shortcuts">keyboard shortcuts for both</a>.</sub>
+
 </div>
 
 ## Why Relur
@@ -73,11 +75,11 @@ Relur can tell you when a new version is out: on its first start it asks whether
 ## Quick start
 
 1. **Open Relur and create a profile.** Pick its Claude account. Relur checks for git and Claude Code, and signs you in with Claude Code's own command if needed.
-2. **Add a project** (⌘O): a git repository.
-3. **Create a workspace** (⌘N): type the task, like `ABC-142 Rate limit the login endpoint`. Relur makes the worktree and branch and starts Claude.
+2. **Add a project** (⌘O, on Linux Ctrl+Shift+O): a git repository.
+3. **Create a workspace** (⌘N, on Linux Ctrl+Shift+N): type the task, like `ABC-142 Rate limit the login endpoint`. Relur makes the worktree and branch and starts Claude.
 4. **Start the next one** while it works. Home's Board shows which one needs you.
 
-The in-app **Guide** (⇧⌘/) explains everything else.
+The in-app **Guide** (⇧⌘/, on Linux Ctrl+Shift+/) explains everything else; it's also [on the web](https://relur.dev/guide). Every key for macOS and Linux: [Keyboard shortcuts](https://relur.dev/guide/shortcuts).
 
 ## Features
 
@@ -85,9 +87,9 @@ The in-app **Guide** (⇧⌘/) explains everything else.
 
 **Answer from the Board.** Reply to a waiting Claude on its card, or click one of the options when it asks you a question, without opening the workspace. [Quick reply](https://relur.dev/guide/home#quick-reply)
 
-**Notes.** Jot down thoughts while Claude works, private until you send them: now, or with ⌥↵ when Claude is done, and they go out by themselves. [Notes](https://relur.dev/guide/notes)
+**Notes.** Jot down thoughts while Claude works, private until you send them: now, or when Claude is done (⌥↵, on Linux Alt+Enter), and they go out by themselves. [Notes](https://relur.dev/guide/notes)
 
-**Drop files into Claude's prompt.** Drag files onto the Claude tab, or pick them with **Add files** (⇧⌘A). A file in the workspace goes in as `@path`, a screenshot as an attached image; nothing is sent until you press ↵. [Add files](https://relur.dev/guide/add-files)
+**Drop files into Claude's prompt.** Drag files onto the Claude tab, or pick them with **Add files** (⇧⌘A, on Linux Ctrl+Shift+A). A file in the workspace goes in as `@path`, a screenshot as an attached image; nothing is sent until you press Enter. [Add files](https://relur.dev/guide/add-files)
 
 **Merge into main.** For when you merge locally instead of through a pull request: Relur brings your main up to date first, and has Claude rebase the branch when main has moved on. It never pushes. [Merge into your local base](https://relur.dev/guide/finishing-work#merge-into-your-local-base)
 

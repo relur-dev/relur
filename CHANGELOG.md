@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Fixed
+
+- The Guide on the web lists every keyboard shortcut for both macOS and Linux: the Linux-only ones (copy and paste in a terminal) were missing. The README gives the Linux key next to each macOS one and links to the shortcuts, and says its demo is shown on macOS.
+
 ## [0.7.0] - 2026-11-11
 
 ### Highlights

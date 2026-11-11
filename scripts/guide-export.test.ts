@@ -1,9 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BRAND } from '@shared/brand';
+import { formatShortcut, SHORTCUTS, type Shortcut } from '@shared/shortcuts';
 import { describe, expect, it } from 'vitest';
 import { SECTIONS } from '../src/renderer/src/guide/content';
-import { exportGuide, fillWeb, GUIDE_DIR, readPages, toPlainMarkdown } from './lib/guide-export';
+import {
+  exportGuide,
+  fillWeb,
+  GUIDE_DIR,
+  readPages,
+  shortcutCell,
+  toPlainMarkdown,
+} from './lib/guide-export';
 
 const pages = readPages();
 const result = exportGuide(pages, '1.2.3');
@@ -87,6 +95,22 @@ describe('the Guide for the web', () => {
     expect(result.files['shortcuts.md']).toMatch(/\| Action \| macOS \| Linux \|/);
   });
 
+  it("lists every shortcut on the Keyboard shortcuts page, with both platforms' keys", () => {
+    const page = result.files['shortcuts.md'] as string;
+    const rows = page.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Action'));
+    const all: Shortcut[] = Object.values(SHORTCUTS);
+    expect(rows.filter((r) => !r.startsWith('| ---'))).toHaveLength(all.length);
+    for (const s of all) {
+      const row = `| ${s.label} | ${shortcutCell(s, true)} | ${shortcutCell(s, false)} |`;
+      expect(rows, s.label).toContain(row);
+      // Both columns are filled unless the shortcut is only on one platform.
+      if (s.platform !== 'other') expect(row).toContain(`<kbd>${formatShortcut(s, true)}</kbd>`);
+      if (s.platform !== 'mac') expect(row).toContain(`<kbd>${formatShortcut(s, false)}</kbd>`);
+    }
+    expect(page).toContain('| Copy in a terminal | — | <kbd>Ctrl+Shift+C</kbd> |');
+    expect(page).toContain('| New workspace | <kbd>⌘N</kbd> | <kbd>Ctrl+Shift+N</kbd> |');
+  });
+
   it('labels platform parts by where they stand', () => {
     expect(fillWeb('{{mac}}A Mac line.{{/mac}}{{other}}A Linux line.{{/other}}\n')).toBe(
       'On macOS: A Mac line.\n\nOn Linux: A Linux line.\n',
@@ -116,5 +140,25 @@ describe('the Guide for the web', () => {
     expect(toPlainMarkdown('[Report](app:report-bug)')).toMatch(
       /\(https:\/\/github\.com\/.+\/issues\/new\?template=bug_report\.yml\)/,
     );
+  });
+});
+
+describe('the README', () => {
+  const readme = fs.readFileSync(path.join(import.meta.dirname, '..', 'README.md'), 'utf8');
+
+  it('gives every key it names for both platforms, as shortcuts.ts has them', () => {
+    const all: Shortcut[] = Object.values(SHORTCUTS);
+    const pairs = [...readme.matchAll(/\(([^(),]*[⌘⌥⇧⌃][^(),]*), on Linux ([^()]+?)\)/g)];
+    expect(pairs.length).toBeGreaterThan(3);
+    for (const [whole, mac, linux] of pairs) {
+      expect(
+        all.some((s) => formatShortcut(s, true) === mac && formatShortcut(s, false) === linux),
+        whole,
+      ).toBe(true);
+    }
+    // No Mac key without its Linux one.
+    const bare = readme.replace(/\([^()]*, on Linux [^()]+\)/g, '').replace(/<img [^>]*>/g, '');
+    expect(bare).not.toMatch(/[⌘⌥⇧⌃↵]/);
+    expect(readme).toContain(`https://${BRAND.slug}.dev/guide/shortcuts`);
   });
 });

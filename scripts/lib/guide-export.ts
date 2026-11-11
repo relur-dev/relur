@@ -20,7 +20,7 @@ import { fill, SECTIONS } from '../../src/renderer/src/guide/content';
 import { GLYPHS } from '../../src/renderer/src/guide/glyphs';
 import { images, parsePage, plainText, slug } from '../../src/renderer/src/guide/markdown';
 import { BRAND } from '../../src/shared/brand';
-import { formatShortcut, shortcutsByGroup } from '../../src/shared/shortcuts';
+import { formatShortcut, GROUP_ORDER, SHORTCUTS, type Shortcut } from '../../src/shared/shortcuts';
 
 export interface ExportedPage {
   id: string;
@@ -130,27 +130,21 @@ export function fillWeb(markdown: string): string {
   );
 }
 
-/** The Keyboard shortcuts page's tables, with a column per platform. */
+/** A shortcut's keys on one platform as a table cell; — where it has none there. */
+export function shortcutCell(shortcut: Shortcut, mac: boolean): string {
+  if (shortcut.platform && shortcut.platform !== (mac ? 'mac' : 'other')) return '—';
+  return `<kbd>${formatShortcut(shortcut, mac)}</kbd>`;
+}
+
+/** The Keyboard shortcuts page's tables: every shortcut, with a column per platform. */
 export function shortcutsWeb(): string {
-  const mac = shortcutsByGroup(true);
-  const linux = new Map(
-    shortcutsByGroup(false).flatMap(({ shortcuts }) =>
-      shortcuts.map((s) => [s.label, formatShortcut(s, false)] as const),
-    ),
-  );
-  return mac
-    .map(
-      ({ group, shortcuts }) =>
-        `## ${group}\n\n| Action | macOS | Linux |\n| --- | --- | --- |\n${shortcuts
-          .map(
-            (s) =>
-              `| ${s.label} | <kbd>${formatShortcut(s, true)}</kbd> | ${
-                linux.has(s.label) ? `<kbd>${linux.get(s.label)}</kbd>` : '—'
-              } |`,
-          )
-          .join('\n')}`,
-    )
-    .join('\n\n');
+  const all: Shortcut[] = Object.values(SHORTCUTS);
+  return GROUP_ORDER.map((group) => {
+    const rows = all
+      .filter((s) => s.group === group)
+      .map((s) => `| ${s.label} | ${shortcutCell(s, true)} | ${shortcutCell(s, false)} |`);
+    return `## ${group}\n\n| Action | macOS | Linux |\n| --- | --- | --- |\n${rows.join('\n')}`;
+  }).join('\n\n');
 }
 
 const issueUrl = (template: string) =>
