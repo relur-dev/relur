@@ -12,7 +12,7 @@
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![macOS · Linux](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-lightgrey)
 
-<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board grouped by project, with New workspace and Add project at the top; a working card moves by itself to Needs you with Claude's question and its options as buttons, one click answers it and the card goes back to Working; in a working workspace a note is written and queued with ⌥↵, and goes to Claude by itself when it finishes; back on Home, Merge into main on a Ready to ship card moves it to Merged">
+<img src="docs/images/demo.gif" width="1100" alt="Relur at work: Home's Board grouped by project, with New workspace and Add project at the top; a working card moves by itself to Needs you with Claude's question and its options as buttons, one click answers it and the card goes back to Working; in a working workspace a note is written and queued with ⌥↵ (Alt+Enter on Linux), and goes to Claude by itself when it finishes; back on Home, Merge into main on a Ready to ship card moves it to Merged">
 
 <sub>Shown on macOS. On Linux some keys differ: see the <a href="https://relur.dev/guide/shortcuts">keyboard shortcuts for both</a>.</sub>
 
