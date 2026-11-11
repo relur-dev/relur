@@ -1672,6 +1672,7 @@ exec sleep 600
       process.platform === 'darwin' ? 'Reveal in Finder' : 'Show in folder',
       'Copy path',
       'Copy branch name',
+      'Flag…',
       'Keep Claude Running',
       'Delete workspace…',
     ]);
