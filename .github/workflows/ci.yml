@@ -41,12 +41,13 @@ jobs:
       # signal where they are installed, as in scripts/linux-check.sh.
       - name: Shells and D-Bus (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsh fish dbus
+        run: scripts/apt-install.sh zsh fish dbus
 
+      - uses: ./.github/actions/electron-cache
+
+      # npm ci downloads Electron in its install script.
       - name: Install
-        run: npm ci
+        run: scripts/retry.sh 3 30 npm ci
 
       - name: Check
         run: npm run check
@@ -78,13 +79,15 @@ jobs:
 
       - name: System packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xauth zsh fish dbus \
+          scripts/apt-install.sh xvfb xauth zsh fish dbus \
             libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxshmfence1
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      - uses: ./.github/actions/electron-cache
+
+      # npm ci downloads Electron in its install script.
       - name: Install
-        run: npm ci
+        run: scripts/retry.sh 3 30 npm ci
 
       - name: Build
         run: npm run build

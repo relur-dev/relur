@@ -24,7 +24,8 @@ within() {
 
 echo "kernel.apparmor_restrict_unprivileged_userns: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo none)"
 # Lists for the .deb's dependencies, and xvfb-run where the runner has none.
-within 300 sudo apt-get update -qq
+# scripts/apt-install.sh retries, and falls back from the runner's mirror.
+within 900 scripts/apt-install.sh
 command -v xvfb-run >/dev/null || within 300 sudo apt-get install -y -qq xvfb >/dev/null
 
 echo "== apt install $deb"

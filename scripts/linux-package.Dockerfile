@@ -4,6 +4,8 @@
 # the release workflow.
 FROM node:22-bullseye
 
+# apt retries a failed download, with a growing pause.
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git build-essential python3 \
     && rm -rf /var/lib/apt/lists/*
@@ -14,6 +16,9 @@ USER node
 WORKDIR /home/node/app
 COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node scripts/postinstall.mjs scripts/
+# Electron's and electron-builder's earlier downloads (DOWNLOADS in
+# scripts/linux-package.sh; an empty folder without it).
+COPY --from=downloads --chown=node:node . /home/node/.cache/
 RUN npm ci
 COPY --chown=node:node . .
 

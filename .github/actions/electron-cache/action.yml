@@ -1,0 +1,29 @@
+# Restores Electron's and electron-builder's downloads, and saves them when
+# the job succeeds, so a run doesn't download them again (a 504 from their
+# hosts fails a run). Keyed on their versions in package-lock.json, the
+# runner's OS and architecture. The log of the step "Run actions/cache" says
+# "Cache restored from key: …" or "Cache not found for input keys: …".
+name: Electron downloads
+description: Caches Electron's and electron-builder's downloads
+inputs:
+  path:
+    description: Folders to cache; by default where Electron and electron-builder keep their downloads on Linux and macOS
+    default: |
+      ~/.cache/electron
+      ~/.cache/electron-builder
+      ~/Library/Caches/electron
+      ~/Library/Caches/electron-builder
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      run: |
+        electron=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+        builder=$(node -p "require('./package-lock.json').packages['node_modules/electron-builder'].version")
+        echo "key=electron-$electron-builder-$builder-$RUNNER_OS-$RUNNER_ARCH" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ steps.key.outputs.key }}

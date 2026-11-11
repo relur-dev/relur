@@ -31,8 +31,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: ./.github/actions/electron-cache
+
+      # npm ci downloads Electron in its install script.
       - name: Install
-        run: npm ci
+        run: scripts/retry.sh 3 30 npm ci
 
       - name: Use the tag as the app's version
         run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
@@ -40,10 +43,12 @@ jobs:
       - name: Check
         run: npm run check
 
+      # electron-builder downloads Electron for the other architecture and
+      # its own tools.
       - name: Build and package (arm64 and x64)
         run: |
           npm run build
-          npx tsx --tsconfig tsconfig.node.json scripts/package.ts --platform mac --arch all
+          scripts/retry.sh 3 30 npx tsx --tsconfig tsconfig.node.json scripts/package.ts --platform mac --arch all
 
       - uses: actions/upload-artifact@v7
         with:
@@ -72,8 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The build runs in Docker; scripts/linux-package.sh hands this folder
+      # to it and takes the downloads back out.
+      - uses: ./.github/actions/electron-cache
+        with:
+          path: ${{ runner.temp }}/downloads
+
       - name: Build the AppImage and .deb
-        run: VERSION="${GITHUB_REF_NAME#v}" scripts/linux-package.sh
+        run: VERSION="${GITHUB_REF_NAME#v}" DOWNLOADS="$RUNNER_TEMP/downloads" RETRIES=3 scripts/linux-package.sh
 
       # Ubuntu 24.04 lets only programs with an AppArmor profile use user
       # namespaces, which Chromium's sandbox needs, and the check's container
