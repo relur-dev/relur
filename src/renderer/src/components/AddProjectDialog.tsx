@@ -15,7 +15,7 @@ import {
   FolderImportResults,
   useFolderRows,
 } from './FolderImport';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 import { TerminalView } from './TerminalView';
 
 type Candidate = AppRouterOutputs['projects']['inspect'];
@@ -234,122 +234,127 @@ function ExistingFolderForm({ profile, onClose, onAdded }: FormProps) {
   );
 
   return (
-    <form onSubmit={submit} className="text-md">
-      <label htmlFor="add-project-folder" className={labelClass}>
-        Repository path
-      </label>
-      <div className="flex gap-2">
-        <input
-          id="add-project-folder"
-          className={`${inputClass} font-mono text-sm`}
-          placeholder="~/code/my-repository"
-          spellCheck={false}
-          value={folder}
-          aria-invalid={Boolean(inspect.error) || undefined}
-          onChange={(e) => setFolder(e.target.value)}
-          onBlur={() => check(folder)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !candidate) {
-              e.preventDefault();
-              check(folder);
-            }
-            if (matchShortcut('browse', e.nativeEvent, isMac) !== -1) {
-              e.preventDefault();
-              void browse();
-            }
-          }}
-        />
-        <button
-          type="button"
-          className={button('secondary', 'lg')}
-          disabled={pickFolder.isPending}
-          onClick={() => void browse()}
-        >
-          Browse… <Kbd>{keyHint('browse')}</Kbd>
-        </button>
-      </div>
-      {inspect.isPending ? <p className="mt-1.5 text-sm text-fg-subtle">Checking…</p> : null}
-
-      {candidate?.conflict ? (
-        <p role="alert" className="mt-2 text-sm text-st-error">
-          ✕ This repository is already registered under the {candidate.conflict.profileName}{' '}
-          profile. A repository can belong to only one profile.
-        </p>
-      ) : null}
-
-      {candidate && !candidate.conflict ? (
-        <div className="mt-3 space-y-2 rounded-lg border border-line bg-surface p-3 text-sm">
-          <div className={detailRow}>
-            <span className="text-fg-muted">Detected</span>
-            <span>
-              <span className="text-diff-add">✓</span> Git repository
-            </span>
-          </div>
-          {candidate.repoPath !== folder.trim() ? (
-            <div className={detailRow}>
-              <span className="text-fg-muted">Main checkout</span>
-              <span className="truncate font-mono select-text">{candidate.repoPath}</span>
-            </div>
-          ) : null}
-          <label className={detailRow}>
-            <span className="text-fg-muted">Name</span>
-            <input className={detailInput} value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
-          <div className={detailRow}>
-            <span className="text-fg-muted">Base branch</span>
-            <div>
-              <input
-                aria-label="Base branch"
-                className={detailInput}
-                value={baseBranch}
-                onChange={(e) => setBaseBranch(e.target.value)}
-              />
-              {baseBranch === candidate.baseBranch ? (
-                <span className="mt-0.5 block text-xs text-fg-subtle">
-                  {BASE_BRANCH_SOURCE[candidate.baseBranchSource]}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          <div className={detailRow}>
-            <span className="text-fg-muted">Remote</span>
-            {candidate.remotes.length > 0 ? (
-              <select
-                aria-label="Remote"
-                className={detailInput}
-                value={remote ?? ''}
-                onChange={(e) => setRemote(e.target.value)}
-              >
-                {candidate.remotes.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-fg-muted">None: workspaces branch from local branches</span>
-            )}
-          </div>
-          {worktreeChoice}
+    <form onSubmit={submit} className={`${modalForm} text-md`}>
+      <ModalBody>
+        <label htmlFor="add-project-folder" className={labelClass}>
+          Repository path
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="add-project-folder"
+            className={`${inputClass} font-mono text-sm`}
+            placeholder="~/code/my-repository"
+            spellCheck={false}
+            value={folder}
+            aria-invalid={Boolean(inspect.error) || undefined}
+            onChange={(e) => setFolder(e.target.value)}
+            onBlur={() => check(folder)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !candidate) {
+                e.preventDefault();
+                check(folder);
+              }
+              if (matchShortcut('browse', e.nativeEvent, isMac) !== -1) {
+                e.preventDefault();
+                void browse();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className={button('secondary', 'lg')}
+            disabled={pickFolder.isPending}
+            onClick={() => void browse()}
+          >
+            Browse… <Kbd>{keyHint('browse')}</Kbd>
+          </button>
         </div>
-      ) : null}
+        {inspect.isPending ? <p className="mt-1.5 text-sm text-fg-subtle">Checking…</p> : null}
 
-      {scan && !results ? (
-        <>
-          <FolderImportList profile={profile} skipped={scan.skipped} {...folderRows} />
-          <div className="mt-3 rounded-lg border border-line bg-surface p-3 text-sm">
+        {candidate?.conflict ? (
+          <p role="alert" className="mt-2 text-sm text-st-error">
+            ✕ This repository is already registered under the {candidate.conflict.profileName}{' '}
+            profile. A repository can belong to only one profile.
+          </p>
+        ) : null}
+
+        {candidate && !candidate.conflict ? (
+          <div className="mt-3 space-y-2 rounded-lg border border-line bg-surface p-3 text-sm">
+            <div className={detailRow}>
+              <span className="text-fg-muted">Detected</span>
+              <span>
+                <span className="text-diff-add">✓</span> Git repository
+              </span>
+            </div>
+            {candidate.repoPath !== folder.trim() ? (
+              <div className={detailRow}>
+                <span className="text-fg-muted">Main checkout</span>
+                <span className="truncate font-mono select-text">{candidate.repoPath}</span>
+              </div>
+            ) : null}
+            <label className={detailRow}>
+              <span className="text-fg-muted">Name</span>
+              <input
+                className={detailInput}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+            <div className={detailRow}>
+              <span className="text-fg-muted">Base branch</span>
+              <div>
+                <input
+                  aria-label="Base branch"
+                  className={detailInput}
+                  value={baseBranch}
+                  onChange={(e) => setBaseBranch(e.target.value)}
+                />
+                {baseBranch === candidate.baseBranch ? (
+                  <span className="mt-0.5 block text-xs text-fg-subtle">
+                    {BASE_BRANCH_SOURCE[candidate.baseBranchSource]}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className={detailRow}>
+              <span className="text-fg-muted">Remote</span>
+              {candidate.remotes.length > 0 ? (
+                <select
+                  aria-label="Remote"
+                  className={detailInput}
+                  value={remote ?? ''}
+                  onChange={(e) => setRemote(e.target.value)}
+                >
+                  {candidate.remotes.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-fg-muted">None: workspaces branch from local branches</span>
+              )}
+            </div>
             {worktreeChoice}
           </div>
-        </>
-      ) : null}
-      {results ? <FolderImportResults results={results} /> : null}
+        ) : null}
 
-      {error ? (
-        <p role="alert" className="mt-2 text-sm text-st-error select-text">
-          ✕ {error.message}
-        </p>
-      ) : null}
+        {scan && !results ? (
+          <>
+            <FolderImportList profile={profile} skipped={scan.skipped} {...folderRows} />
+            <div className="mt-3 rounded-lg border border-line bg-surface p-3 text-sm">
+              {worktreeChoice}
+            </div>
+          </>
+        ) : null}
+        {results ? <FolderImportResults results={results} /> : null}
 
+        {error ? (
+          <p role="alert" className="mt-2 text-sm text-st-error select-text">
+            ✕ {error.message}
+          </p>
+        ) : null}
+      </ModalBody>
       <ModalFooter>
         <button type="button" className={button('ghost', 'lg')} onClick={onClose}>
           Cancel <Kbd>Esc</Kbd>
@@ -634,85 +639,86 @@ function NewRepositoryForm({
   };
   const identity = profile.git ? `${profile.git.commitName} <${profile.git.commitEmail}>` : null;
   return (
-    <form onSubmit={submit} className="text-md">
-      <label htmlFor="new-repository-name" className={labelClass}>
-        Name
-      </label>
-      <input
-        id="new-repository-name"
-        data-autofocus
-        className={`${inputClass} font-mono text-sm`}
-        placeholder="my-repository"
-        spellCheck={false}
-        value={name}
-        aria-invalid={Boolean(name && folder.problem) || undefined}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <ParentFolderField folder={folder} id="new-repository-parent" />
-      <FolderNotes folder={name ? folder : { ...folder, problem: null }} />
-
-      <div className="mt-3 space-y-2 rounded-lg border border-line bg-surface p-3 text-sm">
-        <div className={`${detailRow} items-start`}>
-          <span className="pt-0.5 text-fg-muted">First commit</span>
-          <div className="space-y-1">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={readme}
-                onChange={(e) => setReadme(e.target.checked)}
-              />
-              <span>
-                A <span className="font-mono">README.md</span> with the name as its heading
-              </span>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={gitignore}
-                onChange={(e) => setGitignore(e.target.checked)}
-              />
-              <span>
-                A <span className="font-mono">.gitignore</span>
-              </span>
-            </label>
-            {!readme && !gitignore ? (
-              <span className="block text-xs text-fg-subtle">An empty commit</span>
-            ) : null}
-          </div>
-        </div>
-        <div className={detailRow}>
-          <span className="text-fg-muted">Base branch</span>
-          <span className="font-mono">{profile.defaults.baseBranch}</span>
-        </div>
-        <div className={detailRow}>
-          <span className="text-fg-muted">Committed as</span>
-          <span className="truncate">
-            {identity ? (
-              <span className="font-mono">{identity}</span>
-            ) : (
-              <span className="text-fg-muted">your git config's user.name and user.email</span>
-            )}
-          </span>
-        </div>
-        <div className={detailRow}>
-          <span className="text-fg-muted">Remote</span>
-          <span className="text-fg-muted">None: Push and Create PR need one added later</span>
-        </div>
-        <WorktreeChoice
-          profile={profile}
-          name={name || 'project'}
-          value={worktreeRoot}
-          onChange={setWorktreeRoot}
-          onClose={onClose}
+    <form onSubmit={submit} className={`${modalForm} text-md`}>
+      <ModalBody>
+        <label htmlFor="new-repository-name" className={labelClass}>
+          Name
+        </label>
+        <input
+          id="new-repository-name"
+          data-autofocus
+          className={`${inputClass} font-mono text-sm`}
+          placeholder="my-repository"
+          spellCheck={false}
+          value={name}
+          aria-invalid={Boolean(name && folder.problem) || undefined}
+          onChange={(e) => setName(e.target.value)}
         />
-      </div>
+        <ParentFolderField folder={folder} id="new-repository-parent" />
+        <FolderNotes folder={name ? folder : { ...folder, problem: null }} />
 
-      {create.error ? (
-        <p role="alert" className="mt-2 text-sm text-st-error select-text">
-          ✕ {create.error.message}
-        </p>
-      ) : null}
+        <div className="mt-3 space-y-2 rounded-lg border border-line bg-surface p-3 text-sm">
+          <div className={`${detailRow} items-start`}>
+            <span className="pt-0.5 text-fg-muted">First commit</span>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={readme}
+                  onChange={(e) => setReadme(e.target.checked)}
+                />
+                <span>
+                  A <span className="font-mono">README.md</span> with the name as its heading
+                </span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={gitignore}
+                  onChange={(e) => setGitignore(e.target.checked)}
+                />
+                <span>
+                  A <span className="font-mono">.gitignore</span>
+                </span>
+              </label>
+              {!readme && !gitignore ? (
+                <span className="block text-xs text-fg-subtle">An empty commit</span>
+              ) : null}
+            </div>
+          </div>
+          <div className={detailRow}>
+            <span className="text-fg-muted">Base branch</span>
+            <span className="font-mono">{profile.defaults.baseBranch}</span>
+          </div>
+          <div className={detailRow}>
+            <span className="text-fg-muted">Committed as</span>
+            <span className="truncate">
+              {identity ? (
+                <span className="font-mono">{identity}</span>
+              ) : (
+                <span className="text-fg-muted">your git config's user.name and user.email</span>
+              )}
+            </span>
+          </div>
+          <div className={detailRow}>
+            <span className="text-fg-muted">Remote</span>
+            <span className="text-fg-muted">None: Push and Create PR need one added later</span>
+          </div>
+          <WorktreeChoice
+            profile={profile}
+            name={name || 'project'}
+            value={worktreeRoot}
+            onChange={setWorktreeRoot}
+            onClose={onClose}
+          />
+        </div>
 
+        {create.error ? (
+          <p role="alert" className="mt-2 text-sm text-st-error select-text">
+            ✕ {create.error.message}
+          </p>
+        ) : null}
+      </ModalBody>
       <ModalFooter>
         <button type="button" className={button('ghost', 'lg')} onClick={onClose}>
           Cancel <Kbd>Esc</Kbd>
@@ -806,76 +812,77 @@ function CloneForm({ profile, projects, onClose, onAdded }: FormProps & { projec
       ? `git clone failed (exit ${session.exitCode ?? session.signal ?? '?'}); nothing was added`
       : null);
   return (
-    <form onSubmit={submit} className="text-md">
-      <fieldset disabled={locked} className="min-w-0">
-        <label htmlFor="clone-url" className={labelClass}>
-          Repository URL
-        </label>
-        <input
-          id="clone-url"
-          ref={urlRef}
-          data-autofocus
-          className={`${inputClass} font-mono text-sm`}
-          placeholder="git@host:team/repository.git"
-          spellCheck={false}
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <ParentFolderField folder={folder} id="clone-parent" />
-        <label htmlFor="clone-name" className={`${labelClass} mt-3`}>
-          Folder name
-        </label>
-        <input
-          id="clone-name"
-          className={`${inputClass} font-mono text-sm`}
-          spellCheck={false}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <FolderNotes folder={name ? folder : { ...folder, problem: null }} />
-        <div className="mt-3 rounded-lg border border-line bg-surface p-3 text-sm">
-          <WorktreeChoice
-            profile={profile}
-            name={name || 'project'}
-            value={worktreeRoot}
-            onChange={setWorktreeRoot}
-            onClose={onClose}
+    <form onSubmit={submit} className={`${modalForm} text-md`}>
+      <ModalBody>
+        <fieldset disabled={locked} className="min-w-0">
+          <label htmlFor="clone-url" className={labelClass}>
+            Repository URL
+          </label>
+          <input
+            id="clone-url"
+            ref={urlRef}
+            data-autofocus
+            className={`${inputClass} font-mono text-sm`}
+            placeholder="git@host:team/repository.git"
+            spellCheck={false}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
           />
-        </div>
-      </fieldset>
-
-      {started && session ? (
-        <div className="mt-3 overflow-hidden rounded-md border border-line bg-term">
-          <div className="flex h-7 items-center gap-2 border-b border-line px-2.5 text-sm">
-            <span className="font-mono text-fg-muted">$ git clone</span>
-            <span className="ml-auto flex items-center gap-1.5 text-xs">
-              {session.status === 'running' ? (
-                <>
-                  <StatusGlyph glyph="working" />
-                  <span className="text-fg-subtle">running</span>
-                </>
-              ) : (
-                <span
-                  data-exit-code={session.exitCode ?? ''}
-                  className={session.exitCode === 0 ? 'text-diff-add' : 'text-st-error'}
-                >
-                  exited · code {session.exitCode ?? session.signal ?? '?'}
-                </span>
-              )}
-            </span>
+          <ParentFolderField folder={folder} id="clone-parent" />
+          <label htmlFor="clone-name" className={`${labelClass} mt-3`}>
+            Folder name
+          </label>
+          <input
+            id="clone-name"
+            className={`${inputClass} font-mono text-sm`}
+            spellCheck={false}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <FolderNotes folder={name ? folder : { ...folder, problem: null }} />
+          <div className="mt-3 rounded-lg border border-line bg-surface p-3 text-sm">
+            <WorktreeChoice
+              profile={profile}
+              name={name || 'project'}
+              value={worktreeRoot}
+              onChange={setWorktreeRoot}
+              onClose={onClose}
+            />
           </div>
-          <div className="h-[180px]">
-            <TerminalView sessionId={session.id} focusOnConnect={!failed} />
+        </fieldset>
+
+        {started && session ? (
+          <div className="mt-3 overflow-hidden rounded-md border border-line bg-term">
+            <div className="flex h-7 items-center gap-2 border-b border-line px-2.5 text-sm">
+              <span className="font-mono text-fg-muted">$ git clone</span>
+              <span className="ml-auto flex items-center gap-1.5 text-xs">
+                {session.status === 'running' ? (
+                  <>
+                    <StatusGlyph glyph="working" />
+                    <span className="text-fg-subtle">running</span>
+                  </>
+                ) : (
+                  <span
+                    data-exit-code={session.exitCode ?? ''}
+                    className={session.exitCode === 0 ? 'text-diff-add' : 'text-st-error'}
+                  >
+                    exited · code {session.exitCode ?? session.signal ?? '?'}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="h-[180px]">
+              <TerminalView sessionId={session.id} focusOnConnect={!failed} />
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
 
-      {error ? (
-        <p role="alert" className="mt-2 text-sm text-st-error select-text">
-          ✕ {error}
-        </p>
-      ) : null}
-
+        {error ? (
+          <p role="alert" className="mt-2 text-sm text-st-error select-text">
+            ✕ {error}
+          </p>
+        ) : null}
+      </ModalBody>
       <ModalFooter>
         <button type="button" className={button('ghost', 'lg')} onClick={onClose}>
           Cancel <Kbd>Esc</Kbd>

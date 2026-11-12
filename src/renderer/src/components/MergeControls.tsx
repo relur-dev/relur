@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
 import { useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /** Every workspace's merge (spec §14.4), kept fresh by App's subscription. */
 export function useMergeStatuses(): (workspaceId: string) => MergeStatus | null {
@@ -135,20 +135,23 @@ function PublishedDialog({
       onClose={onClose}
     >
       <form
+        className={modalForm}
         data-merge-ask
         onSubmit={(e) => {
           e.preventDefault();
           onChoose('merge');
         }}
       >
-        <p className="text-md text-fg-muted">
-          Rebasing it would need a force-push, which {BRAND.displayName} never does. Claude can
-          merge {ask.base} into the branch instead, so its history and pull request stay as they
-          are; then {ask.base} is fast-forwarded to it.
-        </p>
-        <p className="mt-2 text-sm text-fg-subtle">
-          Rebase anyway leaves {remoteBranch} behind: force-push it yourself, or delete it.
-        </p>
+        <ModalBody>
+          <p className="text-md text-fg-muted">
+            Rebasing it would need a force-push, which {BRAND.displayName} never does. Claude can
+            merge {ask.base} into the branch instead, so its history and pull request stay as they
+            are; then {ask.base} is fast-forwarded to it.
+          </p>
+          <p className="mt-2 text-sm text-fg-subtle">
+            Rebase anyway leaves {remoteBranch} behind: force-push it yourself, or delete it.
+          </p>
+        </ModalBody>
         <ModalFooter>
           <button type="button" className={button('ghost', 'lg')} onClick={onClose}>
             Cancel <Kbd>Esc</Kbd>

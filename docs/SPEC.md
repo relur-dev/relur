@@ -705,6 +705,16 @@ Files from Finder or a file manager, dropped on a terminal or chosen with **Add 
 - **Into a shell** (a shell tab, a project's or Home's terminal): the quoted absolute paths, separated and followed by a space, pasted through xterm as a terminal's own drop is, so they're a bracketed paste only where the shell asked for one. No check: the shell's prompt or the program running there takes them.
 - **Tests:** unit tests for the text (`src/shared/dropped-paths.test.ts`: inside and outside the worktree, a linked repository, spaces and quotes, several files, folders, a root that is only a prefix, real paths) and the refusal (`src/shared/home.test.ts`); `scripts/e2e-drop.ts` with the fake claude: the highlight and its end, a drop of four files and a folder as four pastes with no Enter and nothing sent, Add files and `⇧⌘A` with the picker replaced (a cancel types nothing, a space after a typed word), a drop elsewhere doing nothing, the refusal at a permission request with nothing typed, and a shell tab's quoted paths. `scripts/e2e-notes.ts`: the Notes box's drop highlight, a file dropped on it, one chosen with its Add files and one with `⇧⌘A` in it, all at the caret in Claude's form with nothing typed into Claude, and the note sent now giving Claude the paths.
 
+### 6.17 Dialogs
+
+Every dialog (`Modal.tsx`) fits the window, at any size down to the minimum (720×480):
+
+- **Never taller than the window:** a dialog starts `min(96px, 12% of the height)` from the top (wide ones, such as New profile and Edit profile, `min(48px, 6%)`) and ends at least 24px above the bottom.
+- **Title and buttons stay:** the title, its description, and a tab or step strip under it stay at the top, and the button row at the bottom. Only the content between them (`ModalBody`) scrolls when it doesn't fit, with a scrollbar that is always drawn (not macOS's overlay one, which shows only while scrolling).
+- **Long lists** inside it scroll within that content, with the same scrollbar: Also in and the existing-branch list show ten rows, fewer in a short window (at most 35% of the window's height); Delete workspace's repository cards, Link another repository's projects and Edit profile's sections scroll with the rest of the content.
+- **Focus stays in view:** a field, checkbox or row that gets keyboard focus (Tab, or ↑↓ in the existing-branch list) is scrolled into view in its list and in the content.
+- **Tests:** `scripts/e2e-dialogs.ts`: at 1024×640 and 720×480, New workspace with many projects and with a long branch list, and Delete workspace with many repositories, keep the title and the buttons inside the window, and a real click on Cancel, Create and Delete works.
+
 ## 7. New workspace flow
 
 ### 7.1 Dialog

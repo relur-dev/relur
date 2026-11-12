@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { GuideLink } from '../guide/link';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -337,7 +337,7 @@ export function UnlinkDialog({
       onClose={onClose}
     >
       <form
-        className="text-md"
+        className={`${modalForm} text-md`}
         onSubmit={(event) => {
           event.preventDefault();
           if (!data) return;
@@ -347,23 +347,27 @@ export function UnlinkDialog({
           );
         }}
       >
-        {check.isPending ? <p className="text-sm text-fg-subtle">Checking the worktree…</p> : null}
-        {data ? (
-          <RepoCard
-            name={project.name}
-            check={data}
-            branch={workspace.branch}
-            base={repoBase(workspace, project.id)}
-            remote={project.remote}
-            alsoDeleteBranch={alsoDeleteBranch}
-            onAlsoDeleteBranch={setAlsoDeleteBranch}
-          />
-        ) : null}
-        {(check.error ?? unlink.error) ? (
-          <p role="alert" className="mt-3 text-sm text-st-error select-text">
-            ✕ {(check.error ?? unlink.error)?.message}
-          </p>
-        ) : null}
+        <ModalBody>
+          {check.isPending ? (
+            <p className="text-sm text-fg-subtle">Checking the worktree…</p>
+          ) : null}
+          {data ? (
+            <RepoCard
+              name={project.name}
+              check={data}
+              branch={workspace.branch}
+              base={repoBase(workspace, project.id)}
+              remote={project.remote}
+              alsoDeleteBranch={alsoDeleteBranch}
+              onAlsoDeleteBranch={setAlsoDeleteBranch}
+            />
+          ) : null}
+          {(check.error ?? unlink.error) ? (
+            <p role="alert" className="mt-3 text-sm text-st-error select-text">
+              ✕ {(check.error ?? unlink.error)?.message}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button
             type="button"
@@ -459,7 +463,7 @@ export function DeleteWorkspaceDialog({
         onClose={onClose}
       >
         <form
-          className="space-y-2.5 text-md"
+          className={`${modalForm} text-md`}
           onSubmit={(event) => {
             event.preventDefault();
             if (!data) return;
@@ -476,40 +480,42 @@ export function DeleteWorkspaceDialog({
             );
           }}
         >
-          {check.isPending ? (
-            <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
-          ) : null}
-          {data && (data.running > 0 || unsentNotes) ? (
-            <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
-              {data.running > 0 ? (
-                <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
-              ) : null}
-              <NotesWarning w={workspace} />
-            </div>
-          ) : null}
-          {(data?.repos ?? []).map((r) => (
-            <RepoCard
-              key={r.projectId}
-              name={repoName(r.projectId)}
-              check={r}
-              branch={workspace.branch}
-              base={repoBase(workspace, r.projectId)}
-              remote={repoRemote(r.projectId)}
-              alsoDeleteBranch={alsoDeleteBranches[r.projectId]}
-              onAlsoDeleteBranch={(value) =>
-                setAlsoDeleteBranches((all) => ({ ...all, [r.projectId]: value }))
-              }
-            />
-          ))}
-          <p className="flex items-center gap-1.5 text-sm text-fg-subtle">
-            <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
-            What is kept and what goes
-          </p>
-          {(check.error ?? remove.error) ? (
-            <p role="alert" className="text-sm text-st-error select-text">
-              ✕ {(check.error ?? remove.error)?.message}
+          <ModalBody className="space-y-2.5">
+            {check.isPending ? (
+              <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
+            ) : null}
+            {data && (data.running > 0 || unsentNotes) ? (
+              <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
+                {data.running > 0 ? (
+                  <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
+                ) : null}
+                <NotesWarning w={workspace} />
+              </div>
+            ) : null}
+            {(data?.repos ?? []).map((r) => (
+              <RepoCard
+                key={r.projectId}
+                name={repoName(r.projectId)}
+                check={r}
+                branch={workspace.branch}
+                base={repoBase(workspace, r.projectId)}
+                remote={repoRemote(r.projectId)}
+                alsoDeleteBranch={alsoDeleteBranches[r.projectId]}
+                onAlsoDeleteBranch={(value) =>
+                  setAlsoDeleteBranches((all) => ({ ...all, [r.projectId]: value }))
+                }
+              />
+            ))}
+            <p className="flex items-center gap-1.5 text-sm text-fg-subtle">
+              <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
+              What is kept and what goes
             </p>
-          ) : null}
+            {(check.error ?? remove.error) ? (
+              <p role="alert" className="text-sm text-st-error select-text">
+                ✕ {(check.error ?? remove.error)?.message}
+              </p>
+            ) : null}
+          </ModalBody>
           <ModalFooter>
             <button
               type="button"
@@ -555,7 +561,7 @@ export function DeleteWorkspaceDialog({
       onClose={onClose}
     >
       <form
-        className="text-md"
+        className={`${modalForm} text-md`}
         onSubmit={(event) => {
           event.preventDefault();
           remove.mutate(
@@ -564,72 +570,75 @@ export function DeleteWorkspaceDialog({
           );
         }}
       >
-        {check.isPending ? <p className="text-sm text-fg-subtle">Checking the worktree…</p> : null}
-        {data && warnings ? (
-          <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
-            {changes.length > 0 ? (
-              <Warning title={plural(changes.length, 'uncommitted change')}>
-                {shown.join(' · ')}
-                {changes.length > shown.length ? ` · ${changes.length - shown.length} more` : ''}
-              </Warning>
-            ) : null}
-            {data.unpushed > 0 ? (
-              <Warning title={`${plural(data.unpushed, 'commit')} not pushed`}>
-                {remote
-                  ? `${workspace.branch} has commits that aren't on ${remote}`
-                  : `${workspace.branch} has commits that aren't on any other branch`}
-              </Warning>
-            ) : null}
-            <SubmoduleWarnings submodules={data.submodules} />
-            <CheckedOutWarning
-              name={repoName(workspace.projectId)}
-              checkedOut={data.checkedOut}
-              branch={workspace.branch}
-              remote={remote}
+        <ModalBody>
+          {check.isPending ? (
+            <p className="text-sm text-fg-subtle">Checking the worktree…</p>
+          ) : null}
+          {data && warnings ? (
+            <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
+              {changes.length > 0 ? (
+                <Warning title={plural(changes.length, 'uncommitted change')}>
+                  {shown.join(' · ')}
+                  {changes.length > shown.length ? ` · ${changes.length - shown.length} more` : ''}
+                </Warning>
+              ) : null}
+              {data.unpushed > 0 ? (
+                <Warning title={`${plural(data.unpushed, 'commit')} not pushed`}>
+                  {remote
+                    ? `${workspace.branch} has commits that aren't on ${remote}`
+                    : `${workspace.branch} has commits that aren't on any other branch`}
+                </Warning>
+              ) : null}
+              <SubmoduleWarnings submodules={data.submodules} />
+              <CheckedOutWarning
+                name={repoName(workspace.projectId)}
+                checkedOut={data.checkedOut}
+                branch={workspace.branch}
+                remote={remote}
+              />
+              {data.prOpen ? (
+                <Warning title="Its pull request isn't merged">
+                  The last check found it {workspace.pr?.state === 'draft' ? 'a draft' : 'open'}
+                </Warning>
+              ) : null}
+              {data.running > 0 ? (
+                <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
+              ) : null}
+              <NotesWarning w={workspace} />
+            </div>
+          ) : null}
+          {data?.merged ? (
+            <MergedNote
+              merged={data.merged}
+              base={workspace.baseBranch}
+              className={warnings ? 'mt-3' : ''}
             />
-            {data.prOpen ? (
-              <Warning title="Its pull request isn't merged">
-                The last check found it {workspace.pr?.state === 'draft' ? 'a draft' : 'open'}
-              </Warning>
-            ) : null}
-            {data.running > 0 ? (
-              <Warning title={`${plural(data.running, 'running session')} will be stopped`} />
-            ) : null}
-            <NotesWarning w={workspace} />
-          </div>
-        ) : null}
-        {data?.merged ? (
-          <MergedNote
-            merged={data.merged}
-            base={workspace.baseBranch}
-            className={warnings ? 'mt-3' : ''}
-          />
-        ) : null}
-        {main ? <TrackedBranch check={main} branch={workspace.branch} className="mt-3" /> : null}
-        {branchBox.shown ? (
-          <label className="mt-3 flex items-center gap-2 text-md text-fg">
-            <input
-              type="checkbox"
-              className="size-3.5 accent-fg"
-              checked={alsoDeleteBranch ?? branchBox.ticked}
-              onChange={(e) => setAlsoDeleteBranch(e.target.checked)}
-            />
-            Also delete the local branch <span className="font-mono">{workspace.branch}</span>
-          </label>
-        ) : null}
-        <p className="mt-3 flex items-center gap-1.5 text-sm text-fg-subtle">
-          <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
-          What is kept and what goes
-        </p>
-        {data?.worktreeMissing ? (
-          <p className="mt-2 text-sm text-fg-muted">The worktree folder is already gone.</p>
-        ) : null}
-        {(check.error ?? remove.error) ? (
-          <p role="alert" className="mt-3 text-sm text-st-error select-text">
-            ✕ {(check.error ?? remove.error)?.message}
+          ) : null}
+          {main ? <TrackedBranch check={main} branch={workspace.branch} className="mt-3" /> : null}
+          {branchBox.shown ? (
+            <label className="mt-3 flex items-center gap-2 text-md text-fg">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-fg"
+                checked={alsoDeleteBranch ?? branchBox.ticked}
+                onChange={(e) => setAlsoDeleteBranch(e.target.checked)}
+              />
+              Also delete the local branch <span className="font-mono">{workspace.branch}</span>
+            </label>
+          ) : null}
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-fg-subtle">
+            <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
+            What is kept and what goes
           </p>
-        ) : null}
-
+          {data?.worktreeMissing ? (
+            <p className="mt-2 text-sm text-fg-muted">The worktree folder is already gone.</p>
+          ) : null}
+          {(check.error ?? remove.error) ? (
+            <p role="alert" className="mt-3 text-sm text-st-error select-text">
+              ✕ {(check.error ?? remove.error)?.message}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button
             type="button"
@@ -738,73 +747,75 @@ export function DeleteWorkspacesDialog({
       onClose={onClose}
     >
       <form
-        className="text-md"
+        className={`${modalForm} text-md`}
         onSubmit={(event) => {
           event.preventDefault();
           void run();
         }}
       >
-        {!loaded && !checkError ? (
-          <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
-        ) : null}
-        <ul data-delete-merged className="flex max-h-[420px] flex-col gap-2.5 overflow-y-auto">
-          {workspaces.map((w, i) => {
-            const check = checks[i]?.data;
-            if (deleted.includes(w.id)) return null;
-            return (
-              <li key={w.id} data-delete-workspace={w.id} className="space-y-1.5">
-                <div className="flex items-baseline gap-2">
-                  {w.task.id ? (
-                    <span className="font-mono text-sm text-fg-subtle">{w.task.id}</span>
-                  ) : null}
-                  <span className="min-w-0 truncate font-medium">{w.task.title || w.name}</span>
-                  <span className="shrink-0 font-mono text-xs text-fg-subtle">
-                    {name(w.projectId)}
-                  </span>
-                </div>
-                {check && (check.running > 0 || (w.notes?.unsent ?? 0) > 0) ? (
-                  <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
-                    {check.running > 0 ? (
-                      <Warning
-                        title={`${plural(check.running, 'running session')} will be stopped`}
-                      />
+        <ModalBody>
+          {!loaded && !checkError ? (
+            <p className="text-sm text-fg-subtle">Checking the worktrees…</p>
+          ) : null}
+          <ul data-delete-merged className="flex max-h-[420px] flex-col gap-2.5 overflow-y-auto">
+            {workspaces.map((w, i) => {
+              const check = checks[i]?.data;
+              if (deleted.includes(w.id)) return null;
+              return (
+                <li key={w.id} data-delete-workspace={w.id} className="space-y-1.5">
+                  <div className="flex items-baseline gap-2">
+                    {w.task.id ? (
+                      <span className="font-mono text-sm text-fg-subtle">{w.task.id}</span>
                     ) : null}
-                    <NotesWarning w={w} />
+                    <span className="min-w-0 truncate font-medium">{w.task.title || w.name}</span>
+                    <span className="shrink-0 font-mono text-xs text-fg-subtle">
+                      {name(w.projectId)}
+                    </span>
                   </div>
-                ) : null}
-                {(check?.repos ?? []).map((r) => {
-                  const key = `${w.id}:${r.projectId}`;
-                  return (
-                    <RepoCard
-                      key={r.projectId}
-                      name={name(r.projectId)}
-                      check={r}
-                      branch={w.branch}
-                      base={repoBase(w, r.projectId)}
-                      remote={remote(r.projectId)}
-                      alsoDeleteBranch={alsoDeleteBranch[key]}
-                      onAlsoDeleteBranch={(value) =>
-                        setAlsoDeleteBranch((all) => ({ ...all, [key]: value }))
-                      }
-                    />
-                  );
-                })}
-                {check?.worktreeMissing ? (
-                  <p className="text-sm text-fg-muted">The worktree folder is already gone.</p>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-3 flex items-center gap-1.5 text-sm text-fg-subtle">
-          <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
-          What is kept and what goes
-        </p>
-        {(error ?? checkError) ? (
-          <p role="alert" className="mt-3 text-sm text-st-error select-text">
-            ✕ {error ?? checkError}
+                  {check && (check.running > 0 || (w.notes?.unsent ?? 0) > 0) ? (
+                    <div className="divide-y divide-st-permission/30 rounded-lg border border-st-permission/50 bg-st-permission/8">
+                      {check.running > 0 ? (
+                        <Warning
+                          title={`${plural(check.running, 'running session')} will be stopped`}
+                        />
+                      ) : null}
+                      <NotesWarning w={w} />
+                    </div>
+                  ) : null}
+                  {(check?.repos ?? []).map((r) => {
+                    const key = `${w.id}:${r.projectId}`;
+                    return (
+                      <RepoCard
+                        key={r.projectId}
+                        name={name(r.projectId)}
+                        check={r}
+                        branch={w.branch}
+                        base={repoBase(w, r.projectId)}
+                        remote={remote(r.projectId)}
+                        alsoDeleteBranch={alsoDeleteBranch[key]}
+                        onAlsoDeleteBranch={(value) =>
+                          setAlsoDeleteBranch((all) => ({ ...all, [key]: value }))
+                        }
+                      />
+                    );
+                  })}
+                  {check?.worktreeMissing ? (
+                    <p className="text-sm text-fg-muted">The worktree folder is already gone.</p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-3 flex items-center gap-1.5 text-sm text-fg-subtle">
+            <GuideLink to="delete-workspace" label="Deleting a workspace" before={onClose} />
+            What is kept and what goes
           </p>
-        ) : null}
+          {(error ?? checkError) ? (
+            <p role="alert" className="mt-3 text-sm text-st-error select-text">
+              ✕ {error ?? checkError}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button
             type="button"

@@ -5,7 +5,7 @@ import { type FormEvent, useState } from 'react';
 import { GuideLink } from '../guide/link';
 import { useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /**
  * Open as workspace (spec §13.6): an existing worktree of the project becomes
@@ -56,77 +56,81 @@ export function AdoptWorktreeDialog({
       }
       onClose={onClose}
     >
-      <form onSubmit={submit} className="flex flex-col gap-3" data-adopt-dialog>
-        <dl className="grid grid-cols-[64px_1fr] gap-x-3 gap-y-1 text-sm">
-          <dt className="text-fg-muted">Branch</dt>
-          <dd className="truncate font-mono select-text">{worktree.branch}</dd>
-          <dt className="text-fg-muted">Folder</dt>
-          <dd className="truncate font-mono select-text" title={worktree.path}>
-            {worktree.path}
-          </dd>
-        </dl>
-        <div className="grid grid-cols-[120px_1fr] gap-2">
-          <div>
-            <label className={labelClass} htmlFor="adopt-id">
-              Task id
-            </label>
-            <input
-              id="adopt-id"
-              className={`${inputClass} font-mono text-sm`}
-              spellCheck={false}
-              value={taskId}
-              onChange={(e) => setTaskId(e.target.value)}
-            />
+      <form onSubmit={submit} className={modalForm} data-adopt-dialog>
+        <ModalBody className="flex flex-col gap-3">
+          <dl className="grid grid-cols-[64px_1fr] gap-x-3 gap-y-1 text-sm">
+            <dt className="text-fg-muted">Branch</dt>
+            <dd className="truncate font-mono select-text">{worktree.branch}</dd>
+            <dt className="text-fg-muted">Folder</dt>
+            <dd className="truncate font-mono select-text" title={worktree.path}>
+              {worktree.path}
+            </dd>
+          </dl>
+          <div className="grid grid-cols-[120px_1fr] gap-2">
+            <div>
+              <label className={labelClass} htmlFor="adopt-id">
+                Task id
+              </label>
+              <input
+                id="adopt-id"
+                className={`${inputClass} font-mono text-sm`}
+                spellCheck={false}
+                value={taskId}
+                onChange={(e) => setTaskId(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="adopt-title">
+                Title
+              </label>
+              <input
+                id="adopt-title"
+                className={inputClass}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
           </div>
           <div>
-            <label className={labelClass} htmlFor="adopt-title">
-              Title
+            <label className={labelClass} htmlFor="adopt-base">
+              Base branch
             </label>
-            <input
-              id="adopt-title"
+            <select
+              id="adopt-base"
               className={inputClass}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+              value={base}
+              onChange={(e) => setBase(e.target.value)}
+            >
+              {[...new Set([base, ...(bases.data ?? [])])].map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
-        <div>
-          <label className={labelClass} htmlFor="adopt-base">
-            Base branch
-          </label>
-          <select
-            id="adopt-base"
-            className={inputClass}
-            value={base}
-            onChange={(e) => setBase(e.target.value)}
-          >
-            {[...new Set([base, ...(bases.data ?? [])])].map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </div>
-        {(plan.data?.setup.length ?? 0) > 0 ? (
-          <label className="flex items-center gap-2 text-md">
-            <input
-              type="checkbox"
-              checked={runSetup}
-              onChange={(e) => setRunSetup(e.target.checked)}
-            />
-            Run setup in it
-            <span className="text-sm text-fg-subtle">off when the worktree is set up already</span>
-          </label>
-        ) : null}
-        <p className="text-sm text-fg-subtle">
-          Nothing is copied or written into the folder. Claude doesn't start by itself: start it in
-          the Claude tab.
-        </p>
-        {adopt.error ? (
-          <p role="alert" className="text-md text-st-error select-text">
-            ✕ {adopt.error.message}
+          {(plan.data?.setup.length ?? 0) > 0 ? (
+            <label className="flex items-center gap-2 text-md">
+              <input
+                type="checkbox"
+                checked={runSetup}
+                onChange={(e) => setRunSetup(e.target.checked)}
+              />
+              Run setup in it
+              <span className="text-sm text-fg-subtle">
+                off when the worktree is set up already
+              </span>
+            </label>
+          ) : null}
+          <p className="text-sm text-fg-subtle">
+            Nothing is copied or written into the folder. Claude doesn't start by itself: start it
+            in the Claude tab.
           </p>
-        ) : null}
+          {adopt.error ? (
+            <p role="alert" className="text-md text-st-error select-text">
+              ✕ {adopt.error.message}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button type="button" className={button('ghost')} onClick={onClose}>
             Cancel

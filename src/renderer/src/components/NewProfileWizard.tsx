@@ -20,7 +20,7 @@ import {
 import { useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
 import { PROFILE_DOT, ProfileDot } from '../ui/profile-color';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 import { SetupCheckPanel } from './SetupCheck';
 import { TerminalShortcut } from './TerminalShortcut';
 
@@ -301,180 +301,184 @@ export function NewProfileWizard({
           </li>
         ))}
       </ol>
-      <form onSubmit={submit}>
-        <div className="max-h-[calc(100vh-290px)] overflow-y-auto pr-1">
-          {step === 'name' ? (
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className={labelClass} htmlFor="profile-name">
-                  Name
-                </label>
-                <input
-                  id="profile-name"
-                  className={inputClass}
-                  value={name}
-                  placeholder="Personal"
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div>
-                <span className={labelClass}>Color</span>
-                <ColorPicker value={color} onChange={setColor} others={profiles} />
-                <p className="mt-1.5 text-sm text-fg-subtle">
-                  You can change the color later in Edit profile.
-                </p>
-              </div>
-              <div
-                aria-hidden
-                className="flex items-end gap-0.5 overflow-x-auto rounded-md border border-line bg-chrome px-2 pt-2"
-              >
-                {profiles.map((p) => (
-                  <span
-                    key={p.id}
-                    className="flex h-7 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-sm text-fg-muted"
-                  >
-                    <ProfileDot color={p.color} />
-                    {p.name}
-                  </span>
-                ))}
-                <span className="flex h-7.5 shrink-0 items-center gap-2 whitespace-nowrap rounded-t-lg border border-b-0 border-line bg-canvas px-3 text-sm font-medium">
-                  <ProfileDot color={color} />
-                  {name.trim() || 'New profile'}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          {step === 'account' ? (
-            <div role="radiogroup" aria-label="Claude account" className="flex flex-col gap-2">
-              <AccountCard
-                checked={kind === 'default'}
-                onSelect={() => setKind('default')}
-                title="Use my default Claude login"
-                folder={DEFAULT_ACCOUNT_FOLDER}
-              >
-                <p className="text-sm text-fg-muted">
-                  The folder Claude Code uses when CLAUDE_CONFIG_DIR is not set.
-                </p>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="text-fg-muted">{STATE_TEXT[defaultFolder.state]}</span>
-                  {defaultFolder.email ? (
-                    <span className="font-mono text-fg-muted">{defaultFolder.email}</span>
-                  ) : null}
-                  <UsedBy ids={defaultFolder.usedBy} profiles={profiles} />
+      <form className={modalForm} onSubmit={submit}>
+        <ModalBody>
+          <div>
+            {step === 'name' ? (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className={labelClass} htmlFor="profile-name">
+                    Name
+                  </label>
+                  <input
+                    id="profile-name"
+                    className={inputClass}
+                    value={name}
+                    placeholder="Personal"
+                    onChange={(e) => setName(e.target.value)}
+                  />
                 </div>
-              </AccountCard>
-              <AccountCard
-                checked={kind === 'existing'}
-                onSelect={() => setKind('existing')}
-                title="Use an existing login"
-              >
-                {kind === 'existing' ? (
-                  <>
-                    <p className="text-sm text-fg-muted">
-                      Pick a Claude config folder found in your home folder.
-                    </p>
-                    <ul
-                      data-account-folders
-                      className="flex flex-col overflow-hidden rounded-md border border-line"
+                <div>
+                  <span className={labelClass}>Color</span>
+                  <ColorPicker value={color} onChange={setColor} others={profiles} />
+                  <p className="mt-1.5 text-sm text-fg-subtle">
+                    You can change the color later in Edit profile.
+                  </p>
+                </div>
+                <div
+                  aria-hidden
+                  className="flex items-end gap-0.5 overflow-x-auto rounded-md border border-line bg-chrome px-2 pt-2"
+                >
+                  {profiles.map((p) => (
+                    <span
+                      key={p.id}
+                      className="flex h-7 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-sm text-fg-muted"
                     >
-                      {folders.isPending ? (
-                        <li className="px-3 py-2 text-sm text-fg-subtle">Looking for folders…</li>
-                      ) : null}
-                      {listed.map((f) => (
-                        <li key={f.folder} className="border-line not-first:border-t">
-                          <label className="flex min-h-8 items-center gap-2 px-3 py-1.5 text-sm">
-                            <input
-                              type="radio"
-                              name="existing-folder"
-                              checked={existing === f.folder}
-                              onChange={() => setExisting(f.folder)}
-                            />
-                            <span className="font-mono">{f.folder}</span>
-                            <span
-                              data-folder-state={f.state}
-                              className={
-                                f.state === 'signed-in' ? 'text-diff-add' : 'text-fg-muted'
-                              }
-                            >
-                              {STATE_TEXT[f.state]}
-                            </span>
-                            {f.email ? (
-                              <span className="truncate font-mono text-fg-muted">{f.email}</span>
-                            ) : null}
-                            <span className="ml-auto flex gap-1">
-                              <UsedBy ids={f.usedBy} profiles={profiles} />
-                            </span>
-                          </label>
-                        </li>
-                      ))}
-                      <li className="border-t border-line">
-                        <button
-                          type="button"
-                          className="flex h-8 w-full items-center gap-2 px-3 text-left text-sm text-fg-muted hover:bg-raised hover:text-fg"
-                          onClick={() => void browse()}
-                        >
-                          Choose another folder… <Kbd>{keyHint('browse')}</Kbd>
-                        </button>
-                      </li>
-                    </ul>
-                  </>
-                ) : null}
-              </AccountCard>
-              <AccountCard
-                checked={kind === 'new'}
-                onSelect={() => setKind('new')}
-                title="Sign in to a new account"
-                folder={newFolder}
-              >
-                <p className="text-sm text-fg-muted">
-                  Creates a new folder for a separate login. You sign in during the setup check.
-                </p>
-                {kind === 'new' && newFolderTaken ? (
-                  <p className="text-sm text-st-error">
-                    {newFolder} already exists. Choose it under "Use an existing login".
-                  </p>
-                ) : null}
-              </AccountCard>
-              {shared.length > 0 ? (
-                <div className="rounded-md border border-st-permission/40 bg-st-permission/10 px-3 py-2 text-sm">
-                  <p className="font-medium">
-                    {chosenFolder} is used by {shared.map((p) => p.name).join(' and ')}
-                  </p>
-                  <p className="mt-0.5 text-fg-muted">
-                    Both profiles share one login, settings, history and plan usage. Signing out in
-                    one signs out both.
-                  </p>
+                      <ProfileDot color={p.color} />
+                      {p.name}
+                    </span>
+                  ))}
+                  <span className="flex h-7.5 shrink-0 items-center gap-2 whitespace-nowrap rounded-t-lg border border-b-0 border-line bg-canvas px-3 text-sm font-medium">
+                    <ProfileDot color={color} />
+                    {name.trim() || 'New profile'}
+                  </span>
                 </div>
-              ) : null}
-            </div>
-          ) : null}
+              </div>
+            ) : null}
 
-          {step === 'check' && created ? <SetupCheckPanel profile={created} header={null} /> : null}
+            {step === 'account' ? (
+              <div role="radiogroup" aria-label="Claude account" className="flex flex-col gap-2">
+                <AccountCard
+                  checked={kind === 'default'}
+                  onSelect={() => setKind('default')}
+                  title="Use my default Claude login"
+                  folder={DEFAULT_ACCOUNT_FOLDER}
+                >
+                  <p className="text-sm text-fg-muted">
+                    The folder Claude Code uses when CLAUDE_CONFIG_DIR is not set.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-fg-muted">{STATE_TEXT[defaultFolder.state]}</span>
+                    {defaultFolder.email ? (
+                      <span className="font-mono text-fg-muted">{defaultFolder.email}</span>
+                    ) : null}
+                    <UsedBy ids={defaultFolder.usedBy} profiles={profiles} />
+                  </div>
+                </AccountCard>
+                <AccountCard
+                  checked={kind === 'existing'}
+                  onSelect={() => setKind('existing')}
+                  title="Use an existing login"
+                >
+                  {kind === 'existing' ? (
+                    <>
+                      <p className="text-sm text-fg-muted">
+                        Pick a Claude config folder found in your home folder.
+                      </p>
+                      <ul
+                        data-account-folders
+                        className="flex flex-col overflow-hidden rounded-md border border-line"
+                      >
+                        {folders.isPending ? (
+                          <li className="px-3 py-2 text-sm text-fg-subtle">Looking for folders…</li>
+                        ) : null}
+                        {listed.map((f) => (
+                          <li key={f.folder} className="border-line not-first:border-t">
+                            <label className="flex min-h-8 items-center gap-2 px-3 py-1.5 text-sm">
+                              <input
+                                type="radio"
+                                name="existing-folder"
+                                checked={existing === f.folder}
+                                onChange={() => setExisting(f.folder)}
+                              />
+                              <span className="font-mono">{f.folder}</span>
+                              <span
+                                data-folder-state={f.state}
+                                className={
+                                  f.state === 'signed-in' ? 'text-diff-add' : 'text-fg-muted'
+                                }
+                              >
+                                {STATE_TEXT[f.state]}
+                              </span>
+                              {f.email ? (
+                                <span className="truncate font-mono text-fg-muted">{f.email}</span>
+                              ) : null}
+                              <span className="ml-auto flex gap-1">
+                                <UsedBy ids={f.usedBy} profiles={profiles} />
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                        <li className="border-t border-line">
+                          <button
+                            type="button"
+                            className="flex h-8 w-full items-center gap-2 px-3 text-left text-sm text-fg-muted hover:bg-raised hover:text-fg"
+                            onClick={() => void browse()}
+                          >
+                            Choose another folder… <Kbd>{keyHint('browse')}</Kbd>
+                          </button>
+                        </li>
+                      </ul>
+                    </>
+                  ) : null}
+                </AccountCard>
+                <AccountCard
+                  checked={kind === 'new'}
+                  onSelect={() => setKind('new')}
+                  title="Sign in to a new account"
+                  folder={newFolder}
+                >
+                  <p className="text-sm text-fg-muted">
+                    Creates a new folder for a separate login. You sign in during the setup check.
+                  </p>
+                  {kind === 'new' && newFolderTaken ? (
+                    <p className="text-sm text-st-error">
+                      {newFolder} already exists. Choose it under "Use an existing login".
+                    </p>
+                  ) : null}
+                </AccountCard>
+                {shared.length > 0 ? (
+                  <div className="rounded-md border border-st-permission/40 bg-st-permission/10 px-3 py-2 text-sm">
+                    <p className="font-medium">
+                      {chosenFolder} is used by {shared.map((p) => p.name).join(' and ')}
+                    </p>
+                    <p className="mt-0.5 text-fg-muted">
+                      Both profiles share one login, settings, history and plan usage. Signing out
+                      in one signs out both.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-          {step === 'done' && created ? (
-            <div className="flex flex-col gap-4">
-              <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-md">
-                <dt className="text-fg-muted">Profile</dt>
-                <dd className="flex items-center gap-2">
-                  <ProfileDot color={created.color} />
-                  {created.name}
-                </dd>
-                <dt className="text-fg-muted">Account</dt>
-                <dd>
-                  {setup.data?.signedIn.state === 'passed'
-                    ? (setup.data.signedIn.value.email ?? 'Signed in')
-                    : 'Not signed in yet'}
-                </dd>
-                <dt className="text-fg-muted">Folder</dt>
-                <dd className="font-mono">{setup.data?.folder ?? chosenFolder}</dd>
-              </dl>
-              {created ? <TerminalShortcut profileId={created.id} /> : null}
-            </div>
-          ) : null}
-        </div>
+            {step === 'check' && created ? (
+              <SetupCheckPanel profile={created} header={null} />
+            ) : null}
 
-        {error ? <p className="mt-3 text-md text-st-error">{error}</p> : null}
+            {step === 'done' && created ? (
+              <div className="flex flex-col gap-4">
+                <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-md">
+                  <dt className="text-fg-muted">Profile</dt>
+                  <dd className="flex items-center gap-2">
+                    <ProfileDot color={created.color} />
+                    {created.name}
+                  </dd>
+                  <dt className="text-fg-muted">Account</dt>
+                  <dd>
+                    {setup.data?.signedIn.state === 'passed'
+                      ? (setup.data.signedIn.value.email ?? 'Signed in')
+                      : 'Not signed in yet'}
+                  </dd>
+                  <dt className="text-fg-muted">Folder</dt>
+                  <dd className="font-mono">{setup.data?.folder ?? chosenFolder}</dd>
+                </dl>
+                {created ? <TerminalShortcut profileId={created.id} /> : null}
+              </div>
+            ) : null}
+          </div>
+
+          {error ? <p className="mt-3 text-md text-st-error">{error}</p> : null}
+        </ModalBody>
         <ModalFooter>
           {step === 'account' ? (
             <button

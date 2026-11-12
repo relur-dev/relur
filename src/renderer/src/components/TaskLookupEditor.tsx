@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react';
 import { GuideLink } from '../guide/link';
 import { useTRPC } from '../trpc';
 import { button, inputClass, labelClass } from '../ui/controls';
+import { ModalBody, ModalFooter, modalForm } from './Modal';
 
 const parseTools = (text: string) =>
   [...new Set(text.split('\n').map((t) => t.trim()))].filter(Boolean);
@@ -277,14 +278,17 @@ export function ProfileLookupEditor({
     save.mutate({ profileId: profile.id, lookup: draft });
   };
   return (
-    <form onSubmit={submit} className="space-y-3 text-md" data-lookup-editor>
-      <p className="text-fg-muted">
-        When you type a task id alone in New workspace, the app can fill in its title: by asking
-        this profile's Claude, which may use only the read tools you name, or by running a command.
-      </p>
-      <LookupFields lookup={draft} onChange={setDraft} profileId={profile.id} projectId={null} />
-      {save.error ? <p className="text-sm text-st-error">✕ {save.error.message}</p> : null}
-      <div className="flex justify-end">
+    <form onSubmit={submit} className={`${modalForm} text-md`} data-lookup-editor>
+      <ModalBody className="space-y-3">
+        <p className="text-fg-muted">
+          When you type a task id alone in New workspace, the app can fill in its title: by asking
+          this profile's Claude, which may use only the read tools you name, or by running a
+          command.
+        </p>
+        <LookupFields lookup={draft} onChange={setDraft} profileId={profile.id} projectId={null} />
+        {save.error ? <p className="text-sm text-st-error">✕ {save.error.message}</p> : null}
+      </ModalBody>
+      <ModalFooter>
         <button
           type="submit"
           className={button('primary')}
@@ -292,7 +296,7 @@ export function ProfileLookupEditor({
         >
           Save task lookup
         </button>
-      </div>
+      </ModalFooter>
     </form>
   );
 }

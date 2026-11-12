@@ -11,6 +11,7 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 ### Fixed
 
 - Switching to a profile with many workspaces no longer shows its cards in Idle for a moment before they jump to their own columns. The Board shows a card only once it knows its column; switching back to a profile shows its Board at once, as you left it. At the app's start, Home no longer says "No workspaces yet" for a moment.
+- Dialogs fit the window, however small: the title and the buttons stay in view and only the content between them scrolls, with a visible scrollbar. In New workspace with many projects under Also in, or Delete workspace with many repositories, Create, Delete and Cancel were below the bottom of a short window and couldn't be reached. Long lists (Also in, the existing branches) show fewer rows in a short window, and a row that gets keyboard focus scrolls into view.
 - The Guide on the web lists every keyboard shortcut for both macOS and Linux: the Linux-only ones (copy and paste in a terminal) were missing. The README gives the Linux key next to each macOS one and links to the shortcuts, and says its demo is shown on macOS.
 
 ## [0.7.0] - 2026-11-11

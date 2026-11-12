@@ -23,7 +23,7 @@ import {
   TrackedBranch,
   Warning,
 } from './DeleteWorkspaceDialog';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /** The main repository's part of a workspace's delete check. */
 const mainCheck = (c: WorkspaceDeleteCheck) =>
@@ -101,7 +101,7 @@ export function RemoveProjectDialog({
       onClose={onClose}
     >
       <form
-        className="text-md"
+        className={`${modalForm} text-md`}
         onSubmit={(event) => {
           event.preventDefault();
           remove.mutate(
@@ -129,192 +129,194 @@ export function RemoveProjectDialog({
           );
         }}
       >
-        <div className="rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-sm leading-relaxed select-text">
-          <div>{project.repoPath}</div>
-          <div className="text-fg-muted">{projectWorktreeDir(profile, project)}/</div>
-        </div>
-        {check.isPending ? (
-          <p className="mt-3 text-sm text-fg-subtle">Checking the worktrees…</p>
-        ) : null}
+        <ModalBody>
+          <div className="rounded-lg border border-line bg-surface px-3 py-2.5 font-mono text-sm leading-relaxed select-text">
+            <div>{project.repoPath}</div>
+            <div className="text-fg-muted">{projectWorktreeDir(profile, project)}/</div>
+          </div>
+          {check.isPending ? (
+            <p className="mt-3 text-sm text-fg-subtle">Checking the worktrees…</p>
+          ) : null}
 
-        {workspaces.length > 0 ? (
-          <ul
-            data-removal-workspaces
-            className="mt-3 flex max-h-[320px] flex-col gap-2 overflow-y-auto"
-          >
-            {workspaces.map(({ workspace, check: c }) => {
-              const shown = c.uncommitted.slice(0, 8);
-              const main = mainCheck(c);
-              const mainBox = branchChoice(main);
-              return (
-                <li key={workspace.id} className="rounded-lg border border-line">
-                  <div className="px-3 py-2">
-                    <div className="font-medium">{workspace.name}</div>
-                    <div className="truncate font-mono text-xs text-fg-muted">
-                      {workspace.worktreePath}
+          {workspaces.length > 0 ? (
+            <ul
+              data-removal-workspaces
+              className="mt-3 flex max-h-[320px] flex-col gap-2 overflow-y-auto"
+            >
+              {workspaces.map(({ workspace, check: c }) => {
+                const shown = c.uncommitted.slice(0, 8);
+                const main = mainCheck(c);
+                const mainBox = branchChoice(main);
+                return (
+                  <li key={workspace.id} className="rounded-lg border border-line">
+                    <div className="px-3 py-2">
+                      <div className="font-medium">{workspace.name}</div>
+                      <div className="truncate font-mono text-xs text-fg-muted">
+                        {workspace.worktreePath}
+                      </div>
+                      {c.worktreeMissing ? (
+                        <div className="text-xs text-fg-subtle">
+                          The worktree folder is already gone.
+                        </div>
+                      ) : null}
                     </div>
-                    {c.worktreeMissing ? (
-                      <div className="text-xs text-fg-subtle">
-                        The worktree folder is already gone.
+                    {hasWork(c) || c.checkedOut ? (
+                      <div className="divide-y divide-st-permission/30 border-t border-st-permission/40 bg-st-permission/8">
+                        {c.uncommitted.length > 0 ? (
+                          <Warning title={plural(c.uncommitted.length, 'uncommitted change')}>
+                            {shown.join(' · ')}
+                            {c.uncommitted.length > shown.length
+                              ? ` · ${c.uncommitted.length - shown.length} more`
+                              : ''}
+                          </Warning>
+                        ) : null}
+                        {c.unpushed > 0 ? (
+                          <Warning title={`${plural(c.unpushed, 'commit')} not pushed`}>
+                            {project.remote
+                              ? `${workspace.branch} has commits that aren't on ${project.remote}`
+                              : `${workspace.branch} has commits that aren't on any other branch`}
+                          </Warning>
+                        ) : null}
+                        <SubmoduleWarnings submodules={c.submodules} />
+                        <CheckedOutWarning
+                          name={project.name}
+                          checkedOut={c.checkedOut}
+                          branch={workspace.branch}
+                          remote={project.remote}
+                        />
                       </div>
                     ) : null}
-                  </div>
-                  {hasWork(c) || c.checkedOut ? (
-                    <div className="divide-y divide-st-permission/30 border-t border-st-permission/40 bg-st-permission/8">
-                      {c.uncommitted.length > 0 ? (
-                        <Warning title={plural(c.uncommitted.length, 'uncommitted change')}>
-                          {shown.join(' · ')}
-                          {c.uncommitted.length > shown.length
-                            ? ` · ${c.uncommitted.length - shown.length} more`
-                            : ''}
-                        </Warning>
-                      ) : null}
-                      {c.unpushed > 0 ? (
-                        <Warning title={`${plural(c.unpushed, 'commit')} not pushed`}>
-                          {project.remote
-                            ? `${workspace.branch} has commits that aren't on ${project.remote}`
-                            : `${workspace.branch} has commits that aren't on any other branch`}
-                        </Warning>
-                      ) : null}
-                      <SubmoduleWarnings submodules={c.submodules} />
-                      <CheckedOutWarning
-                        name={project.name}
-                        checkedOut={c.checkedOut}
-                        branch={workspace.branch}
-                        remote={project.remote}
-                      />
-                    </div>
-                  ) : null}
-                  <TrackedBranch check={main} branch={workspace.branch} className="m-2" />
-                  {mainBox.shown ? (
-                    <label className="flex items-center gap-2 border-t border-line px-3 py-2 text-md">
-                      <input
-                        type="checkbox"
-                        className="size-3.5 accent-fg"
-                        checked={deleteBranch[workspace.id] ?? mainBox.ticked}
-                        onChange={(e) =>
-                          setDeleteBranch((d) => ({ ...d, [workspace.id]: e.target.checked }))
-                        }
-                      />
-                      Also delete the local branch{' '}
-                      <span className="font-mono">{workspace.branch}</span>
-                    </label>
-                  ) : null}
-                  {c.repos.length > 1 ? (
-                    <div className="space-y-2 border-t border-line p-2">
-                      {c.repos
-                        .filter((r) => !r.primary)
-                        .map((r) => {
-                          const key = `${workspace.id}:${r.projectId}`;
-                          return (
-                            <RepoCard
-                              key={r.projectId}
-                              name={name(r.projectId)}
-                              check={r}
-                              branch={workspace.branch}
-                              base={
-                                workspace.repos.find((x) => x.projectId === r.projectId)
-                                  ?.baseBranch ?? workspace.baseBranch
-                              }
-                              remote={remoteOf(r.projectId)}
-                              alsoDeleteBranch={deleteBranch[key]}
-                              onAlsoDeleteBranch={(value) =>
-                                setDeleteBranch((d) => ({ ...d, [key]: value }))
-                              }
-                            />
-                          );
-                        })}
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
-
-        {linked.length > 0 ? (
-          <ul
-            data-removal-linked
-            className="mt-3 flex max-h-[240px] flex-col gap-2 overflow-y-auto"
-          >
-            {linked.map(({ workspace, check: c }) => {
-              const glyph = glyphFor(workspace.state, workspace.unread, false);
-              const dirty = needsForce(c);
-              const key = `linked:${workspace.id}`;
-              return (
-                <li key={workspace.id} className="rounded-lg border border-line px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    {glyph ? <StatusGlyph glyph={glyph} /> : <span className="size-3" />}
-                    {workspace.task.id ? (
-                      <span className="font-mono text-sm">{workspace.task.id}</span>
+                    <TrackedBranch check={main} branch={workspace.branch} className="m-2" />
+                    {mainBox.shown ? (
+                      <label className="flex items-center gap-2 border-t border-line px-3 py-2 text-md">
+                        <input
+                          type="checkbox"
+                          className="size-3.5 accent-fg"
+                          checked={deleteBranch[workspace.id] ?? mainBox.ticked}
+                          onChange={(e) =>
+                            setDeleteBranch((d) => ({ ...d, [workspace.id]: e.target.checked }))
+                          }
+                        />
+                        Also delete the local branch{' '}
+                        <span className="font-mono">{workspace.branch}</span>
+                      </label>
                     ) : null}
-                    <span className="min-w-0 truncate">
-                      {workspace.task.title || workspace.name}
-                    </span>
-                    <span className="shrink-0 text-fg-subtle">
-                      · in {name(workspace.projectId)}
-                    </span>
-                    <span className="flex-1" />
-                    <span
-                      className={`shrink-0 text-sm ${dirty ? 'text-st-permission' : 'text-fg-muted'}`}
-                    >
-                      {c.submodules.length > 0
-                        ? 'Changes in a submodule'
-                        : dirty
-                          ? 'Uncommitted changes'
-                          : 'No uncommitted changes'}
-                    </span>
-                  </div>
-                  <div className="truncate font-mono text-xs text-fg-muted">
-                    Deleted {c.worktreePath}
-                  </div>
-                  {c.checkedOut ? (
-                    <div className="mt-1.5 rounded-md border border-st-permission/50 bg-st-permission/8">
-                      <CheckedOutWarning
-                        name={project.name}
-                        checkedOut={c.checkedOut}
-                        branch={workspace.branch}
-                        remote={project.remote}
-                      />
-                    </div>
-                  ) : null}
-                  {branchChoice(c).shown ? (
-                    <label className="mt-1.5 flex items-center gap-2 text-md">
-                      <input
-                        type="checkbox"
-                        className="size-3.5 accent-fg"
-                        checked={deleteBranch[key] ?? branchChoice(c).ticked}
-                        onChange={(e) =>
-                          setDeleteBranch((d) => ({ ...d, [key]: e.target.checked }))
-                        }
-                      />
-                      Also delete the local branch{' '}
-                      <span className="font-mono">{workspace.branch}</span>
-                      {c.unpushed > 0 ? (
-                        <span className="text-fg-subtle">
-                          ({plural(c.unpushed, 'commit')} not pushed)
-                        </span>
-                      ) : null}
-                    </label>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+                    {c.repos.length > 1 ? (
+                      <div className="space-y-2 border-t border-line p-2">
+                        {c.repos
+                          .filter((r) => !r.primary)
+                          .map((r) => {
+                            const key = `${workspace.id}:${r.projectId}`;
+                            return (
+                              <RepoCard
+                                key={r.projectId}
+                                name={name(r.projectId)}
+                                check={r}
+                                branch={workspace.branch}
+                                base={
+                                  workspace.repos.find((x) => x.projectId === r.projectId)
+                                    ?.baseBranch ?? workspace.baseBranch
+                                }
+                                remote={remoteOf(r.projectId)}
+                                alsoDeleteBranch={deleteBranch[key]}
+                                onAlsoDeleteBranch={(value) =>
+                                  setDeleteBranch((d) => ({ ...d, [key]: value }))
+                                }
+                              />
+                            );
+                          })}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
 
-        {(data?.runningSessions ?? 0) > 0 ? (
-          <div className="mt-3 rounded-lg border border-st-permission/50 bg-st-permission/8">
-            <Warning
-              title={`${plural(data?.runningSessions ?? 0, 'running session')} will be stopped`}
-            />
-          </div>
-        ) : null}
-        {error ? (
-          <p role="alert" className="mt-3 text-st-error select-text">
-            ✕ {error.message}
-          </p>
-        ) : null}
+          {linked.length > 0 ? (
+            <ul
+              data-removal-linked
+              className="mt-3 flex max-h-[240px] flex-col gap-2 overflow-y-auto"
+            >
+              {linked.map(({ workspace, check: c }) => {
+                const glyph = glyphFor(workspace.state, workspace.unread, false);
+                const dirty = needsForce(c);
+                const key = `linked:${workspace.id}`;
+                return (
+                  <li key={workspace.id} className="rounded-lg border border-line px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {glyph ? <StatusGlyph glyph={glyph} /> : <span className="size-3" />}
+                      {workspace.task.id ? (
+                        <span className="font-mono text-sm">{workspace.task.id}</span>
+                      ) : null}
+                      <span className="min-w-0 truncate">
+                        {workspace.task.title || workspace.name}
+                      </span>
+                      <span className="shrink-0 text-fg-subtle">
+                        · in {name(workspace.projectId)}
+                      </span>
+                      <span className="flex-1" />
+                      <span
+                        className={`shrink-0 text-sm ${dirty ? 'text-st-permission' : 'text-fg-muted'}`}
+                      >
+                        {c.submodules.length > 0
+                          ? 'Changes in a submodule'
+                          : dirty
+                            ? 'Uncommitted changes'
+                            : 'No uncommitted changes'}
+                      </span>
+                    </div>
+                    <div className="truncate font-mono text-xs text-fg-muted">
+                      Deleted {c.worktreePath}
+                    </div>
+                    {c.checkedOut ? (
+                      <div className="mt-1.5 rounded-md border border-st-permission/50 bg-st-permission/8">
+                        <CheckedOutWarning
+                          name={project.name}
+                          checkedOut={c.checkedOut}
+                          branch={workspace.branch}
+                          remote={project.remote}
+                        />
+                      </div>
+                    ) : null}
+                    {branchChoice(c).shown ? (
+                      <label className="mt-1.5 flex items-center gap-2 text-md">
+                        <input
+                          type="checkbox"
+                          className="size-3.5 accent-fg"
+                          checked={deleteBranch[key] ?? branchChoice(c).ticked}
+                          onChange={(e) =>
+                            setDeleteBranch((d) => ({ ...d, [key]: e.target.checked }))
+                          }
+                        />
+                        Also delete the local branch{' '}
+                        <span className="font-mono">{workspace.branch}</span>
+                        {c.unpushed > 0 ? (
+                          <span className="text-fg-subtle">
+                            ({plural(c.unpushed, 'commit')} not pushed)
+                          </span>
+                        ) : null}
+                      </label>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
+          {(data?.runningSessions ?? 0) > 0 ? (
+            <div className="mt-3 rounded-lg border border-st-permission/50 bg-st-permission/8">
+              <Warning
+                title={`${plural(data?.runningSessions ?? 0, 'running session')} will be stopped`}
+              />
+            </div>
+          ) : null}
+          {error ? (
+            <p role="alert" className="mt-3 text-st-error select-text">
+              ✕ {error.message}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button
             type="button"

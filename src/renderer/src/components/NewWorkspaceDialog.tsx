@@ -10,7 +10,7 @@ import { type AppRouterOutputs, useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
 import { remember } from '../ui/remember';
 import { ExistingBranchPicker, type PickedBranch } from './ExistingBranchPicker';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 export type CreatedWorkspace = AppRouterOutputs['workspaces']['create'];
 
@@ -419,375 +419,381 @@ export function NewWorkspaceDialog({
       }
       onClose={onClose}
     >
-      <form onSubmit={submit} className="space-y-3 text-md">
-        {initialProject === null && projects.length > 1 ? (
-          <div>
-            <label htmlFor="ws-project" className={labelClass}>
-              Project
-            </label>
-            <select
-              id="ws-project"
-              className={`${inputClass} font-mono text-sm`}
-              value={projectId}
-              onChange={(e) => {
-                const id = e.target.value;
-                setProjectId(id);
-                setBase(null);
-                setPicked(null);
-                const remembered = rememberedAlsoIn(id).filter((o) => o !== id);
-                setAlsoIn(remembered);
-                setAlsoRemembered(remembered.length > 0);
-                setMayLink(rememberedMayLink(id));
+      <form onSubmit={submit} className={`${modalForm} text-md`}>
+        <ModalBody className="space-y-3">
+          {initialProject === null && projects.length > 1 ? (
+            <div>
+              <label htmlFor="ws-project" className={labelClass}>
+                Project
+              </label>
+              <select
+                id="ws-project"
+                className={`${inputClass} font-mono text-sm`}
+                value={projectId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setProjectId(id);
+                  setBase(null);
+                  setPicked(null);
+                  const remembered = rememberedAlsoIn(id).filter((o) => o !== id);
+                  setAlsoIn(remembered);
+                  setAlsoRemembered(remembered.length > 0);
+                  setMayLink(rememberedMayLink(id));
+                }}
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {project ? (
+            <fieldset
+              data-branch-mode
+              aria-label="Branch"
+              className="flex rounded-lg border border-line bg-surface p-0.5"
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                e.preventDefault();
+                const next = mode === 'new' ? 'existing' : 'new';
+                setMode(next);
+                (
+                  e.currentTarget.querySelector(`[data-mode="${next}"]`) as HTMLButtonElement | null
+                )?.focus();
               }}
             >
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-
-        {project ? (
-          <fieldset
-            data-branch-mode
-            aria-label="Branch"
-            className="flex rounded-lg border border-line bg-surface p-0.5"
-            onKeyDown={(e) => {
-              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-              e.preventDefault();
-              const next = mode === 'new' ? 'existing' : 'new';
-              setMode(next);
-              (
-                e.currentTarget.querySelector(`[data-mode="${next}"]`) as HTMLButtonElement | null
-              )?.focus();
-            }}
-          >
-            {(
-              [
-                ['new', 'New branch'],
-                ['existing', 'Existing branch'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                data-mode={value}
-                aria-pressed={mode === value}
-                tabIndex={mode === value ? 0 : -1}
-                className={`h-6.5 flex-1 rounded-md text-md ${
-                  mode === value
-                    ? 'bg-raised font-medium text-fg ring-1 ring-line-strong'
-                    : 'text-fg-muted hover:text-fg'
-                }`}
-                onClick={() => setMode(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </fieldset>
-        ) : null}
-
-        {project && existingMode ? (
-          <div>
-            <div className={`${labelClass} flex items-center gap-1.5`}>
-              Branch{' '}
-              <GuideLink
-                to="new-workspace#from-an-existing-branch"
-                label="From an existing branch"
-                before={onClose}
-              />
-            </div>
-            <ExistingBranchPicker
-              projectId={project.id}
-              projectName={project.name}
-              initialSearch={searchSeed}
-              value={picked}
-              onPick={(next) => {
-                setPicked(next);
-                if (next?.branch !== picked?.branch) setTaskTyped(false);
-              }}
-              onOpenElsewhere={(at) => onOpenElsewhere(at, project)}
-            />
-          </div>
-        ) : null}
-
-        {project && others.length > 0 ? (
-          <fieldset data-also-in className="space-y-1.5">
-            <legend className="flex w-full items-baseline gap-2 text-sm text-fg-muted">
-              <span>Also in</span>
-              <span className="flex-1" />
-              {alsoRemembered && alsoIn.length > 0 ? (
-                <span className="text-xs text-fg-subtle">Last used with {project.name}</span>
-              ) : null}
-              <GuideLink
-                to="tasks-across-repositories#creating-one"
-                label="Tasks across repositories"
-                before={onClose}
-              />
-            </legend>
-            {/* Ten rows of 30px with their 1px gaps, then it scrolls. */}
-            <div className="flex max-h-[calc(var(--spacing)*75+9px)] flex-col gap-px overflow-y-auto rounded-md border border-line bg-line">
-              {others.map((p) => (
-                <label
-                  key={p.id}
-                  className="flex h-7.5 shrink-0 items-center gap-2.5 bg-raised px-2.5 text-md hover:bg-selected"
+              {(
+                [
+                  ['new', 'New branch'],
+                  ['existing', 'Existing branch'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-mode={value}
+                  aria-pressed={mode === value}
+                  tabIndex={mode === value ? 0 : -1}
+                  className={`h-6.5 flex-1 rounded-md text-md ${
+                    mode === value
+                      ? 'bg-raised font-medium text-fg ring-1 ring-line-strong'
+                      : 'text-fg-muted hover:text-fg'
+                  }`}
+                  onClick={() => setMode(value)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={alsoIn.includes(p.id)}
-                    onChange={(e) => {
-                      setAlsoRemembered(false);
-                      setAlsoIn((ids) =>
-                        e.target.checked ? [...ids, p.id] : ids.filter((id) => id !== p.id),
-                      );
-                    }}
-                  />
-                  <span className="font-mono text-sm">{p.name}</span>
-                  <span className="flex-1" />
-                  {presenceOf(p.id) ? (
-                    <span data-presence={p.id} className="text-xs text-fg-muted">
-                      {presenceOf(p.id)?.exists ? 'uses its branch' : 'new branch'}
-                    </span>
-                  ) : null}
-                  <span className="font-mono text-xs text-fg-subtle">
-                    ← {p.baseBranch ?? profile.defaults.baseBranch}
-                  </span>
-                </label>
+                  {label}
+                </button>
               ))}
+            </fieldset>
+          ) : null}
+
+          {project && existingMode ? (
+            <div>
+              <div className={`${labelClass} flex items-center gap-1.5`}>
+                Branch{' '}
+                <GuideLink
+                  to="new-workspace#from-an-existing-branch"
+                  label="From an existing branch"
+                  before={onClose}
+                />
+              </div>
+              <ExistingBranchPicker
+                projectId={project.id}
+                projectName={project.name}
+                initialSearch={searchSeed}
+                value={picked}
+                onPick={(next) => {
+                  setPicked(next);
+                  if (next?.branch !== picked?.branch) setTaskTyped(false);
+                }}
+                onOpenElsewhere={(at) => onOpenElsewhere(at, project)}
+              />
             </div>
-            <label data-claude-may-link className="flex items-start gap-2 pt-1 text-md">
+          ) : null}
+
+          {project && others.length > 0 ? (
+            <fieldset data-also-in className="space-y-1.5">
+              <legend className="flex w-full items-baseline gap-2 text-sm text-fg-muted">
+                <span>Also in</span>
+                <span className="flex-1" />
+                {alsoRemembered && alsoIn.length > 0 ? (
+                  <span className="text-xs text-fg-subtle">Last used with {project.name}</span>
+                ) : null}
+                <GuideLink
+                  to="tasks-across-repositories#creating-one"
+                  label="Tasks across repositories"
+                  before={onClose}
+                />
+              </legend>
+              {/* Ten rows of 30px with their 1px gaps (fewer in a short window), then it scrolls. */}
+              <div className="scroll-visible flex max-h-[min(calc(var(--spacing)*75+9px),35vh)] flex-col gap-px overflow-y-auto rounded-md border border-line bg-line">
+                {others.map((p) => (
+                  <label
+                    key={p.id}
+                    className="flex h-7.5 shrink-0 items-center gap-2.5 bg-raised px-2.5 text-md hover:bg-selected"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={alsoIn.includes(p.id)}
+                      onChange={(e) => {
+                        setAlsoRemembered(false);
+                        setAlsoIn((ids) =>
+                          e.target.checked ? [...ids, p.id] : ids.filter((id) => id !== p.id),
+                        );
+                      }}
+                    />
+                    <span className="font-mono text-sm">{p.name}</span>
+                    <span className="flex-1" />
+                    {presenceOf(p.id) ? (
+                      <span data-presence={p.id} className="text-xs text-fg-muted">
+                        {presenceOf(p.id)?.exists ? 'uses its branch' : 'new branch'}
+                      </span>
+                    ) : null}
+                    <span className="font-mono text-xs text-fg-subtle">
+                      ← {p.baseBranch ?? profile.defaults.baseBranch}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <label data-claude-may-link className="flex items-start gap-2 pt-1 text-md">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={mayLink}
+                  onChange={(e) => setMayLink(e.target.checked)}
+                />
+                <span>
+                  Let Claude add others when needed
+                  <span className="block text-sm text-fg-subtle">
+                    Claude is told about this profile’s other projects and links one when the task
+                    needs changes there.
+                  </span>
+                </span>
+              </label>
+              {linkedProjectIds.length > 0 ? (
+                <p className="text-sm text-fg-muted">
+                  One Claude works in all of them, starting in {project.name}.
+                </p>
+              ) : null}
+              {existingMode && picked && linkedProjectIds.length > 0 ? (
+                <p className="text-sm text-fg-muted">
+                  Where <span className="font-mono">{picked.branch}</span> exists it is checked out;
+                  elsewhere it is made new from that project's base.
+                </p>
+              ) : null}
+              {linkedCheckedOut.map((p) => (
+                <p key={p.projectId} role="alert" className="text-sm text-st-error select-text">
+                  ✕ {p.checkedOut}
+                </p>
+              ))}
+              <p data-trust-note className="text-sm text-fg-subtle">
+                {LINK_TRUST_NOTE}
+              </p>
+            </fieldset>
+          ) : null}
+
+          <div>
+            <label htmlFor="ws-task" className={`${labelClass} flex items-center gap-1.5`}>
+              Task{' '}
+              <GuideLink
+                to="new-workspace#the-task-field"
+                label="The Task field"
+                before={onClose}
+              />
+            </label>
+            <input
+              id="ws-task"
+              className={inputClass}
+              placeholder="PROJ-123 Fix login timeout"
+              // biome-ignore lint/a11y/noAutofocus: the task is the field you start with
+              autoFocus={!existingMode}
+              data-autofocus={existingMode ? undefined : true}
+              ref={taskInput}
+              readOnly={lookingUp !== null}
+              value={taskText}
+              onChange={(e) => {
+                setTaskText(e.target.value);
+                setTaskTyped(true);
+                setLookupError(null);
+              }}
+            />
+            {taskText.trim() ? (
+              <p data-task-preview className="mt-1 flex gap-3 text-sm text-fg-muted">
+                {taskId ? (
+                  <span>
+                    ID <span className="font-mono text-fg">{taskId}</span>
+                  </span>
+                ) : null}
+                <span className="min-w-0 truncate">
+                  Title{' '}
+                  <span data-title-preview className="text-fg">
+                    {title ||
+                      (taskId && lookup
+                        ? lookupPreview(lookupState?.key === lookupKey ? lookupState.outcome : null)
+                        : '—')}
+                  </span>
+                </span>
+              </p>
+            ) : null}
+          </div>
+
+          {existingMode ? null : (
+            <div>
+              <label htmlFor="ws-branch" className={labelClass}>
+                Branch name
+              </label>
+              <div className="relative">
+                <input
+                  id="ws-branch"
+                  className={`${inputClass} ${linkedProjectIds.length > 0 ? 'pr-44' : 'pr-28'} font-mono text-sm`}
+                  spellCheck={false}
+                  value={branch}
+                  aria-invalid={Boolean(branchError) || undefined}
+                  onChange={(e) => setBranch(e.target.value)}
+                />
+                {branchEdit === null ? (
+                  <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm text-fg-subtle">
+                    from the task
+                    {linkedProjectIds.length > 0
+                      ? ` · same in all ${linkedProjectIds.length + 1}`
+                      : ''}
+                  </span>
+                ) : null}
+              </div>
+              {renamed ? (
+                <p data-branch-renamed className="mt-1 text-sm text-fg-muted">
+                  {checked?.problem}; using <span className="font-mono text-fg">{renamed}</span>
+                </p>
+              ) : null}
+              {branchError ? (
+                <p role="alert" className="mt-1 flex items-center gap-2 text-sm text-st-error">
+                  <span>✕ {branchError}</span>
+                  {checked?.suggestion ? (
+                    <button
+                      type="button"
+                      data-use-branch
+                      className={button('ghost', 'sm')}
+                      onClick={() => setBranch(checked.suggestion)}
+                    >
+                      Use <span className="font-mono">{checked.suggestion}</span>
+                    </button>
+                  ) : null}
+                  {branchEdit !== null &&
+                  linkedProjectIds.length === 0 &&
+                  /already (exists|has a branch)/.test(branchError) ? (
+                    <button
+                      type="button"
+                      data-use-existing
+                      className={button('ghost', 'sm')}
+                      onClick={() => {
+                        setSearchSeed(branch.trim());
+                        setMode('existing');
+                      }}
+                    >
+                      Use the existing branch
+                    </button>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="ws-base" className={labelClass}>
+                Base branch
+              </label>
+              <input
+                id="ws-base"
+                className={`${inputClass} font-mono text-sm`}
+                spellCheck={false}
+                list="ws-base-branches"
+                value={base}
+                onChange={(e) => setBase(e.target.value)}
+              />
+              <datalist id="ws-base-branches">
+                {(bases.data ?? []).map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+
+          {hasSetup ? (
+            <label className="flex items-start gap-2 text-md">
               <input
                 type="checkbox"
+                id="ws-run-setup"
                 className="mt-0.5"
-                checked={mayLink}
-                onChange={(e) => setMayLink(e.target.checked)}
+                checked={runSetup}
+                onChange={(e) => setRunSetup(e.target.checked)}
               />
               <span>
-                Let Claude add others when needed
+                Run setup, then start Claude with the task brief
                 <span className="block text-sm text-fg-subtle">
-                  Claude is told about this profile’s other projects and links one when the task
-                  needs changes there.
+                  {setup.data?.source === 'repo'
+                    ? 'Setup from the repository'
+                    : 'Setup from the project settings'}
+                  : <span className="font-mono">{setup.data?.setup.join(' && ')}</span>
+                  {linkedProjectIds.length > 0
+                    ? '. Setup runs in every repository; Claude starts once all have passed.'
+                    : null}
                 </span>
               </span>
             </label>
-            {linkedProjectIds.length > 0 ? (
-              <p className="text-sm text-fg-muted">
-                One Claude works in all of them, starting in {project.name}.
-              </p>
-            ) : null}
-            {existingMode && picked && linkedProjectIds.length > 0 ? (
-              <p className="text-sm text-fg-muted">
-                Where <span className="font-mono">{picked.branch}</span> exists it is checked out;
-                elsewhere it is made new from that project's base.
-              </p>
-            ) : null}
-            {linkedCheckedOut.map((p) => (
-              <p key={p.projectId} role="alert" className="text-sm text-st-error select-text">
-                ✕ {p.checkedOut}
-              </p>
-            ))}
-            <p data-trust-note className="text-sm text-fg-subtle">
-              {LINK_TRUST_NOTE}
-            </p>
-          </fieldset>
-        ) : null}
-
-        <div>
-          <label htmlFor="ws-task" className={`${labelClass} flex items-center gap-1.5`}>
-            Task{' '}
-            <GuideLink to="new-workspace#the-task-field" label="The Task field" before={onClose} />
-          </label>
-          <input
-            id="ws-task"
-            className={inputClass}
-            placeholder="PROJ-123 Fix login timeout"
-            // biome-ignore lint/a11y/noAutofocus: the task is the field you start with
-            autoFocus={!existingMode}
-            data-autofocus={existingMode ? undefined : true}
-            ref={taskInput}
-            readOnly={lookingUp !== null}
-            value={taskText}
-            onChange={(e) => {
-              setTaskText(e.target.value);
-              setTaskTyped(true);
-              setLookupError(null);
-            }}
-          />
-          {taskText.trim() ? (
-            <p data-task-preview className="mt-1 flex gap-3 text-sm text-fg-muted">
-              {taskId ? (
-                <span>
-                  ID <span className="font-mono text-fg">{taskId}</span>
-                </span>
-              ) : null}
-              <span className="min-w-0 truncate">
-                Title{' '}
-                <span data-title-preview className="text-fg">
-                  {title ||
-                    (taskId && lookup
-                      ? lookupPreview(lookupState?.key === lookupKey ? lookupState.outcome : null)
-                      : '—')}
-                </span>
-              </span>
+          ) : null}
+          {setup.data?.error ? (
+            <p role="alert" className="text-sm text-st-error select-text">
+              ✕ {setup.data.error}
             </p>
           ) : null}
-        </div>
 
-        {existingMode ? null : (
-          <div>
-            <label htmlFor="ws-branch" className={labelClass}>
-              Branch name
-            </label>
-            <div className="relative">
-              <input
-                id="ws-branch"
-                className={`${inputClass} ${linkedProjectIds.length > 0 ? 'pr-44' : 'pr-28'} font-mono text-sm`}
-                spellCheck={false}
-                value={branch}
-                aria-invalid={Boolean(branchError) || undefined}
-                onChange={(e) => setBranch(e.target.value)}
-              />
-              {branchEdit === null ? (
-                <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm text-fg-subtle">
-                  from the task
-                  {linkedProjectIds.length > 0
-                    ? ` · same in all ${linkedProjectIds.length + 1}`
-                    : ''}
-                </span>
+          {lookingUp ? (
+            <p data-lookup-running className="flex items-center gap-2 text-sm text-fg-muted">
+              Looking up <span className="font-mono text-fg">{lookingUp.id}</span>…
+              <button type="button" className={button('secondary', 'sm')} onClick={createNow}>
+                Create now
+              </button>
+              <button type="button" className={button('ghost', 'sm')} onClick={stopLookup}>
+                Stop
+              </button>
+            </p>
+          ) : null}
+          {lookupError ? (
+            <div data-lookup-error role="alert" className="space-y-0.5 text-sm select-text">
+              <p className="text-st-error">
+                ✕ Couldn't look up {lookupError.id}: {lookupError.message}.
+              </p>
+              {lookupError.detail ? (
+                <p data-lookup-detail className="text-fg-muted">
+                  Claude: {lookupError.detail}
+                </p>
               ) : null}
+              <p className="text-fg-muted">
+                Create anyway names the branch after what you typed, or type the title after the id.
+              </p>
             </div>
-            {renamed ? (
-              <p data-branch-renamed className="mt-1 text-sm text-fg-muted">
-                {checked?.problem}; using <span className="font-mono text-fg">{renamed}</span>
-              </p>
-            ) : null}
-            {branchError ? (
-              <p role="alert" className="mt-1 flex items-center gap-2 text-sm text-st-error">
-                <span>✕ {branchError}</span>
-                {checked?.suggestion ? (
-                  <button
-                    type="button"
-                    data-use-branch
-                    className={button('ghost', 'sm')}
-                    onClick={() => setBranch(checked.suggestion)}
-                  >
-                    Use <span className="font-mono">{checked.suggestion}</span>
-                  </button>
-                ) : null}
-                {branchEdit !== null &&
-                linkedProjectIds.length === 0 &&
-                /already (exists|has a branch)/.test(branchError) ? (
-                  <button
-                    type="button"
-                    data-use-existing
-                    className={button('ghost', 'sm')}
-                    onClick={() => {
-                      setSearchSeed(branch.trim());
-                      setMode('existing');
-                    }}
-                  >
-                    Use the existing branch
-                  </button>
-                ) : null}
-              </p>
-            ) : null}
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="ws-base" className={labelClass}>
-              Base branch
-            </label>
-            <input
-              id="ws-base"
-              className={`${inputClass} font-mono text-sm`}
-              spellCheck={false}
-              list="ws-base-branches"
-              value={base}
-              onChange={(e) => setBase(e.target.value)}
-            />
-            <datalist id="ws-base-branches">
-              {(bases.data ?? []).map((b) => (
-                <option key={b} value={b} />
-              ))}
-            </datalist>
-          </div>
-        </div>
-
-        {hasSetup ? (
-          <label className="flex items-start gap-2 text-md">
-            <input
-              type="checkbox"
-              id="ws-run-setup"
-              className="mt-0.5"
-              checked={runSetup}
-              onChange={(e) => setRunSetup(e.target.checked)}
-            />
-            <span>
-              Run setup, then start Claude with the task brief
-              <span className="block text-sm text-fg-subtle">
-                {setup.data?.source === 'repo'
-                  ? 'Setup from the repository'
-                  : 'Setup from the project settings'}
-                : <span className="font-mono">{setup.data?.setup.join(' && ')}</span>
-                {linkedProjectIds.length > 0
-                  ? '. Setup runs in every repository; Claude starts once all have passed.'
-                  : null}
-              </span>
-            </span>
-          </label>
-        ) : null}
-        {setup.data?.error ? (
-          <p role="alert" className="text-sm text-st-error select-text">
-            ✕ {setup.data.error}
-          </p>
-        ) : null}
-
-        {lookingUp ? (
-          <p data-lookup-running className="flex items-center gap-2 text-sm text-fg-muted">
-            Looking up <span className="font-mono text-fg">{lookingUp.id}</span>…
-            <button type="button" className={button('secondary', 'sm')} onClick={createNow}>
-              Create now
-            </button>
-            <button type="button" className={button('ghost', 'sm')} onClick={stopLookup}>
-              Stop
-            </button>
-          </p>
-        ) : null}
-        {lookupError ? (
-          <div data-lookup-error role="alert" className="space-y-0.5 text-sm select-text">
-            <p className="text-st-error">
-              ✕ Couldn't look up {lookupError.id}: {lookupError.message}.
+          ) : null}
+          {create.isPending ? (
+            <p className="text-sm text-fg-muted">
+              {existingMode && picked?.remote
+                ? `Fetching ${picked.remote}/${picked.branch}, then a`
+                : project?.remote
+                  ? `Fetching ${project.remote}/${base}, then a`
+                  : 'A'}
+              dding the worktree
+              {linkedProjectIds.length > 0 ? 's' : ''}…
             </p>
-            {lookupError.detail ? (
-              <p data-lookup-detail className="text-fg-muted">
-                Claude: {lookupError.detail}
-              </p>
-            ) : null}
-            <p className="text-fg-muted">
-              Create anyway names the branch after what you typed, or type the title after the id.
+          ) : null}
+          {create.error ? (
+            <p role="alert" className="text-sm text-st-error select-text">
+              ✕ {create.error.message}
             </p>
-          </div>
-        ) : null}
-        {create.isPending ? (
-          <p className="text-sm text-fg-muted">
-            {existingMode && picked?.remote
-              ? `Fetching ${picked.remote}/${picked.branch}, then a`
-              : project?.remote
-                ? `Fetching ${project.remote}/${base}, then a`
-                : 'A'}
-            dding the worktree
-            {linkedProjectIds.length > 0 ? 's' : ''}…
-          </p>
-        ) : null}
-        {create.error ? (
-          <p role="alert" className="text-sm text-st-error select-text">
-            ✕ {create.error.message}
-          </p>
-        ) : null}
+          ) : null}
+        </ModalBody>
 
         <ModalFooter>
           <button type="button" className={button('ghost', 'lg')} onClick={onClose}>

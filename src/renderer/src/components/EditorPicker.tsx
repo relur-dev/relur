@@ -16,7 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { trpcClient, useTRPC } from '../trpc';
 import { button, inputClass, labelClass } from '../ui/controls';
-import { Modal } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /** What a picker holds while it's edited: a known editor, custom commands, or none. */
 export type EditorDraft =
@@ -237,31 +237,33 @@ export function ChooseEditorDialog({
   };
   return (
     <Modal title="Choose an editor" onClose={onClose}>
-      <form onSubmit={(e) => void submit(e)} className="space-y-3" data-choose-editor>
-        <p className="text-md text-fg-muted">
-          Open in editor opens worktrees and files in it. You can change it later in Edit profile ›
-          General, or per project in its Setup tab.
-        </p>
-        <EditorPicker profileId={profileId} value={shown} onChange={setDraft} none="Choose…" />
-        {project ? (
-          <label className="flex items-center gap-2 text-md">
-            <input
-              type="checkbox"
-              checked={onlyProject}
-              onChange={(e) => setOnlyProject(e.target.checked)}
-            />
-            Only for {project.name}
-          </label>
-        ) : null}
-        {error ? <p className="text-sm text-st-error">✕ {error}</p> : null}
-        <div className="flex justify-end gap-2">
+      <form onSubmit={(e) => void submit(e)} className={modalForm} data-choose-editor>
+        <ModalBody className="space-y-3">
+          <p className="text-md text-fg-muted">
+            Open in editor opens worktrees and files in it. You can change it later in Edit profile
+            › General, or per project in its Setup tab.
+          </p>
+          <EditorPicker profileId={profileId} value={shown} onChange={setDraft} none="Choose…" />
+          {project ? (
+            <label className="flex items-center gap-2 text-md">
+              <input
+                type="checkbox"
+                checked={onlyProject}
+                onChange={(e) => setOnlyProject(e.target.checked)}
+              />
+              Only for {project.name}
+            </label>
+          ) : null}
+          {error ? <p className="text-sm text-st-error">✕ {error}</p> : null}
+        </ModalBody>
+        <ModalFooter>
           <button type="button" className={button('secondary')} onClick={onClose}>
             Cancel
           </button>
           <button type="submit" className={button('primary')}>
             Save and open
           </button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );
@@ -356,48 +358,50 @@ export function OpenAllDialog({
   };
   return (
     <Modal title="Open all in editors" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3" data-open-all>
-        <ul className="space-y-1">
-          {repos.map((r) => (
-            <li key={r.projectId}>
-              <label className="flex items-center gap-2 text-md">
-                <input
-                  type="checkbox"
-                  disabled={!r.editor}
-                  checked={r.editor !== null && !unticked.has(r.projectId)}
-                  onChange={(e) => {
-                    setConfirming(false);
-                    setUnticked((current) => {
-                      const next = new Set(current);
-                      if (e.target.checked) next.delete(r.projectId);
-                      else next.add(r.projectId);
-                      return next;
-                    });
-                  }}
-                />
-                <span className="font-mono">{r.name}</span>
-                <span className="text-sm text-fg-subtle">
-                  {r.editor
-                    ? editorLabel(r.editor)
-                    : 'no editor set: choose one in Edit profile › General'}
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-        {confirming ? (
-          <p role="alert" data-open-all-confirm className="text-md text-st-permission">
-            Open {windows} editor windows?
-          </p>
-        ) : (
-          <p className="text-sm text-fg-subtle">
-            {chosen.length === 0
-              ? 'Nothing ticked.'
-              : `${windows} window${windows === 1 ? '' : 's'}: repositories on VS Code or Cursor share one.`}
-          </p>
-        )}
-        {error ? <p className="text-sm whitespace-pre-line text-st-error">✕ {error}</p> : null}
-        <div className="flex justify-end gap-2">
+      <form onSubmit={submit} className={modalForm} data-open-all>
+        <ModalBody className="space-y-3">
+          <ul className="space-y-1">
+            {repos.map((r) => (
+              <li key={r.projectId}>
+                <label className="flex items-center gap-2 text-md">
+                  <input
+                    type="checkbox"
+                    disabled={!r.editor}
+                    checked={r.editor !== null && !unticked.has(r.projectId)}
+                    onChange={(e) => {
+                      setConfirming(false);
+                      setUnticked((current) => {
+                        const next = new Set(current);
+                        if (e.target.checked) next.delete(r.projectId);
+                        else next.add(r.projectId);
+                        return next;
+                      });
+                    }}
+                  />
+                  <span className="font-mono">{r.name}</span>
+                  <span className="text-sm text-fg-subtle">
+                    {r.editor
+                      ? editorLabel(r.editor)
+                      : 'no editor set: choose one in Edit profile › General'}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          {confirming ? (
+            <p role="alert" data-open-all-confirm className="text-md text-st-permission">
+              Open {windows} editor windows?
+            </p>
+          ) : (
+            <p className="text-sm text-fg-subtle">
+              {chosen.length === 0
+                ? 'Nothing ticked.'
+                : `${windows} window${windows === 1 ? '' : 's'}: repositories on VS Code or Cursor share one.`}
+            </p>
+          )}
+          {error ? <p className="text-sm whitespace-pre-line text-st-error">✕ {error}</p> : null}
+        </ModalBody>
+        <ModalFooter>
           <button
             type="button"
             className={button('secondary')}
@@ -412,7 +416,7 @@ export function OpenAllDialog({
           >
             {confirming ? `Open ${windows} windows` : 'Open'}
           </button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );

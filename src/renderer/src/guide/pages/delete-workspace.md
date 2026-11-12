@@ -36,7 +36,7 @@ For a workspace made from [an existing branch](new-workspace#from-an-existing-br
 
 ## Several repositories
 
-A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, each checked on its own: one repository being merged says nothing about the others, and its own **Also delete the local branch**. Every worktree goes. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
+A workspace across several repositories shows one card per repository, each with its warnings, or a ✓ when it's clean or merged, each checked on its own: one repository being merged says nothing about the others, and its own **Also delete the local branch**. Every worktree goes. When the cards don't fit the window they scroll, and **Cancel** and **Delete** stay at the bottom. To remove just one repository, use **Unlink <repo>…** in the **⋯** menu instead; see [Tasks across repositories](tasks-across-repositories#linking-and-unlinking).
 
 ## Teardown
 

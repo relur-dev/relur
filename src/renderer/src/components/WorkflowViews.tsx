@@ -16,6 +16,7 @@ import { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from 're
 import { GuideLink, SetupGuideLink } from '../guide/link';
 import { useTRPC } from '../trpc';
 import { button, inputClass, Kbd, keyHint, labelClass } from '../ui/controls';
+import { ModalBody, ModalFooter, modalForm } from './Modal';
 import { SetupFromSkills } from './SetupFromSkills';
 
 /** How much of the stepper fits: every name, only the current one, or one pill. */
@@ -971,59 +972,61 @@ export function ProfileWorkflowEditor({
   return (
     <form
       onSubmit={(e) => void submit(e)}
-      className="space-y-3 text-md"
+      className={`${modalForm} text-md`}
       data-workflow-editor="profile"
     >
-      <p className="text-fg-muted">
-        <span className="float-right ml-2">
-          <GuideLink to="workflows#setting-it-up" label="Workflows" before={onGuide} />
-        </span>
-        Your skills keep each task's status in a file in its worktree. The app reads it, shows it as
-        a stepper, tells you when the skills wait for you, and types the Continue prompt for you.
-        Projects use this workflow unless they set their own.
-      </p>
-      <SetupGuideLink before={onGuide} />
-      <SetupFromSkills profile={profile} projectId={null} onProposal={fillProposal} />
-      <WorkflowFileButtons draft={draft} canExport={on && complete(draft)} onImport={fill} />
-      {source ? (
-        <DraftNotice source={source} draft={draft}>
-          {tool ? (
-            <label className="flex items-start gap-2 text-sm" data-take-lookup>
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={takeLookup}
-                onChange={(e) => setTakeLookup(e.target.checked)}
-              />
-              <span>
-                Also set up the task lookup: ask Claude, with{' '}
-                <span className="font-mono">{tool}</span>
-                {profile.taskLookup ? ' (replaces your current task lookup)' : ''}. Test it in the
-                Task lookup tab.
-              </span>
-            </label>
-          ) : null}
-        </DraftNotice>
-      ) : null}
-      <label className="flex items-center gap-2">
-        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
-        Read a workflow status in this profile's workspaces
-      </label>
-      {on ? (
-        <>
-          <WorkflowFields draft={draft} onChange={setDraft} />
-          <WorkflowPreview
-            draft={draft}
-            workspaces={workspaces}
-            focus={source?.workspaceId}
-            onAddStatus={(value) => setDraft(withStatus(draft, value))}
-          />
-        </>
-      ) : null}
-      {(save.error ?? saveLookup.error) ? (
-        <p className="text-sm text-st-error">✕ {(save.error ?? saveLookup.error)?.message}</p>
-      ) : null}
-      <div className="flex justify-end">
+      <ModalBody className="space-y-3">
+        <p className="text-fg-muted">
+          <span className="float-right ml-2">
+            <GuideLink to="workflows#setting-it-up" label="Workflows" before={onGuide} />
+          </span>
+          Your skills keep each task's status in a file in its worktree. The app reads it, shows it
+          as a stepper, tells you when the skills wait for you, and types the Continue prompt for
+          you. Projects use this workflow unless they set their own.
+        </p>
+        <SetupGuideLink before={onGuide} />
+        <SetupFromSkills profile={profile} projectId={null} onProposal={fillProposal} />
+        <WorkflowFileButtons draft={draft} canExport={on && complete(draft)} onImport={fill} />
+        {source ? (
+          <DraftNotice source={source} draft={draft}>
+            {tool ? (
+              <label className="flex items-start gap-2 text-sm" data-take-lookup>
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={takeLookup}
+                  onChange={(e) => setTakeLookup(e.target.checked)}
+                />
+                <span>
+                  Also set up the task lookup: ask Claude, with{' '}
+                  <span className="font-mono">{tool}</span>
+                  {profile.taskLookup ? ' (replaces your current task lookup)' : ''}. Test it in the
+                  Task lookup tab.
+                </span>
+              </label>
+            ) : null}
+          </DraftNotice>
+        ) : null}
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+          Read a workflow status in this profile's workspaces
+        </label>
+        {on ? (
+          <>
+            <WorkflowFields draft={draft} onChange={setDraft} />
+            <WorkflowPreview
+              draft={draft}
+              workspaces={workspaces}
+              focus={source?.workspaceId}
+              onAddStatus={(value) => setDraft(withStatus(draft, value))}
+            />
+          </>
+        ) : null}
+        {(save.error ?? saveLookup.error) ? (
+          <p className="text-sm text-st-error">✕ {(save.error ?? saveLookup.error)?.message}</p>
+        ) : null}
+      </ModalBody>
+      <ModalFooter>
         <button
           type="submit"
           className={button('primary')}
@@ -1031,7 +1034,7 @@ export function ProfileWorkflowEditor({
         >
           Save workflow
         </button>
-      </div>
+      </ModalFooter>
     </form>
   );
 }

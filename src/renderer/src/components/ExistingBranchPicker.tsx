@@ -180,13 +180,13 @@ export function ExistingBranchPicker({
           )}
         </div>
       ) : (
-        // Ten rows of 30px with their 1px gaps, then it scrolls.
+        // Ten rows of 30px with their 1px gaps (fewer in a short window), then it scrolls.
         <div
           ref={listRef}
           role="listbox"
           aria-label={`Branches of ${projectName}`}
           data-branch-list
-          className="flex max-h-[calc(var(--spacing)*75+9px)] flex-col gap-px overflow-y-auto rounded-md border border-line bg-line"
+          className="scroll-visible flex max-h-[min(calc(var(--spacing)*75+9px),35vh)] flex-col gap-px overflow-y-auto rounded-md border border-line bg-line"
         >
           {shown.map((b) => {
             const selected = value?.branch === b.name;

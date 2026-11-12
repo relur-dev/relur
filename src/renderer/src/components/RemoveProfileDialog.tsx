@@ -4,7 +4,7 @@ import { accountFolder } from '@shared/setup';
 import { useMutation } from '@tanstack/react-query';
 import { useTRPC } from '../trpc';
 import { button, Kbd } from '../ui/controls';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /**
  * Remove profile… from the tab's menu (spec §6.11): the same confirmation as
@@ -32,17 +32,19 @@ export function RemoveProfileDialog({
       onClose={onClose}
     >
       <form
-        className="text-md"
+        className={`${modalForm} text-md`}
         onSubmit={(event) => {
           event.preventDefault();
           remove.mutate({ profileId: profile.id });
         }}
       >
-        {remove.error ? (
-          <p role="alert" className="text-st-error select-text">
-            ✕ {remove.error.message}
-          </p>
-        ) : null}
+        <ModalBody>
+          {remove.error ? (
+            <p role="alert" className="text-st-error select-text">
+              ✕ {remove.error.message}
+            </p>
+          ) : null}
+        </ModalBody>
         <ModalFooter>
           <button
             type="button"

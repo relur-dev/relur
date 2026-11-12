@@ -13,7 +13,7 @@ import type { AppRouterOutputs } from '../trpc';
 import { button, Kbd, keyHint } from '../ui/controls';
 import { ProfileDot } from '../ui/profile-color';
 import { plural } from './DeleteWorkspaceDialog';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -81,87 +81,89 @@ export function UnfinishedDialog({
       onClose={onClose}
       wide
     >
-      <form onSubmit={submit}>
-        <div data-unfinished-overview className="flex flex-col gap-3">
-          {groups.map(({ profile, rows: group }) => (
-            <section key={profile.id} aria-label={profile.name}>
-              <h3 className="mb-1 flex items-center gap-2 text-sm font-medium text-fg-muted">
-                <ProfileDot color={profile.color} size={8} />
-                {profile.name}
-              </h3>
-              <ul className="divide-y divide-line rounded-lg border border-line text-md">
-                {group.map(({ w, kind, since, marker }) => (
-                  <li
-                    key={w.id}
-                    data-unfinished-row={w.id}
-                    data-kind={kind}
-                    className="flex items-center gap-2.5 px-3 py-2"
-                  >
-                    <span className="flex size-4 flex-none items-center justify-center">
-                      {canContinue(kind) ? (
-                        <input
-                          type="checkbox"
-                          aria-label={`Continue ${w.task.id ?? w.task.title ?? w.name}`}
-                          checked={ticked.has(w.id)}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setTicked((current) => {
-                              const next = new Set(current);
-                              if (on) next.add(w.id);
-                              else next.delete(w.id);
-                              return next;
-                            });
-                          }}
-                        />
-                      ) : null}
-                    </span>
-                    <ProfileDot color={profile.color} size={6} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-1.5">
-                        {w.task.id ? (
-                          <span className="font-mono text-xs text-fg-muted">{w.task.id}</span>
+      <form className={modalForm} onSubmit={submit}>
+        <ModalBody>
+          <div data-unfinished-overview className="flex flex-col gap-3">
+            {groups.map(({ profile, rows: group }) => (
+              <section key={profile.id} aria-label={profile.name}>
+                <h3 className="mb-1 flex items-center gap-2 text-sm font-medium text-fg-muted">
+                  <ProfileDot color={profile.color} size={8} />
+                  {profile.name}
+                </h3>
+                <ul className="divide-y divide-line rounded-lg border border-line text-md">
+                  {group.map(({ w, kind, since, marker }) => (
+                    <li
+                      key={w.id}
+                      data-unfinished-row={w.id}
+                      data-kind={kind}
+                      className="flex items-center gap-2.5 px-3 py-2"
+                    >
+                      <span className="flex size-4 flex-none items-center justify-center">
+                        {canContinue(kind) ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Continue ${w.task.id ?? w.task.title ?? w.name}`}
+                            checked={ticked.has(w.id)}
+                            onChange={(e) => {
+                              const on = e.target.checked;
+                              setTicked((current) => {
+                                const next = new Set(current);
+                                if (on) next.add(w.id);
+                                else next.delete(w.id);
+                                return next;
+                              });
+                            }}
+                          />
                         ) : null}
-                        <span className="truncate">{w.task.title || w.name}</span>
-                        <span className="shrink-0 font-mono text-xs text-fg-subtle">
-                          {projectName(w.projectId)}
+                      </span>
+                      <ProfileDot color={profile.color} size={6} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-1.5">
+                          {w.task.id ? (
+                            <span className="font-mono text-xs text-fg-muted">{w.task.id}</span>
+                          ) : null}
+                          <span className="truncate">{w.task.title || w.name}</span>
+                          <span className="shrink-0 font-mono text-xs text-fg-subtle">
+                            {projectName(w.projectId)}
+                          </span>
+                        </span>
+                        <span
+                          data-last-prompt
+                          className="block truncate text-sm text-fg-muted"
+                          title={w.lastPrompt ?? undefined}
+                        >
+                          {w.lastPrompt ? w.lastPrompt.replace(/\s+/g, ' ') : 'No prompt recorded'}
                         </span>
                       </span>
-                      <span
-                        data-last-prompt
-                        className="block truncate text-sm text-fg-muted"
-                        title={w.lastPrompt ?? undefined}
+                      <span className="flex shrink-0 flex-col items-end">
+                        <span
+                          className={`text-sm ${kind === 'permission' ? 'text-st-permission' : 'text-fg-muted'}`}
+                        >
+                          {unfinishedReason(marker)}
+                        </span>
+                        <span className="font-mono text-xs text-fg-subtle">
+                          stopped {timeOf(since)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className={button('ghost', 'sm')}
+                        title={
+                          kind === 'permission'
+                            ? 'Open the workspace to give the permission again'
+                            : 'Open the workspace'
+                        }
+                        onClick={() => onOpen(w)}
                       >
-                        {w.lastPrompt ? w.lastPrompt.replace(/\s+/g, ' ') : 'No prompt recorded'}
-                      </span>
-                    </span>
-                    <span className="flex shrink-0 flex-col items-end">
-                      <span
-                        className={`text-sm ${kind === 'permission' ? 'text-st-permission' : 'text-fg-muted'}`}
-                      >
-                        {unfinishedReason(marker)}
-                      </span>
-                      <span className="font-mono text-xs text-fg-subtle">
-                        stopped {timeOf(since)}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      className={button('ghost', 'sm')}
-                      title={
-                        kind === 'permission'
-                          ? 'Open the workspace to give the permission again'
-                          : 'Open the workspace'
-                      }
-                      onClick={() => onOpen(w)}
-                    >
-                      Open
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+                        Open
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </ModalBody>
         <ModalFooter>
           {limited.length > 0 ? (
             <span data-limit-reason className="mr-auto text-sm text-st-permission">

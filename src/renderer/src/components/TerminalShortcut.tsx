@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTRPC } from '../trpc';
 import { button } from '../ui/controls';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 import { CommandBlock } from './SetupCheck';
 
 /**
@@ -63,6 +63,7 @@ export function TerminalShortcut({ profileId }: { profileId: string }) {
               onClose={() => setConfirming(false)}
             >
               <form
+                className={modalForm}
                 onSubmit={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -75,15 +76,17 @@ export function TerminalShortcut({ profileId }: { profileId: string }) {
                   );
                 }}
               >
-                <p className="text-md text-fg-muted">
-                  The app appends this line to the end of the file and changes nothing else.
-                </p>
-                <pre
-                  data-alias-line
-                  className="mt-2 rounded-md border border-line bg-diff-add-bg px-2.5 py-1.5 font-mono text-sm break-all whitespace-pre-wrap"
-                >
-                  + {data.line}
-                </pre>
+                <ModalBody>
+                  <p className="text-md text-fg-muted">
+                    The app appends this line to the end of the file and changes nothing else.
+                  </p>
+                  <pre
+                    data-alias-line
+                    className="mt-2 rounded-md border border-line bg-diff-add-bg px-2.5 py-1.5 font-mono text-sm break-all whitespace-pre-wrap"
+                  >
+                    + {data.line}
+                  </pre>
+                </ModalBody>
                 <ModalFooter>
                   <button
                     type="button"

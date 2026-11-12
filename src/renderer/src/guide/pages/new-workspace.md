@@ -34,7 +34,7 @@ The lookup asks this profile's Claude in the background, allowed only the tools 
 
 ## Also in
 
-When the profile has other projects, **Also in** lists them. Tick the ones the task changes too: each gets its own worktree on the same branch, and one Claude works in all of them. Only tick repositories you trust: Claude loads their `CLAUDE.md` and skills without asking. See [Tasks across repositories](tasks-across-repositories).
+When the profile has other projects, **Also in** lists them. Tick the ones the task changes too: each gets its own worktree on the same branch, and one Claude works in all of them. Only tick repositories you trust: Claude loads their `CLAUDE.md` and skills without asking. A long list scrolls, and in a short window the whole dialog does too, between its title and its buttons, which always stay in view. See [Tasks across repositories](tasks-across-repositories).
 
 Below the list, **Let Claude add others when needed** (on unless you untick it) lets Claude link more of the profile's projects later, when the task turns out to need changes there. {{app}} remembers the choice for each project. See [When Claude links one itself](tasks-across-repositories#when-claude-links-one-itself).
 
@@ -54,7 +54,7 @@ Choose **Existing branch** at the top of the dialog to work on a branch that's a
 
 ### Picking the branch
 
-The list shows the project's branches, local and on its remotes, most recently updated first, each with the last commit's author and how long ago. It shows at once, then {{app}} fetches every remote and updates it; if a fetch fails, a line under the list says why and the list is as of the last fetch. Type to filter by name or author, and use <kbd>↑</kbd> <kbd>↓</kbd> to choose; <kbd>{{key:confirm}}</kbd> creates the workspace.
+The list shows the project's branches, local and on its remotes, most recently updated first, each with the last commit's author and how long ago. It shows at once, then {{app}} fetches every remote and updates it; if a fetch fails, a line under the list says why and the list is as of the last fetch. Type to filter by name or author, and use <kbd>↑</kbd> <kbd>↓</kbd> to choose (the list scrolls to keep your choice in view); <kbd>{{key:confirm}}</kbd> creates the workspace.
 
 You can also paste a URL instead:
 

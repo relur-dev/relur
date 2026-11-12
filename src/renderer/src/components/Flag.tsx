@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react
 import { trpcClient } from '../trpc';
 import { button, inputClass, keyHint, labelClass } from '../ui/controls';
 import { FlagIcon } from '../ui/icons';
-import { Modal, ModalFooter } from './Modal';
+import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
 /** How long "Unflagged · Undo" shows (spec §6.7). */
 const UNDO_MS = 5000;
@@ -183,23 +183,26 @@ function FlagDialog({ w, onClose }: { w: FlagTarget; onClose: () => void }) {
     >
       <form
         data-flag-dialog
+        className={modalForm}
         onSubmit={(e) => {
           e.preventDefault();
           save();
         }}
       >
-        <label className={labelClass} htmlFor="flag-note">
-          What to continue <span className="text-fg-subtle">(optional)</span>
-        </label>
-        <input
-          id="flag-note"
-          data-flag-note
-          className={inputClass}
-          value={note}
-          maxLength={FLAG_NOTE_MAX}
-          placeholder="Check the Safari case, then write the e2e"
-          onChange={(e) => setNote(e.target.value)}
-        />
+        <ModalBody>
+          <label className={labelClass} htmlFor="flag-note">
+            What to continue <span className="text-fg-subtle">(optional)</span>
+          </label>
+          <input
+            id="flag-note"
+            data-flag-note
+            className={inputClass}
+            value={note}
+            maxLength={FLAG_NOTE_MAX}
+            placeholder="Check the Safari case, then write the e2e"
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </ModalBody>
         <ModalFooter>
           <button type="button" className={button('secondary')} onClick={onClose}>
             Cancel
