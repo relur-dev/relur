@@ -54,6 +54,7 @@ export function HomeView({
   sessions,
   projects,
   workspaces,
+  loading = false,
   memory,
   actions,
   startClaude,
@@ -68,6 +69,8 @@ export function HomeView({
   projects: Project[];
   /** The profile's workspaces. */
   workspaces: Workspace[];
+  /** The workspaces aren't read yet (the app's start): neither the Board nor its empty state. */
+  loading?: boolean;
   memory: MemorySnapshot | null;
   actions: HomeActions;
   /** Why Start Claude here didn't type into the shell, shown in the Terminal tab. */
@@ -197,7 +200,9 @@ export function HomeView({
         </div>
       ) : null}
 
-      {tab !== 'overview' ? null : board ? (
+      {tab !== 'overview' ? null : loading ? (
+        <div data-board-loading className="min-h-0 flex-1 bg-term" />
+      ) : board ? (
         <Board
           profile={profile}
           projects={projects}

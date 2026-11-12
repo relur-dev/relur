@@ -1073,6 +1073,7 @@ export function App() {
                       project={project}
                       projects={profileProjects}
                       workspaces={profileWorkspaces}
+                      loading={workspaces.isPending}
                       sessions={viewSessions}
                       profileSessions={profileSessions}
                       actions={boardActions}
@@ -1095,6 +1096,7 @@ export function App() {
                       sessions={profileSessions}
                       projects={profileProjects}
                       workspaces={profileWorkspaces}
+                      loading={workspaces.isPending}
                       memory={memory.data ?? null}
                       startClaude={{ error: homeNotice }}
                       actions={boardActions}

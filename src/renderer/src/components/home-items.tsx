@@ -165,8 +165,18 @@ export interface HomeItem {
 }
 
 /**
+ * Each workspace's last known git state, for as long as the app runs: a
+ * profile's Board shown again places its cards at once (spec §6.7), and only
+ * real differences move them once read again.
+ */
+const lastShip = new Map<string, ShipState>();
+
+/**
  * What Done workspaces have left to ship, summed over their repositories:
- * read when Home shows, when one becomes Done, and every 15 seconds.
+ * read when Home shows, when one becomes Done, and every 15 seconds. `ship` is
+ * the state read, else the last one known; `known` whether a workspace's
+ * column is known: not a candidate, or its git state read (or known before,
+ * or failed to read).
  */
 export function useShipStates(workspaces: Workspace[]) {
   const trpc = useTRPC();
@@ -193,10 +203,12 @@ export function useShipStates(workspaces: Workspace[]) {
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: trpc.changes.state.pathKey() });
   }, [doneKey]);
-  return (workspaceId: string): ShipState | null => {
-    const mine = repoQueries.flatMap((q, i) => (q.workspaceId === workspaceId ? [states[i]] : []));
+  const mineOf = (workspaceId: string) =>
+    repoQueries.flatMap((q, i) => (q.workspaceId === workspaceId ? [states[i]] : []));
+  const read = (workspaceId: string): ShipState | null => {
+    const mine = mineOf(workspaceId);
     if (mine.length === 0 || mine.some((s) => !s?.data)) return null;
-    return mine.reduce<ShipState>(
+    const sum = mine.reduce<ShipState>(
       (sum, s) => ({
         uncommitted: sum.uncommitted + (s?.data?.uncommitted ?? 0),
         unpushed: sum.unpushed + (s?.data?.unpushed ?? 0),
@@ -211,7 +223,17 @@ export function useShipStates(workspaces: Workspace[]) {
       }),
       { uncommitted: 0, unpushed: 0, withoutPr: 0, mergeable: 0, baseNotes: [] },
     );
+    lastShip.set(workspaceId, sum);
+    return sum;
   };
+  const ship = (workspaceId: string): ShipState | null =>
+    read(workspaceId) ?? lastShip.get(workspaceId) ?? null;
+  const known = (workspaceId: string): boolean => {
+    const mine = mineOf(workspaceId);
+    if (mine.length === 0 || lastShip.has(workspaceId)) return true;
+    return mine.every((s) => s?.data !== undefined || s?.isError);
+  };
+  return { ship, known };
 }
 
 /** The time, every 30 seconds: "working for n min" moves on by itself. */

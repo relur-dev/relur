@@ -36,6 +36,7 @@ export function ProjectView({
   project,
   projects,
   workspaces: profileWorkspaces,
+  loading = false,
   sessions,
   profileSessions,
   actions,
@@ -54,6 +55,8 @@ export function ProjectView({
   projects: Project[];
   /** The profile's workspaces: the Board shows the project's and those linked into it. */
   workspaces: Workspace[];
+  /** The workspaces aren't read yet (the app's start): neither the Board nor its empty state. */
+  loading?: boolean;
   /** Main-checkout sessions of the project. */
   sessions: SessionInfo[];
   /** The profile's sessions, for the cards' quick reply and gate answers. */
@@ -423,7 +426,9 @@ export function ProjectView({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col bg-term">
-          {shown.length > 0 ? (
+          {loading ? (
+            <div data-board-loading className="min-h-0 flex-1" />
+          ) : shown.length > 0 ? (
             <Board
               profile={profile}
               inProject={project}

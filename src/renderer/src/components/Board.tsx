@@ -15,6 +15,7 @@ import {
   cardDetails,
   DRAFT_NOTE,
   type HomeSection,
+  placedColumns,
   quickReply,
 } from '@shared/home';
 import type { LastWords } from '@shared/last-words';
@@ -71,6 +72,26 @@ const EDGE_STEP = 14;
 
 /** How long a card says its quick reply was sent. */
 const SENT_MS = 2400;
+
+/**
+ * Where each card was last shown, for as long as the app runs: until a card's
+ * column is known again it stays there (spec §6.7).
+ */
+const lastColumn = new Map<string, BoardColumn>();
+
+/**
+ * How long a Board just shown waits for every card's column before it shows
+ * the cards it knows (spec §6.7); the others follow as they are known.
+ */
+const SETTLE_MS = 1000;
+
+const NO_CARDS: Record<BoardColumn, Workspace[]> = {
+  needs: [],
+  working: [],
+  idle: [],
+  ship: [],
+  merged: [],
+};
 
 interface Drag {
   id: string;
@@ -155,11 +176,32 @@ export function Board({
   const queryClient = useQueryClient();
   const launching = useLaunching();
   const suspended = useSuspended();
-  const ship = useShipStates(workspaces);
+  const { ship, known } = useShipStates(workspaces);
   const now = useNow();
   const merge = useMerge();
   const item = useHomeItems({ profile, projects, sessions, memory, actions, ship, now, merge });
-  const columns = boardColumns(workspaces, ship);
+  // A card goes in a column only once its column is known (spec §6.7): until
+  // then where it was last shown, else nowhere. A Board just shown (a profile
+  // switch, the app's start, a project's view) shows no cards while some
+  // aren't known, up to SETTLE_MS, so they never show in Idle on their way.
+  const placed = placedColumns(boardColumns(workspaces, ship), known, (id) => lastColumn.get(id));
+  const [settled, setSettled] = useState(placed.held === 0);
+  const holding = !settled && placed.held > 0;
+  useEffect(() => {
+    if (settled) return;
+    if (!holding) {
+      setSettled(true);
+      return;
+    }
+    const timer = setTimeout(() => setSettled(true), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [settled, holding]);
+  const columns = holding ? NO_CARDS : placed.columns;
+  useEffect(() => {
+    for (const column of BOARD_COLUMNS) {
+      for (const w of columns[column]) lastColumn.set(w.id, column);
+    }
+  });
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '';
   // Why a running Claude isn't suspended, or when it will be (spec §9.8), for
   // the cards' details: read again as often as the app checks.
@@ -937,7 +979,7 @@ export function Board({
           data-board-count
           className={`font-mono text-sm ${tone ? `font-semibold ${TONE_TEXT[tone]}` : 'text-fg-subtle'}`}
         >
-          {list.length}
+          {holding ? null : list.length}
         </span>
         <span className="flex-1" />
         {column === 'merged' && list.length > 0 ? (
@@ -993,6 +1035,7 @@ export function Board({
       data-project-board={inProject ? (drag ? 'dragging' : '') : undefined}
       data-board-grouped={grouped ? 'project' : undefined}
       data-board-column-drag={columnDrag?.column}
+      aria-busy={holding || undefined}
       className={`relative flex min-h-0 flex-1 flex-col bg-term outline-none ${columnDrag ? 'cursor-grabbing' : ''}`}
       onKeyDown={onKeyDown}
     >
@@ -1122,7 +1165,7 @@ export function Board({
                             <span
                               className={`font-mono text-sm font-medium ${tone ? TONE_TEXT[tone] : n > 0 ? 'text-fg' : 'text-fg-subtle'}`}
                             >
-                              {n > 0 ? n : '–'}
+                              {holding ? null : n > 0 ? n : '–'}
                             </span>
                           </div>
                         );
@@ -1159,7 +1202,7 @@ export function Board({
                   className={`flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1.5 pt-0.5 pb-2 contain-content ${moving ? 'opacity-60' : ''}`}
                 >
                   {list.map((w) => card(column, w))}
-                  {list.length === 0 ? (
+                  {list.length === 0 && !holding ? (
                     <div className="rounded-[7px] border border-dashed border-line px-2 py-[22px] text-center text-sm text-fg-subtle">
                       Nothing here
                     </div>

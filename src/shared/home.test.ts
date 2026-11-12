@@ -14,6 +14,7 @@ import {
   openPrs,
   openPrsText,
   permissionTool,
+  placedColumns,
   prNumber,
   projectWorkspaces,
   prText,
@@ -711,5 +712,38 @@ describe('permissionTool', () => {
     expect(permissionTool(null)).toBeNull();
     // Claude Code's notice for its question tool names no tool.
     expect(permissionTool('Claude needs your permission')).toBeNull();
+  });
+});
+
+describe('placedColumns', () => {
+  const list = () => [ws('needs-input'), ws('working'), ws('done'), ws('done'), ws('done')];
+
+  it('shows every card whose column is known where it belongs', () => {
+    const [needs, working, a, b, c] = list();
+    const all = [needs, working, a, b, c] as Workspace[];
+    const columns = boardColumns(all, (id) => (id === a?.id ? dirty : clean));
+    const placed = placedColumns(
+      columns,
+      () => true,
+      () => undefined,
+    );
+    expect(placed.columns).toEqual(columns);
+    expect(placed.held).toBe(0);
+  });
+
+  it('never puts a card in Idle by default before its git state is read', () => {
+    const [needs, working, a, b, c] = list();
+    const all = [needs, working, a, b, c] as Workspace[];
+    // Without git states the Done ones fall to Idle: they wait, unshown or where they were.
+    const columns = boardColumns(all, () => null);
+    expect(columns.idle.map((w) => w.id).sort()).toEqual([a?.id, b?.id, c?.id].sort());
+    const known = (id: string) => id === needs?.id || id === working?.id;
+    const last = (id: string) => (id === a?.id ? 'ship' : id === b?.id ? 'working' : undefined);
+    const placed = placedColumns(columns, known, last);
+    expect(placed.columns.needs.map((w) => w.id)).toEqual([needs?.id]);
+    expect(placed.columns.working.map((w) => w.id)).toEqual([working?.id, b?.id]);
+    expect(placed.columns.ship.map((w) => w.id)).toEqual([a?.id]);
+    expect(placed.columns.idle).toEqual([]);
+    expect(placed.held).toBe(1);
   });
 });

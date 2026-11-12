@@ -17,10 +17,12 @@
  * question, its words at a gate or the gate's hint alone, none for a fresh
  * session), the line opening the Responses panel at that entry, and Claude's
  * question tool shown as Asked a question (card, sidebar, Needs you in
- * the input color) and answered from its card's options; and the flag (Flag…
+ * the input color) and answered from its card's options; the flag (Flag…
  * with a note from a card's ⋯, on the card and in the sidebar, Edit Flag Note…,
  * ⇧⌘G, the Flagged filter, the flag after a restart with the filter off again,
- * Unflag and Undo). Runs with a throwaway HOME and a fake
+ * Unflag and Undo); and a card shown only in its own column, never elsewhere
+ * on its way and without a move animation (the app's start, a project's view,
+ * a profile switch and switching back). Runs with a throwaway HOME and a fake
  * `claude`.
  *
  *   tsx scripts/e2e-board.ts [--dev] [--screenshots=<dir>] [extra Electron args…]
@@ -47,6 +49,7 @@ import {
   pressShortcut,
   type RunningApp,
   readCardDetails,
+  reloadPage,
   screenshot,
   sleep,
   submitDialog,
@@ -92,6 +95,41 @@ async function until(check: () => boolean, what: string, timeoutMs = 20_000) {
   }
   throw new Error(`timed out waiting for ${what}`);
 }
+
+/**
+ * Samples every frame (spec §6.7): each shown card's column, whether the
+ * Board holds its cards back, and any animation in the Board but the status
+ * glyph's spin and a card unfolding. Runs from the switch (or the page's
+ * start) for at least a second, until every card of `expected` has shown.
+ */
+const boardSampler = (expected: Record<string, string>) => `(() => {
+  const expected = ${JSON.stringify(expected)};
+  const frames = [];
+  const moving = [];
+  window.__boardSample = { frames, moving, done: false };
+  const start = performance.now();
+  const quiet = /^(grid-template-rows|visibility|color|background-color|border-color|box-shadow)$/;
+  const tick = () => {
+    const board = document.querySelector('[data-home-board], [data-project-board]');
+    const cards = {};
+    for (const c of document.querySelectorAll('[data-board-card]')) {
+      if (c.dataset.boardCard in expected)
+        cards[c.dataset.boardCard] = c.closest('[data-board-column]')?.dataset.boardColumn ?? null;
+    }
+    frames.push({ cards, busy: board?.getAttribute('aria-busy') === 'true' });
+    for (const a of document.getAnimations()) {
+      const target = a.effect?.target;
+      if (!board || !target || !board.contains(target)) continue;
+      if (a.animationName === 'glyph-spin' || quiet.test(a.transitionProperty ?? '')) continue;
+      moving.push((a.animationName || a.transitionProperty || 'animation') + ' on ' + (target.closest('[data-board-card]')?.dataset.boardCard ?? target.tagName));
+    }
+    const all = Object.keys(expected).every((id) => id in cards);
+    const elapsed = performance.now() - start;
+    if ((elapsed < 1000 || !all) && elapsed < 30000) requestAnimationFrame(tick);
+    else window.__boardSample.done = true;
+  };
+  requestAnimationFrame(tick);
+})()`;
 
 /** The middle of an element, in the window's coordinates. */
 const centre = (page: Cdp, expression: string) =>
@@ -1518,6 +1556,130 @@ exec sleep 600
       true,
     );
     await page.waitFor(`!document.querySelector('[data-flag-undo]')`, 'the toast gone', 8_000);
+
+    // 11. A card shows only in its own column (spec §6.7): sampled every frame on
+    // the app's start, in a project's view, on a first switch to a profile and on
+    // switching back, never in another column on its way, and nothing animates.
+    // The start's overview of what Claude didn't finish: Not now.
+    await page.waitFor(
+      `${dialogText}.includes("Claude didn't finish")`,
+      'the overview at start',
+      30_000,
+    );
+    await pressKey(page, 'Escape');
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the overview closed');
+    await clickLabel(page, 'Select Work');
+    await page.waitFor(`!!document.querySelector('[data-home-board]')`, "Work's Board");
+    // Every column shown, Idle among them.
+    await page.eval(`document.querySelector('[data-board-columns]').click()`);
+    await page.waitFor(`!!document.querySelector('[data-board-columns-reset]')`, 'Reset');
+    await page.eval(`document.querySelector('[data-board-columns-reset]').click()`);
+    await page.waitFor(
+      `${shown}.join() === ${JSON.stringify(DEFAULT_ORDER.join())}`,
+      "Work's default columns",
+    );
+    await pressKey(page, 'Escape');
+    // Ready to ship takes git's word: until it's read, a Done card's column isn't known.
+    for (const [key, n] of [
+      ['ship1', 11],
+      ['ship2', 12],
+    ] as const) {
+      await create(key, 'web', `ABC-${n} Ship ${n}`);
+      await typeInTerminal(page, 'prompt');
+      await typeInTerminal(page, 'stop');
+      await waitState(key, 'Done');
+      fs.writeFileSync(path.join(ws[key]?.tree as string, `${key}.txt`), 'x\n');
+    }
+    // Working again: the restart stopped the other one.
+    await create('busy', 'web', 'ABC-13 Busy');
+    await typeInTerminal(page, 'prompt');
+    await waitState('busy', 'Working');
+    await pressKey(page, 'Digit0', CMD);
+    await page.waitFor(
+      `${columnIds('ship')}.includes(${JSON.stringify(id('ship1'))}) && ${columnIds('ship')}.includes(${JSON.stringify(id('ship2'))})`,
+      'the cards to ship',
+      30_000,
+    );
+    const placement = `Object.fromEntries([...document.querySelectorAll('[data-board-card]')].map((c) => [c.dataset.boardCard, c.closest('[data-board-column]').dataset.boardColumn]))`;
+    // Where each card belongs, once every git state is read: the same twice in a row.
+    let expected: Record<string, string> = {};
+    for (let before = ''; ; await sleep(1500)) {
+      expected = await page.eval<Record<string, string>>(placement);
+      if (JSON.stringify(expected) === before) break;
+      before = JSON.stringify(expected);
+    }
+    const columnsUsed = new Set(Object.values(expected));
+    for (const column of ['needs', 'working', 'idle', 'ship'])
+      assert.ok(
+        columnsUsed.has(column),
+        `Work has cards in ${column}: ${JSON.stringify(expected)}`,
+      );
+    type Sample = {
+      frames: { cards: Record<string, string | null>; busy: boolean }[];
+      moving: string[];
+    };
+    const sampled = async (what: string, { atOnce = false } = {}) => {
+      await page
+        .waitFor(`window.__boardSample?.done === true`, `${what}: sampled`, 40_000)
+        .catch(async (error) => {
+          const at = await page.eval(
+            `JSON.stringify(window.__boardSample ? { frames: window.__boardSample.frames.length, last: window.__boardSample.frames.at(-1) } : null)`,
+          );
+          throw new Error(`${error.message}; the sampler had ${at}`);
+        });
+      const sample = await page.eval<Sample>(`window.__boardSample`);
+      assert.ok(sample.frames.length >= 20, `${what}: ${sample.frames.length} frames sampled`);
+      for (const [i, frame] of sample.frames.entries()) {
+        for (const [card, column] of Object.entries(frame.cards)) {
+          assert.equal(column, expected[card], `${what}: frame ${i} shows ${card} in ${column}`);
+        }
+        if (atOnce) {
+          const n = Object.keys(frame.cards).length;
+          assert.ok(!frame.busy, `${what}: frame ${i} holds the cards back`);
+          assert.ok(
+            n === 0 || n === Object.keys(expected).length,
+            `${what}: frame ${i} shows ${n} of the cards`,
+          );
+        }
+      }
+      assert.deepEqual(sample.moving, [], `${what}: no card animates`);
+      assert.deepEqual(await page.eval(placement), expected, `${what}: every card in its column`);
+    };
+    /** Reloads the window (the app's start for the UI), sampling from its first frame. */
+    const startSampled = async (what: string) => {
+      await page.send('Page.enable');
+      const { identifier } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: boardSampler(expected),
+      });
+      await reloadPage(page);
+      await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+      await sampled(what);
+    };
+    // The app's start, on Work's Home.
+    await startSampled("the start on Work's Home");
+    // A project's view, its cards placed as Home last showed them.
+    await page.eval(boardSampler(expected));
+    await page.eval(
+      `document.querySelector('nav [data-nav-key="p:web"] [data-nav-focus]').click()`,
+    );
+    await sampled("web's view", { atOnce: true });
+    await page.waitFor(`!!document.querySelector('[data-project-board]')`, "web's Board");
+    // The app's start, in the project's view.
+    await startSampled("the start in web's view");
+    await page.waitFor(`!!document.querySelector('[data-project-board]')`, "web's Board again");
+    // A first switch to Work since the start, then switching back to it.
+    await clickLabel(page, 'Select Personal');
+    await page.waitFor(`!!${card(id('sleepy'))}`, "Personal's Board");
+    await reloadPage(page);
+    await page.waitFor(`!!${card(id('sleepy'))}`, "Personal's Board after the start");
+    await page.eval(boardSampler(expected));
+    await clickLabel(page, 'Select Work');
+    await sampled('the switch to Work');
+    await clickLabel(page, 'Select Personal');
+    await page.waitFor(`!!${card(id('sleepy'))}`, "Personal's Board again");
+    await page.eval(boardSampler(expected));
+    await clickLabel(page, 'Select Work');
+    await sampled('switching back to Work', { atOnce: true });
 
     console.log('e2e-board: ok');
   } catch (error) {

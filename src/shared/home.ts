@@ -283,6 +283,37 @@ export function boardColumns(
 }
 
 /**
+ * The Board's columns as shown (spec §6.7): a card goes in a column only once
+ * its column is known (`known`: a Done workspace's git state read), never in
+ * Idle by default meanwhile. Until then it stays in the column it was last
+ * shown in (`last`), at its end, or isn't shown; `held` counts those not shown.
+ */
+export function placedColumns(
+  columns: Record<BoardColumn, Workspace[]>,
+  known: (workspaceId: string) => boolean,
+  last: (workspaceId: string) => BoardColumn | undefined,
+): { columns: Record<BoardColumn, Workspace[]>; held: number } {
+  const out: Record<BoardColumn, Workspace[]> = {
+    needs: [],
+    working: [],
+    idle: [],
+    ship: [],
+    merged: [],
+  };
+  const waiting: Workspace[] = [];
+  for (const column of BOARD_COLUMNS) {
+    for (const w of columns[column]) (known(w.id) ? out[column] : waiting).push(w);
+  }
+  let held = 0;
+  for (const w of waiting) {
+    const before = last(w.id);
+    if (before) out[before].push(w);
+    else held += 1;
+  }
+  return { columns: out, held };
+}
+
+/**
  * What a card offers for a quick reply (spec §6.7): `field` to type into,
  * `open` where Claude shows its permission menu (typed text would answer it),
  * `question` where Claude waits on its question tool (the card shows the
