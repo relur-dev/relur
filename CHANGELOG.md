@@ -4,15 +4,25 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-13
+
+### Highlights
+
+**Flag a workspace** to come back to it later, with an optional note on what to continue: flagged cards come first in Idle, Ready to ship and Merged, and the **Flagged** filter shows only them. **Dialogs always fit the window**: their title and buttons stay in view, and only the content between them scrolls. And **the Board no longer reshuffles its cards** when you switch profiles or start the app: each card shows straight away in its own column.
+
 ### Added
 
 - **Flag a workspace** to come back to it later, for example to continue tomorrow: **Flag…** in a Board card's new **⋯** menu (or right-click the card), in the sidebar row's menu, in the workspace header, or **⇧⌘G** (Ctrl+Shift+G on Linux). Add an optional line on what to continue, and change it later with **Edit Flag Note…**. A flagged card shows a blue flag and the line under its title, stays in its column and moves to the top of Idle, Ready to ship and Merged; the sidebar row shows the flag too, and the card's ⓘ the whole line. **Flagged** next to Columns shows only flagged workspaces, on Home and in each project's view; it starts off at every launch. The flag stays across restarts and suspension until you clear it: click the flag, choose **Unflag**, or press ⇧⌘G again, with **Undo** for 5 seconds.
 
+### Changed
+
+- A Board card has a **⋯** menu after its **ⓘ**, also on a right-click on the card, with **Flag…** and **Delete workspace…**.
+- A dialog's content that doesn't fit scrolls with a scrollbar that is always drawn. Long lists in dialogs (Also in, the existing branches in New workspace) show fewer rows in a short window, and a row that gets keyboard focus scrolls into view.
+
 ### Fixed
 
-- Switching to a profile with many workspaces no longer shows its cards in Idle for a moment before they jump to their own columns. The Board shows a card only once it knows its column; switching back to a profile shows its Board at once, as you left it. At the app's start, Home no longer says "No workspaces yet" for a moment.
-- Dialogs fit the window, however small: the title and the buttons stay in view and only the content between them scrolls, with a visible scrollbar. In New workspace with many projects under Also in, or Delete workspace with many repositories, Create, Delete and Cancel were below the bottom of a short window and couldn't be reached. Long lists (Also in, the existing branches) show fewer rows in a short window, and a row that gets keyboard focus scrolls into view.
-- The Guide on the web lists every keyboard shortcut for both macOS and Linux: the Linux-only ones (copy and paste in a terminal) were missing. The README gives the Linux key next to each macOS one and links to the shortcuts, and says its demo is shown on macOS.
+- **The Board no longer reshuffles its cards.** Switching to a profile with many workspaces showed its cards in Idle for a moment before they jumped to their own columns. The Board now shows a card only once it knows its column, and switching back to a profile shows its Board at once, as you left it. At the app's start, Home no longer says "No workspaces yet" for a moment.
+- **Dialogs fit the window, however small.** In New workspace with many projects under Also in, or Delete workspace with many repositories, Create, Delete and Cancel were below the bottom of a short window and couldn't be reached. The title and the buttons now stay in view and only the content between them scrolls.
 
 ## [0.7.0] - 2026-11-11
 
@@ -277,7 +287,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/relur-dev/relur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/relur-dev/relur/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/relur-dev/relur/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/relur-dev/relur/compare/v0.6.0...v0.6.1
