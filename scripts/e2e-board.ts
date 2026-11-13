@@ -1420,6 +1420,12 @@ exec sleep 600
     const allCards = `[...document.querySelectorAll('[data-board-card]')].map((c) => c.dataset.boardCard)`;
     await pressKey(page, 'Digit0', CMD);
     await page.waitFor(`!!${card(asker)}`, "asker's card");
+    // Just Done, its card stays in Working until its git state is read (spec
+    // §6.7, a card shows only in its own column); wait for the column it keeps.
+    await page.waitFor(
+      `${columnOf(asker)} !== null && ${columnOf(asker)} !== 'working'`,
+      "asker's column once its git state is read",
+    );
     const askerColumn = await page.eval<string>(columnOf(asker));
     assert.equal(
       await page.eval(`!!document.querySelector('[data-board-flagged]:disabled')`),
