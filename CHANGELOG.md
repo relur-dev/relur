@@ -4,6 +4,12 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-24
+
+### Highlights
+
+**Claude no longer stops to ask** whether you trust a workspace's folder or whether to resume the conversation: Relur answers both before Claude starts. And **linking a repository needs no paste any more**: a running Claude works in it at once, without the `/add-dir` line or its question.
+
 ### Changed
 
 - **Claude no longer stops to ask** whether you trust a workspace's folder, linked repositories included, or whether to resume the conversation: Relur answers both in Claude Code's own state file before Claude starts. Trusting is permanent, and the resume answer applies to every Claude Code session of that account, not only Relur's.
@@ -292,7 +298,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/relur-dev/relur/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/relur-dev/relur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/relur-dev/relur/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/relur-dev/relur/compare/v0.6.1...v0.6.2
