@@ -24,7 +24,7 @@ If one fails, the workspace shows **Setup failed in <repo>**, opens that Setup t
 - **Start Claude anyway** starts Claude with every repository.
 - **Delete…** deletes the workspace.
 
-The workspace has one block of ports, shared by all its repositories. Teardown runs in each repository when the workspace is deleted.
+The workspace has one block of ports, shared by all its repositories. Teardown runs in each repository, all at the same time, when the workspace is deleted.
 
 ## One Claude for all of them
 

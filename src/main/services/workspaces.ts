@@ -1896,41 +1896,59 @@ export class WorkspaceService {
   ): Promise<{ teardown: CommandResult | null; teardowns: CommandResult[] }> {
     const workspace = this.workspace(workspaceId);
     const choices = new Map(repos.map((r) => [r.projectId, r]));
-    // Linked repositories first, so the record keeps the main one until the end.
+    const timer = new PhaseTimer(this.log, `delete ${workspace.branch} in ${workspace.projectId}`);
+    // Main repository last, so the record keeps it until the end.
     const order = [...linkedRepos(workspace), workspace.repos[0] as WorkspaceRepo].map((repo) => ({
       repo,
       choice: choices.get(repo.projectId) ?? { force, deleteBranch },
     }));
-    for (const { repo, choice } of order) await this.removal(workspace, repo, choice.force);
-    this.timings.delete(workspaceId);
-    const host = this.terminals.host;
-    await Promise.all(
-      host
-        .list()
-        .filter((s) => s.workspaceId === workspaceId)
-        .map((s) => host.remove(s.id)),
-    );
-    this.afterSetup.delete(workspaceId);
-    const teardowns: CommandResult[] = [];
-    for (const { repo } of order) {
-      const teardown = await this.teardownRepo(workspace, repo);
-      if (teardown) teardowns.push(teardown);
+    const checkAll = () =>
+      Promise.all(order.map(({ repo, choice }) => this.removal(workspace, repo, choice.force)));
+    try {
+      await timer.time('checks', checkAll);
+      this.timings.delete(workspaceId);
+      const host = this.terminals.host;
+      await timer.time('processes stopped', () =>
+        Promise.all(
+          host
+            .list()
+            .filter((s) => s.workspaceId === workspaceId)
+            .map((s) => host.remove(s.id)),
+        ),
+      );
+      this.afterSetup.delete(workspaceId);
+      // Each in its own worktree, in parallel as setup is (spec §21.3).
+      const teardowns = (
+        await timer.time('teardown', () =>
+          Promise.all(order.map(({ repo }) => this.teardownRepo(workspace, repo))),
+        )
+      ).filter((t): t is CommandResult => t !== null);
+      // A teardown may have left changes: checked again before anything goes.
+      const removals = await timer.time('checks again', checkAll);
+      const remove = async (i: number) => {
+        const { repo, choice } = order[i] as (typeof order)[number];
+        await this.removeRepo(workspace, repo, removals[i] as Removal, choice.deleteBranch);
+        if (!repo.primary) this.records.removeRepo(workspaceId, repo.projectId);
+      };
+      // Linked ones in parallel (each its own repository); the main one only once they went.
+      const last = order.length - 1;
+      await timer.time('worktrees removed', async () => {
+        const linked = await Promise.allSettled(order.slice(0, last).map((_, i) => remove(i)));
+        const refused = linked.find((r) => r.status === 'rejected');
+        if (refused) throw refused.reason;
+        await remove(last);
+      });
+      this.records.archive(workspaceId);
+      timer.total('Delete done');
+      const failed = teardowns.filter((t) => !t.ok);
+      return {
+        teardown: failed[0] ?? teardowns[0] ?? null,
+        teardowns,
+      };
+    } catch (error) {
+      timer.total(`Delete failed (${error instanceof Error ? error.message : String(error)})`);
+      throw error;
     }
-    // A teardown may have left changes: checked again before anything goes.
-    const removals = [];
-    for (const { repo, choice } of order) {
-      removals.push(await this.removal(workspace, repo, choice.force));
-    }
-    for (const [i, { repo, choice }] of order.entries()) {
-      await this.removeRepo(workspace, repo, removals[i] as Removal, choice.deleteBranch);
-      if (!repo.primary) this.records.removeRepo(workspaceId, repo.projectId);
-    }
-    this.records.archive(workspaceId);
-    const failed = teardowns.filter((t) => !t.ok);
-    return {
-      teardown: failed[0] ?? teardowns[0] ?? null,
-      teardowns,
-    };
   }
 
   /** What removing a project would delete or stop (spec §14.3, §21.6). */

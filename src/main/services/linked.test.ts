@@ -509,6 +509,22 @@ exec sleep 30
     expect(records.get(workspace.id)).toBeNull();
   });
 
+  it("runs the repositories' teardowns in parallel (§21.6)", async () => {
+    const marks = path.join(fx.root, 'marks');
+    fs.mkdirSync(marks);
+    // Each waits until every one has started: only true when they run together.
+    const teardown = `mktemp "${marks}/started.XXXXXX" >/dev/null; i=0; while [ "$(ls "${marks}" | wc -l)" -lt 3 ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; [ $i -lt 50 ]`;
+    for (const id of ['api', 'web', 'lib']) setSetup(id, [], [teardown]);
+    const { workspace } = await create('together', ['web', 'lib']);
+    const { teardowns } = await workspaces.delete(workspace.id, {
+      force: false,
+      deleteBranch: true,
+    });
+    expect(teardowns.map((t) => t.ok)).toEqual([true, true, true]);
+    for (const r of workspace.repos) expect(fs.existsSync(r.worktreePath)).toBe(false);
+    expect(records.get(workspace.id)).toBeNull();
+  });
+
   it('a branch merged into its local base has nothing unpushed, per repository (§14.2)', async () => {
     const { workspace } = await create('merged-here', ['web']);
     const [, web] = workspace.repos as [WorkspaceRepo, WorkspaceRepo];

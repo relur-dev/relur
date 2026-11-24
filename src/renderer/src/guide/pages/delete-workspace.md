@@ -40,6 +40,6 @@ A workspace across several repositories shows one card per repository, each with
 
 ## Teardown
 
-If the project has teardown commands, they run before the worktree goes, in each repository. If one fails, you're told afterwards, but the workspace is still deleted. See [Setup for new workspaces](workspace-setup#setup-and-teardown-commands).
+If the project has teardown commands, they run before the worktree goes, in each repository at the same time. If one fails, you're told afterwards, but the workspace is still deleted. See [Setup for new workspaces](workspace-setup#setup-and-teardown-commands).
 
 The workspace's ports are released.

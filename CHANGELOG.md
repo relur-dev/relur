@@ -4,6 +4,10 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+
+- **Deleting a workspace across several repositories is much faster:** each repository's teardown, checks and worktree removal now run at the same time instead of one after another (12 s down to 3 s for nine repositories with a one-second teardown each). The primary repository's worktree still goes last, so a refusal leaves the workspace as it was. Each step's time is written to `app.log`.
+
 ## [0.7.2] - 2026-11-24
 
 ### Highlights
