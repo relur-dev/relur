@@ -41,6 +41,11 @@ import {
 import { type AppLog, PhaseTimer } from '../app-log';
 import { refreshMerged } from '../changes/finish';
 import { baseRef } from '../changes/service';
+import {
+  excludeLocalSettings,
+  LOCAL_SETTINGS,
+  setAdditionalDirectory,
+} from '../claude/local-settings';
 import type { ConfigStore } from '../config/store';
 import type { WorkspaceRecords } from '../db/workspaces';
 import type { EnvService } from '../env/service';
@@ -108,8 +113,6 @@ export interface LinkResult {
   claude: SessionInfo | null;
   /** A base that came from the local branch (spec §7.3), for the notice. */
   notes: string[];
-  /** The line to paste into Claude with Link only. */
-  addDirLine: string;
 }
 
 /** What Create started (spec §7.3). */
@@ -1527,7 +1530,8 @@ export class WorkspaceService {
    * creates its worktree with the .worktreeinclude files and the task file,
    * and runs its setup in a new Setup tab. With `restart`, a running Claude
    * restarts with the new folder once that setup passed (at once without
-   * setup); otherwise the result has the `/add-dir` line to paste.
+   * setup). Either way the folder is trusted and in the local settings'
+   * additional directories, so a running Claude takes it in at once.
    */
   async link(
     workspaceId: string,
@@ -1580,7 +1584,12 @@ export class WorkspaceService {
     if (start) this.records.setStartCommit(workspaceId, start, projectId);
 
     const linked = this.workspace(workspaceId);
-    const addDirLine = `/add-dir ${worktreePath}`;
+    // A running Claude takes the folder in without a question (spec §9.6, §21.4).
+    await this.terminals.prepareClaudeFolders(linked);
+    setAdditionalDirectory(linked.worktreePath, worktreePath, true);
+    await excludeLocalSettings(git, linked.worktreePath).catch((error: unknown) =>
+      console.warn(`excluding ${LOCAL_SETTINGS} failed`, error),
+    );
     const plan = setupPlan(project, worktreePath);
     const claudeRunning = Boolean(this.claudeSession(workspaceId));
     if (plan.error) {
@@ -1590,7 +1599,6 @@ export class WorkspaceService {
         workspace: this.workspace(workspaceId),
         setup: null,
         claude: null,
-        addDirLine,
         notes,
       };
     }
@@ -1599,10 +1607,10 @@ export class WorkspaceService {
         start: false,
         restart: restart && claudeRunning,
       });
-      return { workspace: linked, setup: setup ?? null, claude: null, addDirLine, notes };
+      return { workspace: linked, setup: setup ?? null, claude: null, notes };
     }
     const claude = restart && claudeRunning ? await this.restartClaude(workspaceId) : null;
-    return { workspace: linked, setup: null, claude, addDirLine, notes };
+    return { workspace: linked, setup: null, claude, notes };
   }
 
   /**
@@ -1657,6 +1665,7 @@ export class WorkspaceService {
     const removal = await this.removal(workspace, repo, choice.force, 'Unlink anyway');
     await this.removeRepo(workspace, repo, removal, choice.deleteBranch, 'Unlink anyway');
     this.records.removeRepo(workspaceId, projectId);
+    setAdditionalDirectory(workspace.worktreePath, repo.worktreePath, false);
     if (this.claudeSession(workspaceId)) await this.restartClaude(workspaceId);
     else await this.setupFinished(workspaceId);
     return { teardown };

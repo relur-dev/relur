@@ -12,7 +12,7 @@ In [New workspace](new-workspace), tick the other projects under **Also in**. Ea
 
 Only projects of the same profile can be linked, so one task never mixes accounts.
 
-Only link repositories you trust. Claude asks whether you trust the folder it starts in, the primary's worktree, but not the linked ones: their `CLAUDE.md`, rules and skills load without that question. New workspace and **Link another repository…** say so under the list.
+Only link repositories you trust. {{app}} marks every repository of a workspace as trusted before Claude starts or is given a new one, so Claude doesn't ask, and their `CLAUDE.md`, rules and skills load. New workspace and **Link another repository…** say so under the list.
 
 ## Setup in each repository
 
@@ -54,7 +54,7 @@ The **+** after the terminal tabs asks which repository the new shell is for; <k
 
 The workspace's **⋯** menu has:
 
-- **Link another repository…**: pick one of the profile's other projects. {{app}} adds its worktree on the workspace's branch, copies its `.worktreeinclude` files and runs its setup. Then either **Link and restart Claude** (once its setup has passed, Claude restarts with every folder and the conversation continues), or **Link only** (Claude keeps running; paste the `/add-dir …` line the dialog shows into Claude).
+- **Link another repository…**: pick one of the profile's other projects. {{app}} adds its worktree on the workspace's branch, copies its `.worktreeinclude` files and runs its setup. Then either **Link and restart Claude** (once its setup has passed, Claude restarts with every folder and the conversation continues), or **Link only** (Claude keeps running and works in the new folder too, without asking). Either way {{app}} lists the new worktree in `.claude/settings.local.json` of the primary's worktree, which a running Claude picks up at once; that file is kept out of `git status` through the repository's `info/exclude`, never its `.gitignore`. Unlinking takes the worktree off that list again.
 - **Unlink <repo>…**: deletes that repository's worktree, with the same checks as deleting a workspace, and closes its Setup and Shell tabs. A running Claude restarts without it; the conversation continues. The primary can't be unlinked.
 
 ## When Claude links one itself

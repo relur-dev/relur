@@ -85,6 +85,7 @@ k=0
 while IFS= read -r line; do
   k=$((k + 1))
   case "$line" in
+    /add-dir*) echo "$line" >> "$HOME/claude-add-dir.txt" ;;
     link\\ *) { CLAUDECODE=1 ${BRAND.cliCommand} $line; echo "exit $?"; } > "$HOME/claude-link-$k.txt" 2>&1 ;;
     later\\ *) ( sleep 2; { CLAUDECODE=1 ${BRAND.cliCommand} link "\${line#later }"; echo "exit $?"; } > "$HOME/claude-link-$k.txt" 2>&1 ) & ;;
   esac
@@ -173,6 +174,15 @@ exec sleep 600
     assert.match(context, new RegExp(`${BRAND.cliCommand} link <name>`));
     assert.doesNotMatch(context, /- shop:/);
 
+    // Claude Code's state (spec §9.6): the main checkout trusted, not the
+    // worktree, and the resume question answered; other keys kept.
+    const claudeState = () =>
+      JSON.parse(fs.readFileSync(path.join(fx.root, '.claude.json'), 'utf8'));
+    assert.equal(claudeState().resumeReturnDismissed, true);
+    assert.deepEqual(claudeState().projects, {
+      [fs.realpathSync(shop)]: { hasTrustDialogAccepted: true },
+    });
+
     // 3. Linked while another view is shown: the window's notice, "+1" on
     // the sidebar row and the Board card.
     await page.waitFor(`!!document.querySelector('[data-terminal][data-connected]')`, 'Claude');
@@ -191,6 +201,8 @@ exec sleep 600
       fx.git(treeOf('cartapi'), 'branch', '--show-current').trim(),
       'PROJ-1-claude-links',
     );
+    // A linked repository is trusted by its main checkout too (spec §9.6).
+    assert.equal(claudeState().projects[fs.realpathSync(cartapi)]?.hasTrustDialogAccepted, true);
     await page.waitFor(
       `document.querySelector('[data-board-card] [data-linked-chip]')?.textContent === '+1'`,
       "the Board card's +1",
@@ -229,6 +241,22 @@ exec sleep 600
       `document.querySelector('[data-link-notice] button[aria-label=Dismiss]').click()`,
     );
     await page.waitFor(`!document.querySelector('[data-link-notice]')`, 'the line dismissed');
+
+    // The running Claude takes both folders in from its local settings, with
+    // no `/add-dir` typed into it; the file stays out of git (spec §21.4).
+    const localSettings = JSON.parse(
+      fs.readFileSync(path.join(shopTree.trim(), '.claude', 'settings.local.json'), 'utf8'),
+    );
+    assert.deepEqual(
+      localSettings.permissions.additionalDirectories.map((d: string) => fs.realpathSync(d)),
+      [fs.realpathSync(treeOf('cartapi')), fs.realpathSync(treeOf('cartweb'))],
+    );
+    assert.doesNotMatch(fx.git(shopTree.trim(), 'status', '--porcelain'), /\.claude/);
+    assert.equal(
+      fs.existsSync(path.join(fx.root, 'claude-add-dir.txt')),
+      false,
+      'no /add-dir sent',
+    );
 
     // 6. A path that isn't a project of the profile is refused to Claude.
     const stranger = await claudeTypes('link ~/stranger');

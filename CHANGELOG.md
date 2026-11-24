@@ -4,6 +4,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Changed
+
+- **Claude no longer stops to ask** whether you trust a workspace's folder, linked repositories included, or whether to resume the conversation: Relur answers both in Claude Code's own state file before Claude starts. Trusting is permanent, and the resume answer applies to every Claude Code session of that account, not only Relur's.
+- **Link only needs no paste any more:** a running Claude works in the newly linked repository at once, without the `/add-dir` line or its "Add directory to workspace" question. Relur lists the folder in the workspace's `.claude/settings.local.json`, kept out of `git status`, and takes it off again on unlink.
+
 ## [0.7.1] - 2026-11-13
 
 ### Highlights

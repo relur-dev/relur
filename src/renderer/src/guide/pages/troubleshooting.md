@@ -32,7 +32,7 @@ Open a new terminal, or run `source ~/.zshrc` (`source ~/.bashrc` in bash). See 
 
 ## Claude asks whether you trust the folder
 
-Choose **Yes, I trust this folder**; the default answer is **No, exit**. Trust the repository once in its main checkout (**Start Claude here**), and its workspaces won't ask again.
+{{app}} marks a workspace's repositories as trusted before Claude starts, so Claude normally doesn't ask. It still can for an account Claude hasn't been used with yet, or for a `claude` you type in a shell yourself. Choose **Yes, I trust this folder**; the default answer is **No, exit**.
 
 ## Usage shows n/a or Stale
 

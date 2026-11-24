@@ -5,40 +5,16 @@ import { LINK_TRUST_NOTE, type Workspace } from '@shared/workspaces';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { GuideLink } from '../guide/link';
-import { trpcClient, useTRPC } from '../trpc';
+import { useTRPC } from '../trpc';
 import { button, Kbd, keyHint } from '../ui/controls';
 import { showAppNotice } from './EditorPicker';
 import { Modal, ModalBody, ModalFooter, modalForm } from './Modal';
 
-/** A command line with Copy ("Copied" for 1.5 s). */
-function CopyLine({ line }: { line: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="mt-2 flex items-center gap-2 rounded-md border border-line bg-term px-2.5 py-1.5">
-      <code data-add-dir-line className="min-w-0 flex-1 truncate font-mono text-sm select-text">
-        {line}
-      </code>
-      <button
-        type="button"
-        className={button('ghost', 'sm')}
-        onClick={() =>
-          void trpcClient.clipboard.writeText.mutate({ text: line }).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-        }
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </button>
-    </div>
-  );
-}
-
 /**
  * Link another repository… (spec §21.4): one of the profile's other
  * projects gets a worktree on the workspace's branch. Then Claude restarts
- * with every folder (the conversation continues), or keeps running and the
- * user pastes the `/add-dir` line.
+ * with every folder (the conversation continues), or keeps running and takes
+ * the folder in by itself.
  */
 export function LinkRepositoryDialog({
   profile,
@@ -64,7 +40,6 @@ export function LinkRepositoryDialog({
     others.find((p) => !inWorkspace.has(p.id))?.id ?? null,
   );
   const [restart, setRestart] = useState(true);
-  const [linkedLine, setLinkedLine] = useState<string | null>(null);
   const project = others.find((p) => p.id === projectId) ?? null;
   const setup = useQuery(
     trpc.projects.setup.queryOptions(
@@ -78,8 +53,7 @@ export function LinkRepositoryDialog({
         onLinked(result.setup ?? result.claude);
         // A base from the local branch (spec §7.3).
         if (result.notes.length > 0) showAppNotice(result.notes.join('\n'), true);
-        if (restart) onClose();
-        else setLinkedLine(result.addDirLine);
+        onClose();
       },
     }),
   );
@@ -87,28 +61,6 @@ export function LinkRepositoryDialog({
   const base = project?.baseBranch ?? profile.defaults.baseBranch;
   const hasSetup = (setup.data?.setup.length ?? 0) > 0;
   const total = workspace.repos.length + 1;
-
-  if (linkedLine) {
-    return (
-      <Modal
-        title={`Linked ${project?.name ?? ''}`}
-        description="Claude keeps running. Paste this into Claude so it works in the new folder too:"
-        onClose={onClose}
-      >
-        <CopyLine line={linkedLine} />
-        <ModalFooter>
-          <button
-            type="button"
-            data-autofocus
-            className={button('primary', 'lg')}
-            onClick={onClose}
-          >
-            Done <Kbd onFg>Esc</Kbd>
-          </button>
-        </ModalFooter>
-      </Modal>
-    );
-  }
 
   return (
     <Modal
@@ -215,9 +167,8 @@ export function LinkRepositoryDialog({
               <span className="min-w-0 flex-1">
                 <span className="font-medium">Link only</span>
                 <span className="block text-sm text-fg-muted">
-                  Claude keeps running. Paste this into Claude afterwards:
+                  Claude keeps running and works in the new folder too, without being asked.
                 </span>
-                {!restart && project ? <CopyLine line={`/add-dir ${worktree}`} /> : null}
               </span>
             </label>
           </div>

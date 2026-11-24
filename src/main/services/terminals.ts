@@ -8,6 +8,7 @@ import { NEW_CONVERSATION_NOTE } from '@shared/suspend';
 import type { SessionInfo, SessionKind } from '@shared/terminal-protocol';
 import { linkedRepos, type Workspace, workspaceRepo } from '@shared/workspaces';
 import { app } from 'electron';
+import { ensureClaudeCodeReady, IGNORE_PERSISTED_TRUST } from '../claude/trust';
 import type { ConfigStore } from '../config/store';
 import { buildProcessEnv } from '../env/build-env';
 import { defaultShell } from '../env/login-shell';
@@ -16,6 +17,7 @@ import { resolveExecutable } from '../env/which';
 import { expandHome } from '../paths';
 import type { SessionHost } from '../sessions/host';
 import { terminalEnv } from '../sessions/terminal-env';
+import { claudeStateFile } from '../setup/check';
 import type { LookupContext } from '../workflow/lookup';
 
 /**
@@ -494,6 +496,31 @@ export class TerminalService {
     });
   }
 
+  /**
+   * Before a workspace's folders are given to a running Claude (Link, spec
+   * §21.4): marks them as trusted in the profile's Claude Code state (§9.6).
+   */
+  async prepareClaudeFolders(workspace: Workspace): Promise<void> {
+    const project = this.project(workspace.projectId);
+    const env = await this.processEnv(this.env.profile(workspace.profileId), project, workspace);
+    await this.markReady(env, [
+      workspace.worktreePath,
+      ...linkedRepos(workspace).map((r) => r.worktreePath),
+    ]);
+  }
+
+  /**
+   * Spec §9.6: the folders a Claude starts in or is given are trusted, and the
+   * resume question answered, in the state file of the account `env` selects.
+   */
+  private markReady(env: Record<string, string>, folders: string[]): Promise<void> {
+    return ensureClaudeCodeReady(folders, {
+      stateFile: claudeStateFile(env.CLAUDE_CONFIG_DIR || undefined, env.HOME || os.homedir()),
+      gitPath: resolveExecutable('git', env),
+      env,
+    });
+  }
+
   private project(projectId: string): Project {
     const project = this.config.require().projects.find((p) => p.id === projectId);
     if (!project) throw new Error(`Unknown project "${projectId}"`);
@@ -536,6 +563,11 @@ export class TerminalService {
       this.claudeGate?.startFailed(profile.id);
       throw new Error(`"${profile.claude.command}" was not found on PATH`);
     }
+    // Neither the trust nor the resume question blocks it (spec §9.6).
+    await this.markReady(env, [
+      cwd,
+      ...(workspace ? linkedRepos(workspace).map((r) => r.worktreePath) : []),
+    ]);
     const spawn = {
       id,
       kind: 'claude' as const,
@@ -616,6 +648,8 @@ export class TerminalService {
       { locale: app.getLocale(), appVersion: app.getVersion() },
     );
     Object.assign(env, this.additions.env);
+    // It would make Claude Code ask about folders it trusts already (spec §9.6).
+    delete env[IGNORE_PERSISTED_TRUST];
     // A `claude` typed in a shell gets the same skills (spec §13.3).
     const skills = await this.skills?.pluginDirs(profile.id, sessionProjects(project, workspace));
     if (skills && skills.dirs.length > 0) env[PLUGIN_DIRS_VAR] = skills.dirs.join(path.delimiter);

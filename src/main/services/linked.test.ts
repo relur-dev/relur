@@ -441,9 +441,14 @@ exec sleep 30
     expect(session).toMatch(/^[0-9a-f-]{36}$/);
     expect(runs()[0]?.[1]).toBe(`args --settings /s.json --session-id ${session}`);
 
-    const linked = await workspaces.link(workspace.id, 'web', { restart: true });
+    await workspaces.link(workspace.id, 'web', { restart: true });
     const webPath = path.join(fx.root, 'wt', 'web', 'linking');
-    expect(linked.addDirLine).toBe(`/add-dir ${webPath}`);
+    // Spec §21.4: the running Claude's local settings list it, kept out of git.
+    const localSettings = path.join(workspace.worktreePath, '.claude', 'settings.local.json');
+    const additional = () =>
+      JSON.parse(fs.readFileSync(localSettings, 'utf8')).permissions.additionalDirectories;
+    expect(additional()).toEqual([webPath]);
+    expect(fx.git(workspace.worktreePath, 'status', '--porcelain')).not.toContain('.claude');
     expect(fs.existsSync(path.join(webPath, BRAND.repoDirName, 'task.md'))).toBe(true);
     await vi.waitFor(() => expect(runs()).toHaveLength(2));
     expect(runs()[1]?.[1]).toBe(`args --settings /s.json --resume ${session} --add-dir ${webPath}`);
@@ -455,6 +460,7 @@ exec sleep 30
     const libPath = path.join(fx.root, 'wt', 'lib', 'linking');
     await workspaces.link(workspace.id, 'lib', { restart: false });
     expect(runs()).toHaveLength(2);
+    expect(additional()).toEqual([webPath, libPath]);
     expect(records.get(workspace.id)?.repos.map((r) => r.projectId)).toEqual(['api', 'web', 'lib']);
 
     // Unlink web: its worktree goes, the branch stays unless asked, Claude restarts without it.
@@ -468,6 +474,7 @@ exec sleep 30
     expect(fx.git(webRepo, 'branch', '--list', 'linking').trim()).toBe('linking');
     await vi.waitFor(() => expect(runs()).toHaveLength(3));
     expect(runs()[2]?.[1]).toBe(`args --settings /s.json --resume ${session} --add-dir ${libPath}`);
+    expect(additional()).toEqual([libPath]);
     expect(records.get(workspace.id)?.repos.map((r) => r.projectId)).toEqual(['api', 'lib']);
   });
 
