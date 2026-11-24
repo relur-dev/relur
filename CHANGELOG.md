@@ -4,6 +4,8 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-24
+
 ### Changed
 
 - **Deleting a workspace across several repositories is much faster:** each repository's teardown, checks and worktree removal now run at the same time instead of one after another (12 s down to 3 s for nine repositories with a one-second teardown each). The primary repository's worktree still goes last, so a refusal leaves the workspace as it was. Each step's time is written to `app.log`.
@@ -302,7 +304,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/relur-dev/relur/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/relur-dev/relur/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/relur-dev/relur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/relur-dev/relur/compare/v0.6.2...v0.7.0
