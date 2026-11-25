@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BRAND } from '@shared/brand';
+import { githubPreset } from '@shared/merge-prs';
 import { repoNameProblem } from '@shared/new-repository';
 import { projectSlug, WORKTREES_DIR } from '@shared/projects';
 import type { Project, SetupSettings } from '@shared/schemas';
@@ -323,6 +324,17 @@ export class ProjectService {
     }
     return this.updateProject(projectId, (entry) => {
       entry.remote = remote;
+    });
+  }
+
+  /**
+   * The GitHub CLI preset (spec §12.6): the project's own PR status and merge
+   * commands, which then override its profile's; its other PR settings stay.
+   */
+  async useGithubPreset(projectId: string): Promise<Project> {
+    const preset = githubPreset();
+    return this.updateProject(projectId, (entry) => {
+      entry.pr = { ...(entry.pr ?? {}), ...preset };
     });
   }
 

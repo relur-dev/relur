@@ -7,6 +7,7 @@ import {
   type WorkspaceChanges,
 } from '@shared/changes';
 import type { BaseUpstream } from '@shared/merge';
+import { type PrDetails, prDetails } from '@shared/merge-prs';
 import {
   DEFAULT_CREATE_PR_PROMPT,
   type Profile,
@@ -82,6 +83,8 @@ export function prSettings(profile: Profile, project: Project): PrSettings {
     statusCommand: own.statusCommand ?? base.statusCommand ?? null,
     createCommand: own.createCommand ?? base.createCommand ?? null,
     createPrompt: own.createPrompt ?? base.createPrompt ?? DEFAULT_CREATE_PR_PROMPT,
+    mergeCommand: own.mergeCommand ?? base.mergeCommand ?? null,
+    mergeMethod: own.mergeMethod ?? base.mergeMethod ?? null,
     timeoutSec: own.timeoutSec ?? base.timeoutSec ?? DEFAULT_COMMAND_TIMEOUT_SEC,
   };
 }
@@ -368,7 +371,7 @@ export class FinishService {
    * workspace's, with the base branch and worktree of the repository it runs
    * for, since a linked repository's differ from the main one's.
    */
-  private async prCommandEnv(workspace: Workspace, repo: WorkspaceRepo) {
+  async prCommandEnv(workspace: Workspace, repo: WorkspaceRepo) {
     const { shell, env } = await this.terminals.workspaceCommandEnv(workspace, repo.projectId);
     env[envVar('BASE_BRANCH')] = repo.baseBranch;
     env[envVar('WORKTREE_PATH')] = repo.worktreePath;
@@ -818,6 +821,11 @@ export class FinishService {
     return repo;
   }
 
+  /** A project's name, its id when it is gone. */
+  projectNameOf(projectId: string): string {
+    return this.projectName(projectId);
+  }
+
   private projectName(projectId: string): string {
     return this.config.get().config?.projects.find((p) => p.id === projectId)?.name ?? projectId;
   }
@@ -840,12 +848,13 @@ export class FinishService {
 }
 
 /** Runs a command that prints JSON; a failure, timeout or bad JSON throws with its output. */
-async function runJsonCommand(
+export async function runJsonCommand(
   shell: string,
   command: string,
   cwd: string,
   env: Record<string, string>,
   timeoutSec = DEFAULT_COMMAND_TIMEOUT_SEC,
+  label = 'The PR status command',
 ): Promise<string> {
   const { execFile } = await import('node:child_process');
   return new Promise((resolve, reject) => {
@@ -859,8 +868,8 @@ async function runJsonCommand(
           reject(
             new Error(
               timedOut
-                ? `The PR status command timed out after ${timeoutSec} s`
-                : `The PR status command failed: ${stderr.trim() || error.message}`,
+                ? `${label} timed out after ${timeoutSec} s`
+                : `${label} failed: ${lastLines(stderr) || lastLines(stdout) || error.message}`,
             ),
           );
         } else resolve(stdout);
@@ -868,6 +877,9 @@ async function runJsonCommand(
     );
   });
 }
+
+/** A command's last lines of output, enough to say why it failed. */
+const lastLines = (text: string) => text.trim().split('\n').slice(-5).join('\n').trim();
 
 /** The PR status command's output (spec §12.3): one JSON object, or nothing / `null`. */
 export function parsePrStatus(output: string): PrStatus | null {
@@ -880,6 +892,17 @@ export function parsePrOutput(output: string): { status: PrStatus | null; title:
   if (!status) return { status, title: null };
   const title = (JSON.parse(output.trim()) as { title?: unknown }).title;
   return { status, title: typeof title === 'string' && title.trim() ? title.trim() : null };
+}
+
+/**
+ * The PR status command's output with the fields Merge all PRs reads
+ * (spec §12.3, §21.10); null when the branch has no pull request.
+ */
+export function parsePrDetails(output: string): PrDetails | null {
+  const status = parseStatus(output);
+  if (!status) return null;
+  const value = JSON.parse(output.trim()) as Record<string, unknown>;
+  return prDetails(value, status.state as PrDetails['state'], status.url);
 }
 
 function parseStatus(output: string): PrStatus | null {

@@ -2749,10 +2749,19 @@ exec sleep 600
     // Spec §21.9: Claude gets the settings file with the ask rule for the
     // link command; turning off Ask before Claude links a repository in Edit
     // profile gives the next start the plain one (the Unlink restart below).
+    // Both always ask before the merge command (§21.10).
     const settingsOf = (run: string[]) => run[run.indexOf('--settings') + 1] as string;
+    const mergeRules = [
+      `Bash(${BRAND.cliCommand} merge:*)`,
+      `Bash(${BRAND.helperCommand} merge:*)`,
+    ];
     assert.equal(path.basename(settingsOf(relinked)), 'settings-ask-link.json');
     assert.deepEqual(JSON.parse(fs.readFileSync(settingsOf(relinked), 'utf8')).permissions, {
-      ask: [`Bash(${BRAND.cliCommand} link:*)`, `Bash(${BRAND.helperCommand} link:*)`],
+      ask: [
+        `Bash(${BRAND.cliCommand} link:*)`,
+        `Bash(${BRAND.helperCommand} link:*)`,
+        ...mergeRules,
+      ],
     });
     await chooseFromNextContextMenu(mainProcess, 'Edit profile…');
     await openContextMenu(page, '[aria-label="Select Work"]');
@@ -2809,6 +2818,9 @@ exec sleep 600
     await page.waitFor(`!document.querySelector('dialog[open]')`, 'unlinked cartweb', 30_000);
     const unlinked = (await claudeRun(11)).split('\n');
     assert.equal(path.basename(settingsOf(unlinked)), 'settings.json');
+    assert.deepEqual(JSON.parse(fs.readFileSync(settingsOf(unlinked), 'utf8')).permissions, {
+      ask: mergeRules,
+    });
     assert.deepEqual(
       unlinked.filter((_a, i) => unlinked[i - 1] === '--add-dir'),
       [apiTree],

@@ -9,6 +9,7 @@ import type { Editor } from '@shared/schemas';
 import {
   EditorSchema,
   IdSchema,
+  MergeMethodSchema,
   SetupSettingsSchema,
   SoundsSchema,
   TaskLookupSchema,
@@ -21,6 +22,7 @@ import { app, BrowserWindow, clipboard, dialog, nativeTheme, shell, webContents 
 import { z } from 'zod';
 import type { FinishService } from '../changes/finish';
 import type { MergeService } from '../changes/merge';
+import type { MergePrsService } from '../changes/merge-prs';
 import { watchWorktrees } from '../changes/watch';
 import { cachedConversation, lastWordsOf, pruneConversations } from '../claude/last-words';
 import { readResponses, watchTranscript } from '../claude/transcript';
@@ -82,6 +84,8 @@ export interface Services {
   finish: FinishService;
   /** Merge into the base (spec §14.4). */
   merge: MergeService;
+  /** Merge all PRs (spec §21.10). */
+  mergePrs: MergePrsService;
   editors: EditorService;
   setup: SetupService;
   profiles: ProfileService;
@@ -140,6 +144,7 @@ export function createAppRouter({
   remoteWatch,
   finish,
   merge,
+  mergePrs,
   editors,
   setup,
   profiles,
@@ -542,7 +547,11 @@ export function createAppRouter({
               .nullable()
               .optional(),
             pr: z
-              .object({ createCommand: z.string().max(2000), statusCommand: z.string().max(2000) })
+              .object({
+                createCommand: z.string().max(4000),
+                statusCommand: z.string().max(4000),
+                mergeCommand: z.string().max(4000).optional(),
+              })
               .optional(),
             resume: z
               .object({ continueAtStart: z.boolean(), prompt: z.string().max(4000) })
@@ -709,6 +718,10 @@ export function createAppRouter({
       setRemote: publicProcedure
         .input(projectId.extend({ remote: z.string().min(1).max(250).nullable() }))
         .mutation(({ input }) => projects.setRemote(input.projectId, input.remote)),
+      /** Fills the project's PR status and merge commands with the GitHub CLI preset (spec §12.6). */
+      useGithubPreset: publicProcedure
+        .input(projectId)
+        .mutation(({ input }) => projects.useGithubPreset(input.projectId)),
       /** A project without a remote took `origin` (spec §6.10), for the notice. */
       remoteFound: publicProcedure.subscription(({ signal }) =>
         fromListener<RemoteFound>((listener) => remoteWatch.onFound(listener), signal),
@@ -1207,6 +1220,45 @@ export function createAppRouter({
       dismissMerge: publicProcedure
         .input(workspaceId)
         .mutation(({ input }) => merge.dismiss(input.workspaceId)),
+      /** Merge all PRs (spec §21.10): every repository checked, before anything is merged. */
+      mergePrsPreflight: publicProcedure
+        .input(workspaceId)
+        .mutation(({ input }) => mergePrs.preflight(input.workspaceId)),
+      /** Merges in the order given, stopping at the first failure. */
+      mergePrs: publicProcedure
+        .input(
+          workspaceId.extend({
+            order: z.array(z.string()),
+            methods: z.record(z.string(), MergeMethodSchema),
+            deleteBranch: z.boolean(),
+          }),
+        )
+        .mutation(({ input }) => mergePrs.merge(input.workspaceId, input)),
+      /** Every workspace's Merge all PRs run: merging, or its report. */
+      mergePrsRuns: publicProcedure.query(() => mergePrs.list()),
+      mergePrsChanges: publicProcedure.subscription(({ signal }) =>
+        fromListener<true>((listener) => mergePrs.onChange(() => listener(true)), signal),
+      ),
+      /** Bridge merges waiting for their click in the app (spec §21.10). */
+      mergePrsConfirmations: publicProcedure.query(() => mergePrs.pendingConfirmations()),
+      /** The click: merges with the order and methods the dialog shows. */
+      confirmMergePrs: publicProcedure
+        .input(
+          workspaceId.extend({
+            id: z.string(),
+            order: z.array(z.string()),
+            methods: z.record(z.string(), MergeMethodSchema),
+            deleteBranch: z.boolean(),
+          }),
+        )
+        .mutation(({ input }) => mergePrs.confirm(input.workspaceId, input.id, input)),
+      /** Closed without Merge, or an expired one closed. */
+      cancelMergePrsConfirmation: publicProcedure
+        .input(workspaceId.extend({ id: z.string() }))
+        .mutation(({ input }) => mergePrs.cancelConfirmation(input.workspaceId, input.id)),
+      dismissMergePrs: publicProcedure
+        .input(workspaceId)
+        .mutation(({ input }) => mergePrs.dismiss(input.workspaceId)),
       /** Checks every repository's PR (spec §21.5). */
       refreshPr: publicProcedure
         .input(workspaceId)

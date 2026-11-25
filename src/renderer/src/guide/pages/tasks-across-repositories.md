@@ -88,6 +88,24 @@ To [merge locally](finishing-work#merge-into-your-local-base) instead, each repo
 
 The workspace counts as merged once every repository with commits is merged; then it offers to delete itself.
 
+## Merging every pull request
+
+When the pull requests have to land together, **Merge all PRs** in the workspace header merges each repository's pull request into its base on the host (GitHub, say), one after another. Nothing is merged on your machine. It needs a PR status command and a PR merge command: **Use GitHub CLI** in the project view sets both with `gh` (see [PR commands](finishing-work#pr-commands)).
+
+The button is enabled once every repository has a pull request. It first checks every repository at once, and lists them in the order they'll merge: the primary first, then the others in the order they were linked. Move rows up or down to change it, for example infrastructure before the services that need it. Each row says what's in the way, in plain words:
+
+- uncommitted files, commits not pushed, or commits on the remote branch you haven't pulled;
+- a draft, a closed pull request, or one into another base branch;
+- conflicts, checks still running or failed, a review missing.
+
+Fix those and press **Re-check**; **Merge** stays disabled until every row passes. Checks still running count as not ready: there's no automatic merge when they pass, so check again later. Each row also has its merge method (squash, else a merge commit, else rebase, whichever the repository allows), and **Delete remote branch after merge** is ticked.
+
+Merging goes in that order, checking each pull request once more just before. **The first failure stops it**: the rest are skipped, and the ones already merged stay merged. A merge on the host can't be undone from {{app}}, and the dialog says so before you confirm. The report shows what merged (with its commit), what failed and why, and what was skipped. Fix the cause and run it again: pull requests merged already are skipped. Once all are merged, the workspace shows Merged and the dialog offers **Delete workspace…** to clean up the worktrees; nothing is deleted on its own.
+
+From a terminal of the workspace, or by Claude, `{{cli}} merge` asks for the same: it prints the checks, then asks {{app}} to merge. **Nothing merges until you press Merge in {{app}}**: the window comes to the front with the Merge all PRs dialog open, saying who asked ("Requested from the command line by Claude in …"), with the order and methods asked for, which you can still change. Merge, and the command line prints the report; Cancel, and it says "Not confirmed". After 10 minutes without an answer the request expires. `--yes` only skips the question in the terminal (Claude needs it), never the click in {{app}}. `--order infra,api` merges those first, `--method api=rebase` picks a method, `--keep-branch` keeps the remote branches. Claude Code also asks you before Claude runs it.
+
+If a merge command fails after the host merged the pull request (a clean-up step of its own, say), {{app}} checks the pull request again: when it's merged, it counts as merged, with a warning under its row, and the rest go on.
+
 ## Deleting
 
 [Deleting the workspace](delete-workspace) removes every worktree, with one card per repository and its own **Also delete the local branch**. [Removing a project](remove-project) that is linked into another project's workspace deletes only its worktree there; the workspace stays.

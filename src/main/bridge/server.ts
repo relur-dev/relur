@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { BRAND } from '@shared/brand';
+import type { MergePrsPreflight, MergePrsReport } from '@shared/merge-prs';
 
 /** A hook event as the helper forwards it (spec §10.1). */
 export interface HookMessage {
@@ -90,6 +91,25 @@ export type LinkResponse =
     }
   | { ok: false; error: string };
 
+/** `<slug> merge` (spec §21.10), from a workspace's Claude or terminals. */
+export interface MergeCliRequest {
+  /** `preflight` checks every repository; `merge` merges them in order. */
+  action: 'preflight' | 'merge';
+  workspaceId: string | null;
+  /** Repository names or ids from `--order`; the rest follow in the default order. */
+  order: string[];
+  /** `--method <repo>=<method>`, by name or id. */
+  methods: Record<string, string>;
+  /** Not `--keep-branch`. */
+  deleteBranch: boolean;
+  /** Run by Claude's Bash tool (`CLAUDECODE` set); only for the dialog's "who asked". */
+  byClaude: boolean;
+}
+
+export type MergeCliResponse =
+  | { ok: true; branch: string; preflight: MergePrsPreflight | null; report: MergePrsReport | null }
+  | { ok: false; error: string };
+
 /** `<slug> projects` (spec §21.9). */
 export interface ProjectsRequest {
   workspaceId: string | null;
@@ -114,6 +134,7 @@ export interface CliHandlers {
   add: (request: AddRequest) => Promise<AddResult>;
   link: (request: LinkRequest) => Promise<LinkResponse>;
   projects: (request: ProjectsRequest) => ProjectsResponse;
+  merge: (request: MergeCliRequest) => Promise<MergeCliResponse>;
   /** Context for Claude at SessionStart in a workspace (spec §21.9), or null. */
   sessionNote: (workspaceId: string | null) => string | null;
 }
@@ -308,6 +329,31 @@ export class HookBridge {
             byClaude: body.byClaude === true,
           })
           .catch((error: unknown): LinkResponse => ({ ok: false, error: message(error) }));
+        return reply(200, result);
+      }
+      case '/merge': {
+        if (!this.cli) return reply(503, { ok: false, error: 'not ready' });
+        const action = body.action === 'merge' ? 'merge' : 'preflight';
+        const order = Array.isArray(body.order)
+          ? body.order.filter((v): v is string => typeof v === 'string')
+          : [];
+        const methods = isRecord(body.methods)
+          ? Object.fromEntries(
+              Object.entries(body.methods).filter(
+                (e): e is [string, string] => typeof e[1] === 'string',
+              ),
+            )
+          : {};
+        const result = await this.cli
+          .merge({
+            action,
+            workspaceId: str(body.workspaceId),
+            order,
+            methods,
+            deleteBranch: body.deleteBranch !== false,
+            byClaude: body.byClaude === true,
+          })
+          .catch((error: unknown): MergeCliResponse => ({ ok: false, error: message(error) }));
         return reply(200, result);
       }
       case '/projects': {

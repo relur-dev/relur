@@ -79,6 +79,10 @@ By default {{app}} needs no setup for pull requests: Claude opens them, and git 
 - `createCommand` runs in the worktree with the workspace's environment, and the panel shows its output. In a workspace across several repositories, each repository's command gets that repository's own base branch and worktree in `${{env:BASE_BRANCH}}` and `${{env:WORKTREE_PATH}}`.
 - `statusCommand` prints one JSON object, `{ "state": "open", "url": "…" }`, with `open`, `draft`, `merged` or `closed`, or nothing when the branch has no pull request. It may add `"title"`: New workspace then names the task after the pull request when you pick an [existing branch](new-workspace#from-an-existing-branch). With `gh`, add `title` to `--json` and to the `jq` object.
 
+- `mergeCommand` merges the pull request on its host, for [Merge all PRs](tasks-across-repositories#merging-every-pull-request). It gets the method in `${{env:MERGE_METHOD}}` (`squash`, `merge` or `rebase`) and the pushed commit it was checked at in `${{env:PR_HEAD}}`; exit 0 means merged. Its last line may be `{ "commit": "…", "commitUrl": "…" }`. For Merge all PRs, `statusCommand` also prints `base` and `mergeable` (`true`, `false`, or `null` while the host is still working it out), and may print `head`, `conflicts`, `checks` (`passed`, `pending`, `failed`), `reviews` (`approved`, `required`, `changes-requested`), `methods` and `blockedReason`. `mergeMethod` picks the method it starts with.
+
+**Use GitHub CLI** in the project view writes a `statusCommand` and a `mergeCommand` for that project that do all of this with `gh` and `jq`. They're plain commands in `config.json`: change them as you like.
+
 A project's `pr` fields override the profile's. With either command set, [Home](home) also lists a pushed workspace without a pull request under Ready to ship, with **Create PR**; without them it doesn't, since you may merge locally instead. Either way, a branch you can still merge stays under Ready to ship, with **Merge into main**.
 
 ## Commit identity

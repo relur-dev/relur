@@ -40,6 +40,10 @@ Without `--all`, a folder that isn't a repository is refused with a hint to use 
 
 In a workspace's terminals, and in its Claude, `{{cli}} link <project>` links another repository to that workspace (by the project's name, id or repository path), and `{{cli}} projects` lists the profile's projects. See [Tasks across repositories](tasks-across-repositories).
 
+## Merging the pull requests
+
+In a workspace's terminals, and in its Claude, `{{cli}} merge` merges every repository's pull request on its host, one after another, as [Merge all PRs](tasks-across-repositories#merging-every-pull-request) does. It waits for you to press Merge in {{app}}'s dialog, which opens by itself (at most 10 minutes); `--yes` only skips the terminal's question. `--order`, `--method` and `--keep-branch` change the rest.
+
 ## Which profile
 
 - In a terminal of {{app}}, the profile is that terminal's own, and adding to another profile is refused.

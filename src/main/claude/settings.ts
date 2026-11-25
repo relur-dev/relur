@@ -26,6 +26,15 @@ export const LINK_ASK_RULES = [
   `Bash(${BRAND.helperCommand} link:*)`,
 ];
 
+/**
+ * The ask rules for merging pull requests (spec §21.10): always set, so
+ * Claude Code asks before Claude runs `<slug> merge`, `--yes` or not.
+ */
+export const MERGE_ASK_RULES = [
+  `Bash(${BRAND.cliCommand} merge:*)`,
+  `Bash(${BRAND.helperCommand} merge:*)`,
+];
+
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
@@ -35,7 +44,8 @@ const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
  * line runs `<helper> statusline`, which prints the profile's own one.
  *
  * With `askBeforeLink`, ask permission rules make Claude ask before it runs
- * `<slug> link` or `<helper> link` (spec §21.9), in auto mode too.
+ * `<slug> link` or `<helper> link` (spec §21.9), in auto mode too. Claude
+ * always asks before `<slug> merge` (spec §21.10).
  *
  * `markersDir` is the §9.3 smoke test (dev flag `<PREFIX>SMOKE_MARKERS`):
  * every event also appends its name to `injected.log` there, and the status
@@ -50,7 +60,9 @@ export function claudeSettings({
   markersDir?: string;
   askBeforeLink?: boolean;
 } = {}): Record<string, unknown> {
-  const permissions = askBeforeLink ? { permissions: { ask: LINK_ASK_RULES } } : {};
+  const permissions = {
+    permissions: { ask: [...(askBeforeLink ? LINK_ASK_RULES : []), ...MERGE_ASK_RULES] },
+  };
   const log = (file: string, text: string) =>
     `printf '%s\\n' ${quote(text)} >> ${quote(path.join(markersDir ?? '', file))}`;
   const commands = (event: string) => [

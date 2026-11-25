@@ -2,12 +2,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type CliHandlers, HookBridge, type HookMessage, type LinkRequest } from './server';
+import {
+  type CliHandlers,
+  HookBridge,
+  type HookMessage,
+  type LinkRequest,
+  type MergeCliRequest,
+} from './server';
 
 const cli: CliHandlers = {
   add: async () => ({ ok: false, error: 'unused' }),
   link: async () => ({ ok: false, error: 'unused' }),
   projects: () => ({ ok: false, error: 'unused' }),
+  merge: async () => ({ ok: false, error: 'unused' }),
   sessionNote: () => null,
 };
 
@@ -156,6 +163,52 @@ describe('HookBridge', () => {
       ok: true,
       projects: [{ id: 'web' }],
     });
+  });
+
+  it('answers merge requests with their fields cleaned up (spec §21.10)', async () => {
+    const asked: MergeCliRequest[] = [];
+    bridge.handleCli({
+      ...cli,
+      merge: async (r) => {
+        asked.push(r);
+        if (r.workspaceId === 'boom') throw new Error('boom');
+        return { ok: true, branch: 'b', preflight: null, report: null };
+      },
+    });
+    expect(
+      await (
+        await post('/merge', {
+          action: 'merge',
+          workspaceId: 'ws',
+          order: ['api', 3, 'web'],
+          methods: { api: 'squash', web: 1 },
+          deleteBranch: false,
+          byClaude: true,
+        })
+      ).json(),
+    ).toEqual({ ok: true, branch: 'b', preflight: null, report: null });
+    expect(await (await post('/merge', { workspaceId: 'boom' })).json()).toEqual({
+      ok: false,
+      error: 'boom',
+    });
+    expect(asked).toEqual([
+      {
+        action: 'merge',
+        workspaceId: 'ws',
+        order: ['api', 'web'],
+        methods: { api: 'squash' },
+        deleteBranch: false,
+        byClaude: true,
+      },
+      {
+        action: 'preflight',
+        workspaceId: 'boom',
+        order: [],
+        methods: {},
+        deleteBranch: true,
+        byClaude: false,
+      },
+    ]);
   });
 
   it("answers SessionStart with Claude's note, other hooks with nothing", async () => {

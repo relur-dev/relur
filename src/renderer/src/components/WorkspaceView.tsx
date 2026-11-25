@@ -39,6 +39,7 @@ import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
 import { FlagMark, flagging, flagHint, flagMenuItems, runFlagChoice } from './Flag';
 import { LinkRepositoryDialog } from './LinkRepositoryDialog';
+import { MergePrsButton, MergePrsDialog, useMergePrsConfirmation } from './MergePrsDialog';
 import { NotesPanel } from './NotesPanel';
 import { RepoChips } from './RepoChips';
 import { ResponsesPanel } from './ResponsesPanel';
@@ -351,6 +352,15 @@ export function WorkspaceView({
     ),
   });
   const [linking, setLinking] = useState(false);
+  const [mergingPrs, setMergingPrs] = useState(false);
+  // A bridge merge waiting for its click opens the dialog (spec §21.10), once.
+  const confirmation = useMergePrsConfirmation(workspace.id);
+  const confirmationShown = useRef<string | null>(null);
+  useEffect(() => {
+    if (confirmation?.state !== 'pending' || confirmationShown.current === confirmation.id) return;
+    confirmationShown.current = confirmation.id;
+    setMergingPrs(true);
+  }, [confirmation]);
   // Open in editor (spec §6.13): a repository in its project's editor; Open all.
   const editorOpen = useOpenInEditor();
   const [openAll, setOpenAll] = useState(false);
@@ -769,6 +779,13 @@ export function WorkspaceView({
               if (!changesOpen) onToggleChanges();
             }}
           />
+          {linked ? (
+            <MergePrsButton
+              workspace={workspace}
+              name={projectName}
+              onOpen={() => setMergingPrs(true)}
+            />
+          ) : null}
         </div>
         {workspace.workflow ? (
           <div data-workflow className="mt-2 flex min-w-0 items-center gap-3">
@@ -1090,6 +1107,13 @@ export function WorkspaceView({
       {editorOpen.dialog}
       {openAll ? (
         <OpenAllDialog workspaceId={workspace.id} onClose={() => setOpenAll(false)} />
+      ) : null}
+      {mergingPrs ? (
+        <MergePrsDialog
+          workspace={workspace}
+          onClose={() => setMergingPrs(false)}
+          onDelete={onDelete}
+        />
       ) : null}
       {linking ? (
         <LinkRepositoryDialog

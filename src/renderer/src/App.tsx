@@ -89,6 +89,18 @@ export function App() {
       },
     }),
   );
+  // Merge all PRs (spec §21.10): its progress and report, and the PR badges after it.
+  useSubscription(
+    trpc.changes.mergePrsChanges.subscriptionOptions(undefined, {
+      onData: () => {
+        void queryClient.invalidateQueries({ queryKey: trpc.changes.mergePrsRuns.queryKey() });
+        void queryClient.invalidateQueries({
+          queryKey: trpc.changes.mergePrsConfirmations.queryKey(),
+        });
+        void queryClient.invalidateQueries({ queryKey: trpc.workspaces.list.queryKey() });
+      },
+    }),
+  );
   // Continuing interrupted work (spec §9.7): the notice and the start's overview.
   const unfinished = useQuery(trpc.unfinished.state.queryOptions());
   useSubscription(
@@ -396,6 +408,20 @@ export function App() {
     showView(w.profileId, { kind: 'workspace', projectId: w.projectId, workspaceId: w.id });
     disclosure.opened(w.profileId, w.id, w.projectId);
   };
+  // A merge asked for over the bridge (spec §21.10): its workspace is shown,
+  // where the Merge all PRs dialog opens for the click it waits for.
+  const confirmations = useQuery(trpc.changes.mergePrsConfirmations.queryOptions());
+  const shownConfirmations = useRef(new Set<string>());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: openWorkspace changes every render
+  useEffect(() => {
+    for (const c of confirmations.data ?? []) {
+      if (c.state !== 'pending' || shownConfirmations.current.has(c.id)) continue;
+      const target = workspaces.data?.find((w) => w.id === c.workspaceId);
+      if (!target) continue;
+      shownConfirmations.current.add(c.id);
+      openWorkspace(target);
+    }
+  }, [confirmations.data, workspaces.data]);
   openRequest.current = (workspaceId) => {
     const target = workspaces.data?.find((w) => w.id === workspaceId);
     if (!target) return;

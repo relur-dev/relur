@@ -20,6 +20,7 @@
   "markers",
   "notes",
   "merge",
+  "merge-prs",
   "drop",
   "dialogs"
 ]

@@ -15,6 +15,7 @@ import { followAppearance } from './appearance';
 import { HookBridge } from './bridge/server';
 import { FinishService, PR_POLL_MS } from './changes/finish';
 import { MergeService } from './changes/merge';
+import { MergePrsService } from './changes/merge-prs';
 import { claudeSettings, writeClaudeSettings } from './claude/settings';
 import { awaitLastResponse, readPrompts, shownPrompt } from './claude/transcript';
 import { ConfigStore } from './config/store';
@@ -730,6 +731,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       add: (request) => projects.addFromCli(request),
       link: (request) => cliLink.link(request),
       projects: (request) => cliLink.projectList(request),
+      merge: (request) => mergePrs.cli(request),
       sessionNote: (workspaceId) => cliLink.sessionNote(workspaceId),
     });
     // PR status (spec §12.4): every 5 minutes, and when the window gains focus.
@@ -741,6 +743,11 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
       (workspaceId, prompt) => terminals.sendToClaude(workspaceId, prompt),
       status,
     );
+    // Merge all PRs (spec §21.10), from the header's dialog and `<slug> merge`.
+    const mergePrs = new MergePrsService(finish, (id) => workspaceRecords.get(id), {
+      // A bridge merge waits for a click in the app: the window comes forward.
+      onConfirmRequested: () => showMainWindow(),
+    });
     const prTimer = setInterval(() => void finish.refreshAll(), PR_POLL_MS);
     atShutdown(() => clearInterval(prTimer));
     let lastFocusCheck = 0;
@@ -761,6 +768,7 @@ if (!isSelfTest && !app.requestSingleInstanceLock()) {
     serveTrpcOverIpc({
       finish,
       merge,
+      mergePrs,
       editors,
       quit: { asker: quitAsker, answer: (quit: boolean) => answerQuit?.(quit) },
       unfinished: continuing,

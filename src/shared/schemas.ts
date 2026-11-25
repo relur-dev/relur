@@ -28,11 +28,18 @@ export const CommitIdentitySchema = z.object({
 export const DEFAULT_CREATE_PR_PROMPT =
   'Open a pull request from this branch into {base}. Title: "{id}: {title}". Link the task: {url}.';
 
-/** PR commands (spec §12.3, §14.1); a project's fields override its profile's. */
+/** How a pull request is merged on its host (spec §21.10). */
+export const MergeMethodSchema = z.enum(['squash', 'merge', 'rebase']);
+
+/** PR commands (spec §12.3, §14.1, §21.10); a project's fields override its profile's. */
 export const PrSettingsSchema = z.object({
   statusCommand: z.string().min(1).nullish(),
   createCommand: z.string().min(1).nullish(),
   createPrompt: z.string().min(1).nullish(),
+  /** Merges the branch's pull request on its host (Merge all PRs, §21.10). */
+  mergeCommand: z.string().min(1).nullish(),
+  /** The merge method Merge all PRs starts with, when the host allows it (§21.10). */
+  mergeMethod: MergeMethodSchema.nullish(),
   timeoutSec: z.number().int().positive().optional(),
 });
 
@@ -324,5 +331,6 @@ export type EditorKind = (typeof EDITOR_KINDS)[number];
 export type Project = z.infer<typeof ProjectSchema>;
 export type SetupSettings = z.infer<typeof SetupSettingsSchema>;
 export type PrSettings = z.infer<typeof PrSettingsSchema>;
+export type MergeMethod = z.infer<typeof MergeMethodSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 export type ConfigInput = z.input<typeof ConfigSchema>;

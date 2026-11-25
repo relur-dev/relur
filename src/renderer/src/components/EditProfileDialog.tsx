@@ -74,6 +74,7 @@ export function EditProfileDialog({
   const [commitEmail, setCommitEmail] = useState(profile.git?.commitEmail ?? '');
   const [prCreate, setPrCreate] = useState(profile.pr?.createCommand ?? '');
   const [prStatus, setPrStatus] = useState(profile.pr?.statusCommand ?? '');
+  const [prMerge, setPrMerge] = useState(profile.pr?.mergeCommand ?? '');
   const [confirmRemove, setConfirmRemove] = useState(false);
   const setup = useQuery(trpc.setup.get.queryOptions({ profileId: profile.id }));
   const refusal = useQuery(trpc.profiles.removalRefusal.queryOptions({ profileId: profile.id }));
@@ -110,7 +111,7 @@ export function EditProfileDialog({
       statusLine: statusLine.trim() || null,
       askBeforeLink,
       git: commitName.trim() || commitEmail.trim() ? { commitName, commitEmail } : null,
-      pr: { createCommand: prCreate, statusCommand: prStatus },
+      pr: { createCommand: prCreate, statusCommand: prStatus, mergeCommand: prMerge },
       resume: { continueAtStart, prompt: continuePrompt },
       suspendIdleMin,
     });
@@ -278,9 +279,20 @@ export function EditProfileDialog({
                 value={prStatus}
                 onChange={(e) => setPrStatus(e.target.value)}
               />
+              <label className="mt-2 block text-sm text-fg-muted" htmlFor="edit-profile-pr-merge">
+                PR merge <span className="text-fg-subtle">· for Merge all PRs</span>
+              </label>
+              <input
+                id="edit-profile-pr-merge"
+                className={`${inputClass} font-mono text-sm`}
+                placeholder={`gh pr merge "$${BRAND.envPrefix}BRANCH" "--$${BRAND.envPrefix}MERGE_METHOD"`}
+                spellCheck={false}
+                value={prMerge}
+                onChange={(e) => setPrMerge(e.target.value)}
+              />
               <p data-pr-hint className="mt-1 text-sm text-fg-subtle">
-                Leave both empty: Claude opens pull requests and git tells when they're merged. A
-                project's own commands in config.json override these.
+                Leave them empty: Claude opens pull requests and git tells when they're merged. A
+                project's own commands override these; Use GitHub CLI in the project view sets them.
               </p>
             </fieldset>
 

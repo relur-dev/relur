@@ -4,6 +4,11 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Merge all PRs:** a workspace across several repositories can merge every repository's pull request on its host with one button in its header, in an order you choose (infrastructure before services, say). Every repository is checked first (pushed and clean, the pull request open, mergeable, checks passed and reviews done), each problem in plain words, with **Re-check**. Merging goes one at a time and stops at the first failure; what merged stays merged, and the report says what merged, what failed and why, and what was skipped. Each repository's merge method can be chosen, and the remote branches are deleted afterwards unless you untick it. `relur merge` asks for the same from a terminal or by Claude, but nothing merges until you press Merge in the dialog Relur opens for it.
+- **Use GitHub CLI** in the project view sets the project's PR status and merge commands to ones that use `gh` and `jq`, so Merge all PRs works without writing scripts. Edit profile has a **PR merge** command for other hosts.
+
 ## [0.7.3] - 2026-11-24
 
 ### Changed

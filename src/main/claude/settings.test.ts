@@ -1,23 +1,33 @@
 import { BRAND } from '@shared/brand';
 import { describe, expect, it } from 'vitest';
-import { claudeSettings, HOOK_EVENTS, LINK_ASK_RULES } from './settings';
+import { claudeSettings, HOOK_EVENTS, LINK_ASK_RULES, MERGE_ASK_RULES } from './settings';
 
 describe('claudeSettings', () => {
-  it('is empty without the helper', () => {
-    expect(claudeSettings()).toEqual({});
+  it('has only the merge ask rules without the helper (spec §21.10)', () => {
+    expect(claudeSettings()).toEqual({
+      permissions: {
+        ask: [`Bash(${BRAND.cliCommand} merge:*)`, `Bash(${BRAND.helperCommand} merge:*)`],
+      },
+    });
   });
 
-  it('asks before the link command with askBeforeLink (spec §21.9)', () => {
+  it('asks before the link command with askBeforeLink (spec §21.9), and always before merge', () => {
     expect(claudeSettings({ askBeforeLink: true })).toEqual({
       permissions: {
-        ask: [`Bash(${BRAND.cliCommand} link:*)`, `Bash(${BRAND.helperCommand} link:*)`],
+        ask: [
+          `Bash(${BRAND.cliCommand} link:*)`,
+          `Bash(${BRAND.helperCommand} link:*)`,
+          ...MERGE_ASK_RULES,
+        ],
       },
     });
     expect(claudeSettings({ helper: '/h', askBeforeLink: true })).toMatchObject({
-      permissions: { ask: LINK_ASK_RULES },
+      permissions: { ask: [...LINK_ASK_RULES, ...MERGE_ASK_RULES] },
       hooks: expect.any(Object),
     });
-    expect(claudeSettings({ helper: '/h' })).not.toHaveProperty('permissions');
+    expect(claudeSettings({ helper: '/h' })).toMatchObject({
+      permissions: { ask: MERGE_ASK_RULES },
+    });
   });
 
   it('runs the helper for all seven hook events and the status line (spec §9.3)', () => {

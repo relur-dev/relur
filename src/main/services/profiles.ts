@@ -131,7 +131,7 @@ export class ProfileService {
       askBeforeLink?: boolean;
       git?: { commitName: string; commitEmail: string } | null;
       /** The PR commands (spec §12.3, §14.1); an empty one is removed. */
-      pr?: { createCommand: string; statusCommand: string };
+      pr?: { createCommand: string; statusCommand: string; mergeCommand?: string };
       /** Continue interrupted work at start (spec §9.7); the default prompt isn't written. */
       resume?: { continueAtStart: boolean; prompt: string };
       /** Suspend idle sessions after this many minutes, 0 for Off (spec §9.8). */
@@ -166,11 +166,17 @@ export class ProfileService {
     const pr = changes.pr && {
       createCommand: changes.pr.createCommand.trim() || null,
       statusCommand: changes.pr.statusCommand.trim() || null,
+      // Unset keeps the profile's merge command (spec §12.5).
+      mergeCommand:
+        changes.pr.mergeCommand === undefined
+          ? (current.pr?.mergeCommand ?? null)
+          : changes.pr.mergeCommand.trim() || null,
     };
     const prChanged =
       pr !== undefined &&
       (pr.createCommand !== (current.pr?.createCommand ?? null) ||
-        pr.statusCommand !== (current.pr?.statusCommand ?? null));
+        pr.statusCommand !== (current.pr?.statusCommand ?? null) ||
+        pr.mergeCommand !== (current.pr?.mergeCommand ?? null));
     const resumePromptText = changes.resume?.prompt.trim();
     const resume = changes.resume && {
       continueAtStart: changes.resume.continueAtStart,
@@ -197,9 +203,9 @@ export class ProfileService {
         else delete entry.resume;
       }
       if (prChanged && pr) {
-        // Other pr fields (createPrompt, timeoutSec) are kept as they are.
+        // Other pr fields (createPrompt, mergeMethod, timeoutSec) are kept as they are.
         const fields = { ...(entry.pr as Record<string, unknown> | undefined) };
-        for (const key of ['createCommand', 'statusCommand'] as const) {
+        for (const key of ['createCommand', 'statusCommand', 'mergeCommand'] as const) {
           if (pr[key]) fields[key] = pr[key];
           else delete fields[key];
         }

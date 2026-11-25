@@ -9,6 +9,7 @@
  *   <helper> add [path] …     The command line tool (§7.5).
  *   <helper> link <project>   Links a repository to the workspace it runs in (§21.9).
  *   <helper> projects         The profile's projects (§21.9).
+ *   <helper> merge [--yes] …  Merges the workspace's pull requests on their hosts (§21.10).
  *   <helper> apply-update <plan.json>   Replaces the app after it quit, with a staged update (§15.7).
  *   <helper> identity app|appimage <path>   Prints an app's id and version, as an update checks them (§15.7).
  */
@@ -19,6 +20,7 @@ import { runApplyUpdate } from './apply-update';
 import { readStdin } from './bridge';
 import { runHook } from './hook';
 import { runLink, runProjects } from './link';
+import { runMerge } from './merge';
 import { runStatusLine } from './statusline';
 
 const [command, ...args] = process.argv.slice(2);
@@ -35,6 +37,8 @@ async function main(): Promise<number> {
       return runLink(args);
     case 'projects':
       return runProjects(args);
+    case 'merge':
+      return runMerge(args);
     case 'apply-update':
       return runApplyUpdate(args);
     case 'identity':
@@ -44,7 +48,7 @@ async function main(): Promise<number> {
       return 0;
     default:
       process.stderr.write(
-        `usage: ${BRAND.helperCommand} hook <event> | statusline | add [path] | link <project> | projects\n`,
+        `usage: ${BRAND.helperCommand} hook <event> | statusline | add [path] | link <project> | projects | merge\n`,
       );
       return 1;
   }

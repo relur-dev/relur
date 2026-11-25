@@ -1,5 +1,6 @@
 import { flaggedOnly, projectWorkspaces } from '@shared/home';
 import { formatBytes, type MemorySnapshot, projectMemory } from '@shared/memory';
+import { githubPreset } from '@shared/merge-prs';
 import { projectWorktreeDir } from '@shared/projects';
 import type { Profile, Project } from '@shared/schemas';
 import { matchShortcut } from '@shared/shortcuts';
@@ -130,6 +131,19 @@ export function ProjectView({
   const setRemote = useMutation(
     trpc.projects.setRemote.mutationOptions({ onSuccess: () => setChoosingRemote(false) }),
   );
+  // PR commands (spec §6.10, §12.6): one click fills in the GitHub CLI preset.
+  const useGithub = useMutation(trpc.projects.useGithubPreset.mutationOptions());
+  const preset = githubPreset();
+  const prCommands = (() => {
+    const own = project.pr ?? {};
+    if (own.statusCommand === preset.statusCommand && own.mergeCommand === preset.mergeCommand) {
+      return 'GitHub CLI (gh)';
+    }
+    if (own.statusCommand || own.mergeCommand || own.createCommand) return "The project's own";
+    const p = profile.pr ?? {};
+    if (p.statusCommand || p.mergeCommand || p.createCommand) return "The profile's";
+    return 'None: git only';
+  })();
   const active = sessions.find((s) => s.id === tab) ?? null;
   const names = sessionTabNames(sessions);
   const error =
@@ -140,7 +154,8 @@ export function ProjectView({
       pickWorktrees.error ??
       setWorktreeRoot.error ??
       remotes.error ??
-      setRemote.error
+      setRemote.error ??
+      useGithub.error
     )?.message ?? shortcutError;
 
   const details: [string, string][] = [
@@ -148,6 +163,7 @@ export function ProjectView({
     ['Base branch', project.baseBranch ?? profile.defaults.baseBranch],
     ['Remote', project.remote ?? 'none'],
     ['Worktrees', `${projectWorktreeDir(profile, project)}/`],
+    ...(project.remote ? [['PR commands', prCommands] as [string, string]] : []),
   ];
   // The project's running Claude sessions (spec §6.14), only while any runs,
   // and how many are suspended (§9.8), which use none.
@@ -243,6 +259,9 @@ export function ProjectView({
                 {label === 'Memory' ? (
                   <GuideLink to="memory" label="What the memory counts" />
                 ) : null}
+                {label === 'PR commands' ? (
+                  <GuideLink to="finishing-work#pr-commands" label="PR commands" />
+                ) : null}
               </dt>
               {label === 'Remote' && choosingRemote ? (
                 <dd className="mt-0.5">
@@ -284,6 +303,20 @@ export function ProjectView({
                     onClick={() => setChoosingRemote(true)}
                   >
                     Change…
+                  </button>
+                </dd>
+              ) : null}
+              {label === 'PR commands' && prCommands !== 'GitHub CLI (gh)' ? (
+                <dd className="mt-0.5 flex gap-1">
+                  <button
+                    type="button"
+                    data-use-github
+                    title="Sets this project's PR status and merge commands to use the GitHub CLI (gh) and jq"
+                    className={button('ghost', 'sm')}
+                    disabled={useGithub.isPending}
+                    onClick={() => useGithub.mutate({ projectId: project.id })}
+                  >
+                    Use GitHub CLI
                   </button>
                 </dd>
               ) : null}
