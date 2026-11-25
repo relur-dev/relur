@@ -159,6 +159,43 @@ exec sleep 600
     assert.equal(await page.eval(`${headerButton}.disabled`), true);
     assert.match(await page.eval<string>(`${headerButton}.title`), /^No pull request known in /);
 
+    // The header's ▾ › Merge into bases (local) is disabled with nothing to
+    // merge; the native menu shows why on a disabled line of its own, and the
+    // ▾ says it as its tooltip (spec §6.2).
+    const localMenu = `document.querySelector('[data-header-merge-menu]')`;
+    const mainProcess = app.main;
+    const menuOf = async () => {
+      await chooseFromNextContextMenu(mainProcess, 'none');
+      await page.eval(`${localMenu}.click()`);
+      await sleep(200);
+      return mainProcess.eval<string[]>('globalThis.__lastMenu');
+    };
+    const noCommits = `Nothing to merge: ${branch} has no commits of its own in `;
+    await page.waitFor(
+      `${localMenu}.title.startsWith(${JSON.stringify(noCommits)})`,
+      'the reason as the ▾ tooltip',
+      30_000,
+    );
+    const [item, reason] = await menuOf();
+    assert.equal(item, 'Merge into bases (local)');
+    assert.ok(reason?.startsWith(noCommits), reason);
+    assert.deepEqual((reason ?? '').slice(noCommits.length).split(', ').sort(), [
+      'api',
+      'infra',
+      'web',
+    ]);
+    // Uncommitted files come first, naming the repository.
+    fs.writeFileSync(path.join(trees.web, 'web.txt'), 'web\n');
+    await page.waitFor(
+      `${localMenu}.title === 'Commit first: 1 uncommitted file in web'`,
+      'the uncommitted reason',
+      30_000,
+    );
+    assert.deepEqual(await menuOf(), [
+      'Merge into bases (local)',
+      'Commit first: 1 uncommitted file in web',
+    ]);
+
     // A commit in each, then Create 3 PRs pushes them and opens the PRs.
     for (const name of NAMES) {
       fs.writeFileSync(path.join(trees[name], `${name}.txt`), `${name}\n`);

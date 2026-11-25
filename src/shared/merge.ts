@@ -179,3 +179,52 @@ export function mergeStoppedText(status: MergeStatus): string {
   const merged = counted.filter((r) => r.phase === 'merged').length;
   return [`Merged ${merged} of ${counted.length}`, ...reasons].join(' · ');
 }
+
+/** What the header's local merge reads of each repository (spec §6.2): its Changes state. */
+export interface LocalMergeRepo {
+  name: string;
+  base: string;
+  uncommitted: number;
+  hasOwnCommits: boolean;
+  /** Merge into the base has something to do (own commits, not merged, all committed). */
+  mergeable: boolean;
+}
+
+const files = (n: number) => `${n} uncommitted ${n === 1 ? 'file' : 'files'}`;
+
+/**
+ * Why the header's Merge into <base> (a single repository) or Merge into
+ * bases (local) (a linked workspace) can't start (spec §6.2): null when some
+ * repository has something to merge. Uncommitted files first, as committing
+ * is what to do next; then no commits of its own, then merged already. In a
+ * linked workspace each reason names its repositories ("in api").
+ */
+export function localMergeReason(
+  repos: LocalMergeRepo[],
+  branch: string,
+  linked: boolean,
+): string | null {
+  if (repos.some((r) => r.mergeable)) return null;
+  const dirty = repos.filter((r) => r.uncommitted > 0);
+  if (dirty.length > 0) {
+    if (!linked) return `Commit first: ${files(dirty[0]?.uncommitted ?? 0)}`;
+    return `Commit first: ${dirty.map((r) => `${files(r.uncommitted)} in ${r.name}`).join(', ')}`;
+  }
+  const empty = repos.filter((r) => !r.hasOwnCommits);
+  const merged = repos.filter((r) => r.hasOwnCommits);
+  const names = (rs: LocalMergeRepo[]) => rs.map((r) => r.name).join(', ');
+  const bases = new Set(merged.map((r) => r.base));
+  const into = bases.size === 1 ? [...bases][0] : 'its base';
+  if (!linked) {
+    const only = repos[0];
+    if (!only) return null;
+    return only.hasOwnCommits
+      ? `${branch} is merged into ${only.base} already`
+      : `Nothing to merge: ${branch} has no commits of its own`;
+  }
+  if (merged.length === 0) {
+    return `Nothing to merge: ${branch} has no commits of its own in ${names(empty)}`;
+  }
+  if (empty.length === 0) return `${branch} is merged into ${into} already in ${names(merged)}`;
+  return `Nothing to merge: ${branch} has no commits of its own in ${names(empty)} and is merged into ${into} already in ${names(merged)}`;
+}

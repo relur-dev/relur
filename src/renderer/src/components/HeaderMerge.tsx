@@ -1,4 +1,4 @@
-import { mergeProgressText } from '@shared/merge';
+import { localMergeReason, mergeProgressText } from '@shared/merge';
 import type { Workspace, WorkspaceRepo } from '@shared/workspaces';
 import { useQueries } from '@tanstack/react-query';
 import { trpcClient, useTRPC } from '../trpc';
@@ -39,15 +39,21 @@ export function HeaderMerge({
   const waiting = status?.phase === 'waiting';
   const pending = merge.pending(workspace.id);
   const blocked = mergeBlocked(workspace);
-  const primary = states[0]?.data;
-  // Why there's nothing to merge, from the repository's own state (§14.4).
-  const nothing = !primary
-    ? 'Checking…'
-    : primary.uncommitted > 0
-      ? `Commit first: ${primary.uncommitted} uncommitted ${primary.uncommitted === 1 ? 'file' : 'files'}`
-      : !primary.hasOwnCommits
-        ? `Nothing to merge: ${workspace.branch} has no commits of its own`
-        : `${workspace.branch} is merged into ${workspace.baseBranch} already`;
+  // Why there's nothing to merge, from each repository's own state (§14.4).
+  const loaded = states.every((q) => q.data);
+  const nothing = loaded
+    ? localMergeReason(
+        workspace.repos.map((r, i) => ({
+          name: name(r.projectId),
+          base: r.baseBranch,
+          uncommitted: states[i]?.data?.uncommitted ?? 0,
+          hasOwnCommits: states[i]?.data?.hasOwnCommits ?? false,
+          mergeable: states[i]?.data?.mergeable ?? false,
+        })),
+        workspace.branch,
+        linked,
+      )
+    : 'Checking…';
   const localReason =
     blocked ?? (waiting ? 'Claude is rebasing for the merge' : mergeable === 0 ? nothing : null);
   const localTitle = linked
@@ -65,7 +71,11 @@ export function HeaderMerge({
             data-header-merge-menu
             className={`${button('secondary', 'sm')} -ml-px rounded-l-none px-1.5`}
             aria-label="More ways to merge"
-            title="Merge into bases (local): fast-forward each local base; never pushes"
+            title={
+              localReason && !pending
+                ? localReason
+                : 'Merge into bases (local): fast-forward each local base; never pushes'
+            }
             onClick={() =>
               void trpcClient.ui.contextMenu
                 .mutate({
@@ -79,6 +89,10 @@ export function HeaderMerge({
                           : 'Merge into bases (local)',
                       enabled: !pending && localReason === null,
                     },
+                    // Native menu items show no tooltip: the reason is a line of its own.
+                    ...(localReason && !pending
+                      ? [{ id: 'reason', label: localReason, enabled: false }]
+                      : []),
                   ],
                 })
                 .then((choice) => {

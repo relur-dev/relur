@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   baseUpstreamText,
+  localMergeReason,
   type MergeFacts,
   type MergeStatus,
   mergeDecision,
@@ -165,5 +166,75 @@ describe('the progress and outcome texts', () => {
     expect(
       mergeStoppedText(status([r('api', 'merged'), r('web', 'failed', 'main moved again')])),
     ).toBe('Merged 1 of 2 · web: main moved again');
+  });
+});
+
+describe("the header's local merge reason (spec §6.2)", () => {
+  const repo = (
+    name: string,
+    over: Partial<Parameters<typeof localMergeReason>[0][number]> = {},
+  ) => ({
+    name,
+    base: 'main',
+    uncommitted: 0,
+    hasOwnCommits: true,
+    mergeable: false,
+    ...over,
+  });
+
+  it('has none while any repository has something to merge', () => {
+    expect(
+      localMergeReason(
+        [repo('a', { mergeable: true }), repo('b', { uncommitted: 2 })],
+        'test',
+        true,
+      ),
+    ).toBeNull();
+  });
+
+  it('says it for a single repository without naming it', () => {
+    expect(localMergeReason([repo('a', { uncommitted: 1 })], 'test', false)).toBe(
+      'Commit first: 1 uncommitted file',
+    );
+    expect(localMergeReason([repo('a', { hasOwnCommits: false })], 'test', false)).toBe(
+      'Nothing to merge: test has no commits of its own',
+    );
+    expect(localMergeReason([repo('a')], 'test', false)).toBe('test is merged into main already');
+  });
+
+  it('names the repositories in a linked workspace, uncommitted files first', () => {
+    expect(
+      localMergeReason(
+        [repo('a', { hasOwnCommits: false }), repo('b', { uncommitted: 1 })],
+        'test',
+        true,
+      ),
+    ).toBe('Commit first: 1 uncommitted file in b');
+    expect(
+      localMergeReason(
+        [repo('a', { uncommitted: 2 }), repo('b', { uncommitted: 1 })],
+        'test',
+        true,
+      ),
+    ).toBe('Commit first: 2 uncommitted files in a, 1 uncommitted file in b');
+    expect(
+      localMergeReason(
+        [repo('a', { hasOwnCommits: false }), repo('b', { hasOwnCommits: false })],
+        'test',
+        true,
+      ),
+    ).toBe('Nothing to merge: test has no commits of its own in a, b');
+    expect(localMergeReason([repo('a'), repo('b', { base: 'main' })], 'test', true)).toBe(
+      'test is merged into main already in a, b',
+    );
+    expect(
+      localMergeReason(
+        [repo('a', { hasOwnCommits: false }), repo('b', { base: 'dev' }), repo('c')],
+        'test',
+        true,
+      ),
+    ).toBe(
+      'Nothing to merge: test has no commits of its own in a and is merged into its base already in b, c',
+    );
   });
 });
