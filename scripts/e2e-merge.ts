@@ -226,6 +226,29 @@ exec sleep 600
     await pressShortcut(page, 'home');
     await page.waitFor(`${columnOf(id('fast'))} === 'merged'`, 'the fast card under Merged');
 
+    // 1b. The same merge from the workspace header (spec §6.2): Merge into
+    // main there runs Merge into the base as the Changes panel does.
+    await create('header', 'ABC-4 From the header');
+    const headerMerge = `document.querySelector('[data-header-merge-local]')`;
+    await page.waitFor(`!!${headerMerge}`, 'Merge into main in the header');
+    assert.equal(await page.eval<string>(`${headerMerge}.textContent`), 'Merge into main');
+    await page.waitFor(
+      `${headerMerge}.disabled && ${headerMerge}.title.includes('has no commits of its own')`,
+      'disabled without commits of its own',
+    );
+    await workDone('header', 'header.txt');
+    await page.waitFor(`!${headerMerge}.disabled`, 'Merge into main enabled', 30_000);
+    assert.equal(
+      await page.eval<string>(`${headerMerge}.title`),
+      `Fast-forwards your local main to ${branchOf('header')}; never pushes`,
+    );
+    await page.eval(`${headerMerge}.click()`);
+    await until(() => tip(web, 'main') === tip(tree('header'), 'HEAD'), 'main fast-forwarded');
+    assert.equal(fx.git(web, 'branch', '--show-current').trim(), 'main', 'its branch stays');
+    assert.ok(fs.existsSync(path.join(web, 'header.txt')), 'the main checkout has the change');
+    await pressShortcut(page, 'home');
+    await page.waitFor(`${columnOf(id('header'))} === 'merged'`, 'the header card under Merged');
+
     // 2. A diverged branch, merged from its Board card: Claude rebases first.
     await create('diverged', 'ABC-2 Diverged');
     await workDone('diverged', 'diverged.txt');

@@ -38,8 +38,9 @@ import { ChangesPanel, PrBadge } from './ChangesPanel';
 import { UnlinkDialog } from './DeleteWorkspaceDialog';
 import { OpenAllDialog, showAppNotice, useOpenInEditor } from './EditorPicker';
 import { FlagMark, flagging, flagHint, flagMenuItems, runFlagChoice } from './Flag';
+import { HeaderMerge } from './HeaderMerge';
 import { LinkRepositoryDialog } from './LinkRepositoryDialog';
-import { MergePrsButton, MergePrsDialog, useMergePrsConfirmation } from './MergePrsDialog';
+import { MergePrsDialog, useMergePrsConfirmation } from './MergePrsDialog';
 import { NotesPanel } from './NotesPanel';
 import { RepoChips } from './RepoChips';
 import { ResponsesPanel } from './ResponsesPanel';
@@ -779,13 +780,11 @@ export function WorkspaceView({
               if (!changesOpen) onToggleChanges();
             }}
           />
-          {linked ? (
-            <MergePrsButton
-              workspace={workspace}
-              name={projectName}
-              onOpen={() => setMergingPrs(true)}
-            />
-          ) : null}
+          <HeaderMerge
+            workspace={workspace}
+            name={projectName}
+            onOpenPrs={() => setMergingPrs(true)}
+          />
         </div>
         {workspace.workflow ? (
           <div data-workflow className="mt-2 flex min-w-0 items-center gap-3">

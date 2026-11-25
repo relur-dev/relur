@@ -24,6 +24,7 @@ import { BRAND, envVar } from '../src/shared/brand';
 import {
   appDir,
   CMD,
+  chooseFromNextContextMenu,
   clickLabel,
   launchApp,
   MOD,
@@ -338,6 +339,42 @@ exec sleep 600
       true,
       'Delete workspace… offered once everything merged',
     );
+    // The header's ▾ › Merge into bases (local) (spec §6.2): Merge into the
+    // base (§14.4) for every repository, as the Changes panel's strip does.
+    // The PRs merged on the stand-in host only, so each local main is behind.
+    await page.eval(
+      `[...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.startsWith('Close')).click()`,
+    );
+    await page.waitFor(`!document.querySelector('dialog[open]')`, 'the report closed');
+    for (const name of NAMES) {
+      assert.notEqual(
+        fx.git(repos[name].clone, 'rev-parse', 'main').trim(),
+        fx.git(trees[name], 'rev-parse', 'HEAD').trim(),
+      );
+    }
+    await chooseFromNextContextMenu(app.main, 'Merge into bases (local)');
+    await page.eval(`document.querySelector('[data-header-merge-menu]').click()`);
+    for (const name of NAMES) {
+      const deadline = Date.now() + 30_000;
+      while (
+        fx.git(repos[name].clone, 'rev-parse', 'main').trim() !==
+        fx.git(trees[name], 'rev-parse', 'HEAD').trim()
+      ) {
+        if (Date.now() > deadline) throw new Error(`${name}'s local main wasn't fast-forwarded`);
+        await sleep(200);
+      }
+      assert.equal(fx.git(repos[name].clone, 'branch', '--show-current').trim(), 'main');
+    }
+    assert.deepEqual(await app.main.eval<string[]>('globalThis.__lastMenu'), [
+      'Merge into bases (local)',
+    ]);
+    // Never pushed: origin's main is where it was.
+    for (const name of NAMES) {
+      assert.notEqual(
+        fx.git(repos[name].origin, 'rev-parse', 'main').trim(),
+        fx.git(trees[name], 'rev-parse', 'HEAD').trim(),
+      );
+    }
     console.log('e2e-merge-prs: ok');
   } catch (error) {
     const shown = await app?.page.eval<string>(`document.body.innerText`).catch(() => '');

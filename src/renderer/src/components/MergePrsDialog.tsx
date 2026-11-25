@@ -42,10 +42,13 @@ export function MergePrsButton({
   workspace,
   name,
   onOpen,
+  split = false,
 }: {
   workspace: Workspace;
   name: (projectId: string) => string;
   onOpen: () => void;
+  /** The left half of the header's split button (spec §6.2). */
+  split?: boolean;
 }) {
   const run = useMergePrsRun(workspace.id);
   const blocked = mergeAllPrsBlocked(
@@ -56,7 +59,7 @@ export function MergePrsButton({
     <button
       type="button"
       data-merge-prs-button
-      className={`ml-3 align-middle font-sans ${button('secondary', 'sm')}`}
+      className={`${split ? 'rounded-r-none' : 'ml-3 align-middle font-sans'} ${button('secondary', 'sm')}`}
       disabled={!run?.running && blocked !== null}
       title={
         run?.running
