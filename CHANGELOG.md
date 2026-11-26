@@ -4,6 +4,12 @@ All notable changes to Relur. The format follows [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-26
+
+### Highlights
+
+**Merge all PRs**: a workspace across several repositories merges every repository's pull request on its host with one button, in the order you choose, after checking each one is pushed, open, mergeable and approved, and with a report of what merged and what didn't. **Merge into your local base from the workspace header**, with the reason in plain words when it can't merge yet. And **Use GitHub CLI** sets a project up for Merge all PRs in one click.
+
 ### Added
 
 - **Merge all PRs:** a workspace across several repositories can merge every repository's pull request on its host with one button in its header, in an order you choose (infrastructure before services, say). Every repository is checked first (pushed and clean, the pull request open, mergeable, checks passed and reviews done), each problem in plain words, with **Re-check**. Merging goes one at a time and stops at the first failure; what merged stays merged, and the report says what merged, what failed and why, and what was skipped. Each repository's merge method can be chosen, and the remote branches are deleted afterwards unless you untick it. `relur merge` asks for the same from a terminal or by Claude, but nothing merges until you press Merge in the dialog Relur opens for it.
@@ -310,7 +316,8 @@ Relur can now suspend idle Claude sessions: sessions you aren't using are stoppe
 - The `relur` command line tool (`add`, `link`, `projects`), the in-app Guide, and Open in editor.
 - macOS (Apple Silicon and Intel) and Linux beta builds (AppImage and `.deb`), with an install script. Both Linux builds keep Chromium's sandbox, the AppImage on Ubuntu 23.10 and later once it's listed for it, and the window says so when it runs without it.
 
-[Unreleased]: https://github.com/relur-dev/relur/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/relur-dev/relur/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/relur-dev/relur/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/relur-dev/relur/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/relur-dev/relur/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/relur-dev/relur/compare/v0.7.0...v0.7.1
